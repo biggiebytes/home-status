@@ -3,7 +3,9 @@
   "name": "Home Status",
   "version": "0.2.0",
   "config_flow": true,
+  "documentation": "https://github.com/biggiebytes/home-status",
+  "issue_tracker": "https://github.com/biggiebytes/home-status/issues",
+  "codeowners": ["@biggiebytes"],
   "integration_type": "service",
-  "iot_class": "cloud_polling",
-  "codeowners": []
+  "iot_class": "cloud_polling"
 }
