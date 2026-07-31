@@ -75,7 +75,7 @@ ALARM_STATES = {"disarmed", "armed_home", "armed_away", "armed_night", "arming",
 
 class HomeStatusCoordinator(DataUpdateCoordinator[dict]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        super().__init__(hass, _LOGGER, name=DOMAIN)
+        super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN)
         self.entry = entry
         self.options = normalize_provider_options({**entry.data, **entry.options})
         self.options["enabled_providers"] = normalize_providers(self.options.get("enabled_providers"))
@@ -661,13 +661,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict]):
 
     def _resolve_forecast_entity(self) -> str | None:
         configured = self.options.get("forecast_entity")
-        candidates = [configured, "weather.kjax"]
-        for entity_id in candidates:
-            if entity_id and entity_id.startswith("weather.") and (
-                self.hass.states.get(entity_id) is not None
-                or er.async_get(self.hass).async_get(entity_id) is not None
-            ):
-                return entity_id
+        if configured and configured.startswith("weather.") and (
+            self.hass.states.get(configured) is not None
+            or er.async_get(self.hass).async_get(configured) is not None
+        ):
+            return configured
         discovered = [state.entity_id for state in self.hass.states.async_all("weather")]
         if len(discovered) == 1:
             return discovered[0]

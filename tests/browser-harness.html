@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Home Status card test harness</title>
+  <style>
+    :root {
+      --primary-text-color: #f4f6f8;
+      --secondary-text-color: #a9b0b8;
+      --card-background-color: #171c22;
+      --secondary-background-color: #20262d;
+      --divider-color: #3a424b;
+      --primary-color: #1687d9;
+      --error-color: #ef5350;
+    }
+    body { margin: 0; padding: 16px; background: #0d1117; color: var(--primary-text-color); font: 15px system-ui; }
+    #card-host { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="editor-host"></div>
+  <div id="card-host"></div>
+  <script>
+    class HaCard extends HTMLElement {}
+    class HaIcon extends HTMLElement {}
+    customElements.define('ha-card', HaCard);
+    customElements.define('ha-icon', HaIcon);
+    window.testHass = {
+      states: {
+        'sensor.home_status': {
+          state: 'normal',
+          attributes: {
+            priority: 'normal',
+            active_count: 0,
+            active: [],
+            recent: [],
+            hero: [{ id: 'weather', title: 'Weather', summary: 'Comfortable outside', provider: 'weather', icon: 'mdi:weather-partly-cloudy' }],
+            sidebar: [{ id: 'calendar', title: 'Family event', summary: 'Tomorrow', provider: 'schedule', icon: 'mdi:calendar' }],
+            footer: [{ id: 'update', title: 'Washer complete', summary: 'Just now', provider: 'laundry', icon: 'mdi:washing-machine' }],
+            display: { media_enabled: true, hero_rotation_seconds: 4 },
+            weather_visual_effect: 'clouds'
+          }
+        },
+        'sensor.time': { state: '12:00', attributes: {} },
+        'alarm_control_panel.home': { state: 'disarmed', attributes: { friendly_name: 'Home alarm' } },
+        'media_player.living_room': { state: 'idle', attributes: { friendly_name: 'Living room' } }
+      },
+      callService() {}
+    };
+  </script>
+  <script type="module" src="/www/home-status-card/home-status-card.js"></script>
+  <script type="module">
+    await customElements.whenDefined('home-status-card');
+    const editor = document.createElement('home-status-card-editor');
+    editor.hass = window.testHass;
+    editor.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      profile: 'auto',
+      example_unknown_option: { preserved: true }
+    });
+    document.querySelector('#editor-host').append(editor);
+
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status', profile: 'auto' });
+    card.hass = window.testHass;
+    document.querySelector('#card-host').append(card);
+    editor.addEventListener('config-changed', event => {
+      card.setConfig(event.detail.config);
+      card.hass = window.testHass;
+    });
+  </script>
+</body>
+</html>

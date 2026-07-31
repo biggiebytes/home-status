@@ -439,6 +439,109 @@ class WeatherRenderer {
   }
 }
 
+const HOME_STATUS_CARD_PROFILES = {
+  auto: {
+    profile: 'auto',
+    layout: 'responsive',
+    utility_header: { enabled: true },
+    hero: { rotate: true },
+    sidebar: { rotate: true, interval: 7 },
+    footer: { rotate: false, speed: 35 },
+    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    sizing: { max_width: 0, min_height: 0 }
+  },
+  phone: {
+    profile: 'phone',
+    layout: 'compact',
+    utility_header: { enabled: false },
+    hero: { rotate: false },
+    sidebar: { rotate: false },
+    footer: { rotate: false, speed: 26 },
+    visibility: { hero: false, sidebar: false, footer: false, phone_ticker: true },
+    sizing: { max_width: 0, min_height: 0 }
+  },
+  tablet: {
+    profile: 'tablet',
+    layout: 'tablet-default',
+    utility_header: { enabled: true },
+    hero: { rotate: true },
+    sidebar: { rotate: true, interval: 7 },
+    footer: { rotate: false, speed: 35 },
+    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    sizing: { max_width: 0, min_height: 0 }
+  },
+  desktop: {
+    profile: 'desktop',
+    layout: 'desktop-wide',
+    utility_header: { enabled: true },
+    hero: { rotate: true },
+    sidebar: { rotate: true, interval: 7 },
+    footer: { rotate: false, speed: 40 },
+    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    sizing: { max_width: 1800, min_height: 0 }
+  }
+};
+
+const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
+  'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
+  'show_active_count', 'show_normal_items', 'pause_on_hover',
+  'utility_header', 'quick_status', 'hero', 'sidebar', 'footer',
+  'context_actions', 'display', 'visibility', 'sizing', 'animation',
+  'weather_effect', 'time_entity', 'recent_ticker_limit',
+  'recent_drawer_limit', 'rotation_seconds', 'footer_speed', 'entities', 'mode'
+]);
+
+function homeStatusClone(value) {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function homeStatusObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function homeStatusMerge(base, overlay) {
+  const output = homeStatusClone(homeStatusObject(base));
+  Object.entries(homeStatusObject(overlay)).forEach(([key, value]) => {
+    output[key] = homeStatusObject(value) === value
+      ? homeStatusMerge(output[key], value)
+      : homeStatusClone(value);
+  });
+  return output;
+}
+
+function homeStatusGetPath(config, path, fallback = undefined) {
+  const value = String(path).split('.').reduce(
+    (current, key) => homeStatusObject(current)[key],
+    config
+  );
+  return value === undefined ? fallback : value;
+}
+
+function homeStatusSetPath(config, path, value, removeEmpty = false) {
+  const output = homeStatusClone(homeStatusObject(config));
+  const keys = String(path).split('.');
+  let target = output;
+  keys.slice(0, -1).forEach(key => {
+    target[key] = homeStatusObject(target[key]) === target[key]
+      ? homeStatusClone(target[key])
+      : {};
+    target = target[key];
+  });
+  const finalKey = keys[keys.length - 1];
+  if (removeEmpty && (value === '' || value === undefined || value === null)) {
+    delete target[finalKey];
+  } else {
+    target[finalKey] = value;
+  }
+  return output;
+}
+
+function homeStatusApplyProfile(config, profile) {
+  const preset = HOME_STATUS_CARD_PROFILES[profile] || HOME_STATUS_CARD_PROFILES.auto;
+  return homeStatusMerge(config, preset);
+}
+
 class HomeStatusCard extends HTMLElement {
   constructor() {
     super();
@@ -480,10 +583,19 @@ class HomeStatusCard extends HTMLElement {
     const requestedFooterSpeed = Number(
       footerConfig.speed ?? footerConfig.marquee_speed ?? config.footer_speed
     );
+    const visibility = homeStatusObject(config.visibility);
+    const sizing = homeStatusObject(config.sizing);
+    const animation = homeStatusObject(config.animation);
+    const profile = ['auto', 'phone', 'tablet', 'desktop'].includes(config.profile)
+      ? config.profile
+      : 'auto';
+    this._rawConfig = homeStatusClone(config);
     this._config = {
+      ...homeStatusClone(config),
       entity: config.entity || 'sensor.home_status',
       context_actions: config.context_actions || {},
       layout: config.layout || 'tablet-default',
+      profile,
       hero: config.hero || null,
       sidebar: config.sidebar || null,
       footer: config.footer || null,
@@ -498,11 +610,47 @@ class HomeStatusCard extends HTMLElement {
         music_entity: utilityHeader.music_entity || 'media_player.spotifyplus',
         music_path: utilityHeader.music_path || '/dashboard-music'
       },
+      visibility: {
+        hero: visibility.hero !== false,
+        sidebar: visibility.sidebar !== false,
+        footer: visibility.footer !== false,
+        phone_ticker: visibility.phone_ticker !== false,
+        drawer: visibility.drawer !== false
+      },
+      sizing: {
+        max_width: Number.isFinite(Number(sizing.max_width)) ? Math.max(0, Number(sizing.max_width)) : 0,
+        min_height: Number.isFinite(Number(sizing.min_height)) ? Math.max(0, Number(sizing.min_height)) : 0
+      },
+      animation: {
+        level: ['full', 'reduced', 'none'].includes(animation.level) ? animation.level : 'full'
+      },
+      weather_effect: String(config.weather_effect || 'auto').toLowerCase(),
+      show_normal_items: config.show_normal_items === true,
+      pause_on_hover: config.pause_on_hover !== false,
       time_entity: config.time_entity || 'sensor.time',
       recent_ticker_limit: Number.isFinite(Number(config.recent_ticker_limit)) ? Number(config.recent_ticker_limit) : 6,
       recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
       rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
     };
+    this._quickStatusEntities = Array.isArray(config.quick_status?.entities)
+      ? config.quick_status.entities
+          .map(item => typeof item === 'string' ? { entity: item } : item)
+          .filter(item => item?.entity)
+          .map(item => ({ ...item, group: item.group || 'status' }))
+      : [];
+    this._directEntities = this._normalizeDirectEntities(config.entities);
+    this._mode = config.mode === 'direct' ? 'direct' : 'provider';
+    this.setAttribute('data-profile', profile);
+    this.setAttribute('data-layout', this._config.layout);
+    this.setAttribute('data-animation', this._config.animation.level);
+    this.style.maxWidth = this._config.sizing.max_width
+      ? `${this._config.sizing.max_width}px`
+      : profile === 'phone' ? '600px' : '';
+    this.style.minHeight = this._config.sizing.min_height ? `${this._config.sizing.min_height}px` : '';
+    this.style.setProperty(
+      '--home-status-phone-ticker-seconds',
+      `${Math.max(8, Math.min(120, this._config.footer_speed))}s`
+    );
     this._stopZoneRotations();
     this._zoneSignatures = { left: '', right: '' };
     this._footerSignature = '';
@@ -1005,9 +1153,9 @@ class HomeStatusCard extends HTMLElement {
   _zoneItems(data) {
     // sensor.home_status is authoritative for zone routing. YAML provider
     // lists are deprecated; only presentation settings are consumed here.
-    const left = (Array.isArray(data.sidebar) ? data.sidebar : [])
+    const left = (this._config.visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
       .filter(item => !this._isNormalSecurityItem(item));
-    const right = (Array.isArray(data.hero) ? data.hero : [])
+    const right = (this._config.visibility.hero && Array.isArray(data.hero) ? data.hero : [])
       .filter(item => !this._isNormalSecurityItem(item));
     return {
       left,
@@ -1016,6 +1164,7 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _buildFooterStream(data) {
+    if (!this._config.visibility.footer) return [];
     const authoritativeFooter = Array.isArray(data.footer) ? data.footer : [];
     const items = authoritativeFooter
       .filter(item => !this._isRoutineFooterStatus(item))
@@ -1082,9 +1231,9 @@ class HomeStatusCard extends HTMLElement {
         <span class="phone-status-copy"><small>Home Status</small><strong>${this._escape(title)}</strong><span>${this._escape(summary)}</span></span>
         ${actionable ? '<ha-icon class="phone-status-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}
       </button>
-      <div class="phone-status-ticker" aria-label="${this._escape(tickerText)}">
+      ${this._config.visibility.phone_ticker ? `<div class="phone-status-ticker" aria-label="${this._escape(tickerText)}">
         <div class="phone-status-ticker-track"><div class="phone-status-ticker-sequence">${phoneTickerSequence}</div><div class="phone-status-ticker-sequence" aria-hidden="true">${phoneTickerSequence}</div></div>
-      </div>
+      </div>` : ''}
     </section>`;
   }
 
@@ -1399,7 +1548,7 @@ class HomeStatusCard extends HTMLElement {
         const area = zone === 'left' ? 'sidebar' : 'hero';
         const config = this._config[area] || {};
         const interval = zone === 'right'
-          ? Number(data.display?.hero_rotation_seconds) || 4
+          ? Number(data.display?.hero_rotation_seconds) || this._config.rotation_seconds
           : Number(config.interval) || (zone === 'left' ? 5 : 7);
         return [
           zone,
@@ -1432,7 +1581,7 @@ class HomeStatusCard extends HTMLElement {
       if (config.rotate === false || zones[zone].length < 2) return;
       const backendHeroInterval = Number(data.display?.hero_rotation_seconds);
       const interval = zone === 'right'
-        ? Math.max(1, Number.isFinite(backendHeroInterval) && backendHeroInterval > 0 ? backendHeroInterval : 4)
+        ? Math.max(1, Number.isFinite(backendHeroInterval) && backendHeroInterval > 0 ? backendHeroInterval : this._config.rotation_seconds)
         : Math.max(2, Number(config.interval) || (5 + index * 2));
       this._zoneTimers[zone] = setInterval(() => {
         if (this._rotationPaused) return;
@@ -1796,7 +1945,14 @@ class HomeStatusCard extends HTMLElement {
 
   _renderProviderLayout(data) {
     this._ensureVisibilityObserver();
-    this._mediaEnabled = data.display?.media_enabled !== false;
+    const configuredMedia = this._config.display?.media_enabled;
+    this._mediaEnabled = configuredMedia === undefined
+      ? data.display?.media_enabled !== false
+      : configuredMedia !== false;
+    if (data.unavailable) {
+      this.shadowRoot.innerHTML = `${this._styles()}<ha-card class="home-status-unavailable"><div><strong>Home Status is unavailable</strong><span>Choose a valid Home Status sensor in the card editor, or finish setting up the integration.</span><code>${this._escape(this._config.entity)}</code></div></ha-card>`;
+      return;
+    }
     const utilityMarkup = this._utilityHeaderMarkup();
     const visualEffect = this._weatherVisualEffect(data);
     this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
@@ -1821,6 +1977,8 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _weatherVisualEffect(data) {
+    if (this._config.animation.level === 'none') return 'none';
+    if (this._config.weather_effect !== 'auto') return this._config.weather_effect;
     const items = [...(data.hero || []), ...(data.sidebar || []), ...(data.footer || [])];
     const weather = items.find(item => item?.provider === 'weather' && item?.visual_effect);
     return data.weather_visual_effect || weather?.visual_effect || 'none';
@@ -1992,7 +2150,10 @@ class HomeStatusCard extends HTMLElement {
     if (!this.shadowRoot.querySelector('.ticker')) return this.render();
     this._renderPhoneStatus(data);
     const tickerButton = this.shadowRoot.querySelector('.ticker');
-    const mediaEnabled = data.display?.media_enabled !== false;
+    const configuredMedia = this._config.display?.media_enabled;
+    const mediaEnabled = configuredMedia === undefined
+      ? data.display?.media_enabled !== false
+      : configuredMedia !== false;
     if (mediaEnabled !== this._mediaEnabled) this._zoneSignatures = { left: '', right: '' };
     this._mediaEnabled = mediaEnabled;
     const visualEffect = this._weatherVisualEffect(data);
@@ -2126,14 +2287,23 @@ class HomeStatusCard extends HTMLElement {
     const ticker = this.shadowRoot.querySelector('.ticker');
     if (ticker && !ticker.dataset.bound) {
       ticker.dataset.bound = 'true';
-      ticker.addEventListener('mouseenter', () => { this._rotationPaused = true; });
+      ticker.addEventListener('mouseenter', () => {
+        if (this._config.pause_on_hover) this._rotationPaused = true;
+      });
       ticker.addEventListener('mouseleave', () => { this._rotationPaused = false; });
       ticker.addEventListener('focusin', () => { this._rotationPaused = this._drawerOpen; });
       ticker.addEventListener('focusout', () => { this._rotationPaused = false; });
       ticker.addEventListener('touchstart', () => { this._rotationPaused = true; }, { passive: true });
       ticker.addEventListener('touchend', () => { this._rotationPaused = false; }, { passive: true });
-      ticker.addEventListener('click', () => this._toggleDrawer());
-      ticker.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this._toggleDrawer(); } });
+      ticker.addEventListener('click', () => {
+        if (this._config.visibility.drawer) this._toggleDrawer();
+      });
+      ticker.addEventListener('keydown', event => {
+        if (this._config.visibility.drawer && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          this._toggleDrawer();
+        }
+      });
     }
     this.shadowRoot.querySelectorAll('.event-head').forEach(button => button.addEventListener('click', event => {
       event.stopPropagation();
@@ -2227,15 +2397,300 @@ class HomeStatusCard extends HTMLElement {
     });
   }
 
-  getCardSize() { return this._drawerOpen ? 8 : 2; }
+  getCardSize() {
+    const configured = Number(this._config?.card_size);
+    return Number.isFinite(configured) && configured > 0
+      ? configured
+      : this._drawerOpen ? 8 : this._config?.profile === 'phone' ? 2 : 4;
+  }
+
+  getGridOptions() {
+    const configured = homeStatusObject(this._rawConfig?.grid_options);
+    return {
+      columns: configured.columns || 'full',
+      rows: configured.rows || 'auto',
+      min_columns: 3,
+      min_rows: 2
+    };
+  }
+
+  static async getConfigElement() {
+    return document.createElement('home-status-card-editor');
+  }
 
   static getStubConfig() {
     return {
+      entity: 'sensor.home_status',
+      profile: 'auto',
+      layout: 'responsive',
       time_entity: 'sensor.time',
       recent_ticker_limit: 6,
       recent_drawer_limit: 10,
-      rotation_seconds: 4
+      rotation_seconds: 4,
+      utility_header: { enabled: false },
+      hero: { rotate: true },
+      sidebar: { rotate: true, interval: 7 },
+      footer: { rotate: false, speed: 35 },
+      visibility: {
+        hero: true,
+        sidebar: true,
+        footer: true,
+        phone_ticker: true,
+        drawer: true
+      }
     };
+  }
+}
+
+class HomeStatusCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this._config = HomeStatusCard.getStubConfig();
+    this._hass = null;
+  }
+
+  set hass(value) {
+    this._hass = value;
+    this._render();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  setConfig(config) {
+    this._config = homeStatusClone(homeStatusObject(config));
+    if (!this._config.type) this._config.type = 'custom:home-status-card';
+    this._render();
+  }
+
+  connectedCallback() {
+    this._render();
+  }
+
+  _escape(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value ?? '');
+    return node.innerHTML;
+  }
+
+  _value(path, fallback = '') {
+    return homeStatusGetPath(this._config, path, fallback);
+  }
+
+  _select(path, label, options, fallback, help = '') {
+    const value = String(this._value(path, fallback));
+    return `<label><span>${this._escape(label)}</span><select data-path="${this._escape(path)}">${options.map(
+      option => {
+        const current = typeof option === 'string' ? { value: option, label: option } : option;
+        return `<option value="${this._escape(current.value)}"${String(current.value) === value ? ' selected' : ''}>${this._escape(current.label)}</option>`;
+      }
+    ).join('')}</select>${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
+  }
+
+  _text(path, label, fallback = '', help = '', list = '') {
+    return `<label><span>${this._escape(label)}</span><input type="text" data-path="${this._escape(path)}" value="${this._escape(this._value(path, fallback))}"${list ? ` list="${this._escape(list)}"` : ''}>${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
+  }
+
+  _number(path, label, fallback, min, max, help = '') {
+    return `<label><span>${this._escape(label)}</span><input type="number" data-path="${this._escape(path)}" data-value-type="number" value="${this._escape(this._value(path, fallback))}" min="${min}" max="${max}">${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
+  }
+
+  _toggle(path, label, fallback = true, help = '') {
+    return `<label class="toggle"><input type="checkbox" data-path="${this._escape(path)}" data-value-type="boolean"${this._value(path, fallback) !== false ? ' checked' : ''}><span><strong>${this._escape(label)}</strong>${help ? `<small>${this._escape(help)}</small>` : ''}</span></label>`;
+  }
+
+  _entityList(id, domain = '') {
+    const entities = Object.keys(this._hass?.states || {})
+      .filter(entity => !domain || entity.startsWith(`${domain}.`))
+      .sort();
+    return `<datalist id="${this._escape(id)}">${entities.map(
+      entity => `<option value="${this._escape(entity)}"></option>`
+    ).join('')}</datalist>`;
+  }
+
+  _unknownKeys() {
+    return Object.keys(this._config).filter(key => !HOME_STATUS_KNOWN_TOP_LEVEL_KEYS.has(key));
+  }
+
+  _validationWarnings() {
+    const warnings = [];
+    const entity = String(this._value('entity', 'sensor.home_status'));
+    if (!entity.includes('.')) warnings.push('The Home Status sensor must be a valid entity ID.');
+    const paths = [
+      'utility_header.security_path',
+      'utility_header.music_path',
+      'context_actions.calendar.path',
+      'context_actions.cameras.path',
+      'context_actions.lighting.path'
+    ];
+    paths.forEach(path => {
+      const value = String(this._value(path, '') || '').trim();
+      if (value && !value.startsWith('/') && !/^https?:\/\//i.test(value)) {
+        warnings.push(`${path.split('.').slice(-2, -1)[0].replaceAll('_', ' ')} page must begin with / or use a full web address.`);
+      }
+    });
+    return warnings;
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+    const entity = String(this._value('entity', 'sensor.home_status'));
+    const entityMissing = Boolean(this._hass && !this._hass.states?.[entity]);
+    const unknown = this._unknownKeys();
+    const validationWarnings = this._validationWarnings();
+    const profiles = [
+      { value: 'auto', label: 'Responsive (recommended)' },
+      { value: 'phone', label: 'Phone' },
+      { value: 'tablet', label: 'Tablet' },
+      { value: 'desktop', label: 'Desktop' }
+    ];
+    const weatherEffects = [
+      { value: 'auto', label: 'Automatic from Home Status' },
+      { value: 'none', label: 'None' },
+      { value: 'rain', label: 'Rain' },
+      { value: 'clouds', label: 'Clouds' },
+      { value: 'storm', label: 'Storm' },
+      { value: 'wind', label: 'Wind' },
+      { value: 'fog', label: 'Fog' },
+      { value: 'night', label: 'Night' },
+      { value: 'clear', label: 'Clear' }
+    ];
+    this.shadowRoot.innerHTML = `<style>
+      :host { display:block; color:var(--primary-text-color); }
+      .editor { display:grid; gap:12px; padding:4px 0 12px; }
+      .intro,.warning,.preserved { padding:12px 14px; border-radius:12px; line-height:1.45; }
+      .intro { background:var(--secondary-background-color); }
+      .warning { border:1px solid var(--error-color,#db4437); background:color-mix(in srgb,var(--error-color,#db4437) 9%,transparent); }
+      .preserved { border:1px solid var(--divider-color); color:var(--secondary-text-color); font-size:12px; }
+      details { border:1px solid var(--divider-color); border-radius:12px; overflow:hidden; }
+      summary { padding:14px; cursor:pointer; font-weight:650; background:var(--secondary-background-color); }
+      .section { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:14px; }
+      label:not(.toggle) { display:flex; flex-direction:column; gap:6px; min-width:0; }
+      label > span { font-weight:600; }
+      input,select { min-height:42px; box-sizing:border-box; padding:8px 10px; border:1px solid var(--divider-color); border-radius:8px; background:var(--card-background-color); color:var(--primary-text-color); font:inherit; }
+      small { display:block; color:var(--secondary-text-color); font-weight:400; line-height:1.35; }
+      .toggle { display:flex; align-items:flex-start; gap:10px; min-height:42px; }
+      .toggle input { width:20px; min-height:20px; margin:2px 0 0; }
+      .toggle span { display:block; }
+      .toggle strong { display:block; }
+      .profile-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+      button { padding:0 14px; border:0; border-radius:8px; background:var(--primary-color); color:var(--text-primary-color,#fff); font:inherit; font-weight:600; cursor:pointer; }
+      @media (max-width:520px) { .section { grid-template-columns:1fr; } }
+    </style><div class="editor">
+      <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration providers and notification rules remain in Settings → Devices & services → Home Status.</small></div>
+      ${entityMissing ? `<div class="warning"><strong>Home Status sensor not found</strong><br><span>${this._escape(entity)}</span><small>Finish integration setup or choose an existing Home Status sensor below. The card will show an unavailable message until the entity exists.</small></div>` : ''}
+      ${validationWarnings.length ? `<div class="warning"><strong>Check these settings</strong>${validationWarnings.map(message => `<small>${this._escape(message)}</small>`).join('')}</div>` : ''}
+      <details open><summary>Profile & data source</summary><div class="section">
+        <label><span>Presentation profile</span><div class="profile-row"><select data-profile-picker>${profiles.map(option => `<option value="${option.value}"${this._value('profile', 'auto') === option.value ? ' selected' : ''}>${option.label}</option>`).join('')}</select><button type="button" data-apply-profile>Apply</button></div><small>Applying a preset changes known presentation settings only. Custom YAML and unknown options are preserved.</small></label>
+        ${this._text('entity', 'Home Status sensor', 'sensor.home_status', 'Usually sensor.home_status.', 'home-status-sensors')}
+        ${this._select('layout', 'Layout style', [
+          { value: 'responsive', label: 'Responsive' },
+          { value: 'compact', label: 'Compact' },
+          { value: 'tablet-default', label: 'Tablet default' },
+          { value: 'desktop-wide', label: 'Desktop wide' }
+        ], 'responsive')}
+      </div></details>
+      <details open><summary>Visibility</summary><div class="section">
+        ${this._toggle('utility_header.enabled', 'Clock, security & music header', true)}
+        ${this._toggle('visibility.hero', 'Main notification area', true)}
+        ${this._toggle('visibility.sidebar', 'Side information area', true)}
+        ${this._toggle('visibility.footer', 'Tablet ticker', true)}
+        ${this._toggle('visibility.phone_ticker', 'Phone ticker', true)}
+        ${this._toggle('visibility.drawer', 'Notification drawer', true, 'Allow the expanded details drawer to open when the card is tapped.')}
+        ${this._toggle('show_normal_items', 'Include normal-status items', false)}
+      </div></details>
+      <details><summary>Ticker & animation</summary><div class="section">
+        ${this._number('footer.speed', 'Ticker speed', 35, 8, 120, 'Lower values move faster.')}
+        ${this._number('recent_ticker_limit', 'Ticker item limit', 6, 1, 30)}
+        ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
+        ${this._number('rotation_seconds', 'Default rotation time', 4, 1, 120)}
+        ${this._number('sidebar.interval', 'Side rotation time', 7, 2, 120)}
+        ${this._toggle('hero.rotate', 'Rotate main items', true)}
+        ${this._toggle('sidebar.rotate', 'Rotate side items', true)}
+        ${this._toggle('pause_on_hover', 'Pause animation while hovering', true)}
+        ${this._select('animation.level', 'Animation level', [
+          { value: 'full', label: 'Full' },
+          { value: 'reduced', label: 'Reduced' },
+          { value: 'none', label: 'None' }
+        ], 'full')}
+      </div></details>
+      <details><summary>Media & weather effects</summary><div class="section">
+        ${this._toggle('display.media_enabled', 'Show notification media', true)}
+        ${this._select('weather_effect', 'Weather effect', weatherEffects, 'auto')}
+        ${this._text('utility_header.music_entity', 'Music player', 'media_player.spotifyplus', 'Entity used by the card music controls.', 'home-status-media')}
+        ${this._text('time_entity', 'Time sensor', 'sensor.time', 'Optional; the browser clock is used when unavailable.', 'home-status-sensors')}
+      </div></details>
+      <details><summary>Navigation & controls</summary><div class="section">
+        ${this._text('utility_header.security_entity', 'Security entity', 'alarm_control_panel.alarmo', '', 'home-status-alarms')}
+        ${this._text('utility_header.security_path', 'Security page', '/dashboard-security')}
+        ${this._text('utility_header.music_path', 'Music page', '/dashboard-music')}
+        ${this._text('context_actions.calendar.path', 'Calendar page', '/calendar')}
+        ${this._text('context_actions.cameras.path', 'Cameras page', '/dashboard-cameras')}
+        ${this._text('context_actions.lighting.path', 'Lights page', '/dashboard-lights')}
+      </div></details>
+      <details><summary>Card sizing</summary><div class="section">
+        ${this._select('grid_options.columns', 'Grid width', [
+          { value: 'full', label: 'Full width' },
+          { value: '12', label: '12 columns' },
+          { value: '6', label: '6 columns' },
+          { value: '3', label: '3 columns' }
+        ], 'full')}
+        ${this._select('grid_options.rows', 'Grid height', [
+          { value: 'auto', label: 'Automatic' },
+          { value: '2', label: '2 rows' },
+          { value: '4', label: '4 rows' },
+          { value: '6', label: '6 rows' }
+        ], 'auto')}
+        ${this._number('sizing.max_width', 'Maximum width (px)', 0, 0, 3000, '0 uses all available width.')}
+        ${this._number('sizing.min_height', 'Minimum height (px)', 0, 0, 1600, '0 uses the card’s natural height.')}
+        ${this._number('card_size', 'Dashboard card size', 4, 1, 12)}
+      </div></details>
+      <div class="preserved"><strong>Expert YAML is preserved.</strong> The visual editor updates only the fields you change.${unknown.length ? ` Unrecognized top-level options retained: ${this._escape(unknown.join(', '))}.` : ''} You can switch to the code editor at any time.</div>
+      ${this._entityList('home-status-sensors', 'sensor')}
+      ${this._entityList('home-status-media', 'media_player')}
+      ${this._entityList('home-status-alarms', 'alarm_control_panel')}
+    </div>`;
+    this._bind();
+  }
+
+  _bind() {
+    this.shadowRoot.querySelectorAll('[data-path]').forEach(control => {
+      control.addEventListener('change', event => {
+        const target = event.currentTarget;
+        const path = target.dataset.path;
+        let value = target.value;
+        if (target.dataset.valueType === 'boolean') value = target.checked;
+        if (target.dataset.valueType === 'number') {
+          value = target.value === '' ? undefined : Number(target.value);
+        }
+        if (path.startsWith('grid_options.') && !['full', 'auto'].includes(value)) {
+          value = Number(value);
+        }
+        if (path.startsWith('context_actions.') && path.endsWith('.path') && value) {
+          const actionPath = path.split('.').slice(0, -1).join('.');
+          this._config = homeStatusSetPath(this._config, `${actionPath}.type`, 'navigate');
+        }
+        this._config = homeStatusSetPath(this._config, path, value, target.type === 'text');
+        this._emit();
+        this._render();
+      });
+    });
+    this.shadowRoot.querySelector('[data-apply-profile]')?.addEventListener('click', () => {
+      const profile = this.shadowRoot.querySelector('[data-profile-picker]')?.value || 'auto';
+      this._config = homeStatusApplyProfile(this._config, profile);
+      this._emit();
+      this._render();
+    });
+  }
+
+  _emit() {
+    this.dispatchEvent(new CustomEvent('config-changed', {
+      detail: { config: homeStatusClone(this._config) },
+      bubbles: true,
+      composed: true
+    }));
   }
 }
 
@@ -2311,7 +2766,14 @@ const CSS = `
 .live-banner-detail { display:flex; flex:0 0 auto; align-items:center; gap:7px; color:rgba(255,255,255,.78); font-size:12px; white-space:nowrap; }
 .live-banner-detail ha-icon { width:17px; height:17px; color:#ffb74d; }
 @media (prefers-reduced-motion: reduce) { .live-state-banner, .drawer-host .context-bar, .drawer-host.drawer-active .context-bar { transition:none; } }
-:host { container-type:inline-size; }
+:host { display:block; width:100%; container-type:inline-size; }
+.home-status-unavailable { min-height:132px; }
+.home-status-unavailable > div { display:flex; flex-direction:column; gap:7px; padding:22px; }
+.home-status-unavailable strong { font-size:18px; }
+.home-status-unavailable span,.home-status-unavailable code { color:var(--secondary-text-color); }
+:host([data-animation="none"]) * { animation:none !important; transition:none !important; }
+:host([data-animation="reduced"]) .weather-renderer-layer,
+:host([data-animation="reduced"]) .utility-security { animation:none !important; }
 :host, ha-card { display:block; overflow:hidden; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family, sans-serif); }
 .phone-status-host { display:none; }
 .ticker { height:310px !important; min-height:310px !important; }
@@ -2419,7 +2881,7 @@ const CSS = `
   .phone-status-copy span { margin-top:2px; color:rgba(220,226,229,.72); font-size:12px; line-height:15px; }
   .phone-status-chevron { width:20px; height:20px; color:var(--secondary-text-color); }
   .phone-status-ticker { height:52px; overflow:hidden; border-top:1px solid rgba(255,255,255,.075); white-space:nowrap; }
-  .phone-status-ticker-track { display:flex; width:max-content; min-width:100%; height:100%; animation:phone-status-marquee 32s linear infinite; will-change:transform; }
+  .phone-status-ticker-track { display:flex; width:max-content; min-width:100%; height:100%; animation:phone-status-marquee var(--home-status-phone-ticker-seconds,32s) linear infinite; will-change:transform; }
   .phone-status-ticker-sequence { display:flex; flex:0 0 auto; align-items:stretch; height:100%; }
   .phone-status-ticker-item { position:relative; display:inline-flex; align-items:center; gap:8px; min-width:max-content; height:100%; padding:0 16px; box-sizing:border-box; color:inherit; }
   .phone-status-ticker-item + .phone-status-ticker-item::before,.phone-status-ticker-sequence + .phone-status-ticker-sequence .phone-status-ticker-item:first-child::before { content:""; position:absolute; left:0; width:1px; height:28px; background:rgba(255,255,255,.18); }
@@ -2429,12 +2891,21 @@ const CSS = `
   .phone-status-ticker-copy small { display:block; max-width:220px; margin-top:3px; overflow:hidden; color:var(--secondary-text-color); font-size:10px; opacity:.78; text-overflow:ellipsis; white-space:nowrap; }
   @keyframes phone-status-marquee { to { transform:translateX(-50%); } }
 }
+:host([data-profile="tablet"]) .phone-status-host,
+:host([data-profile="desktop"]) .phone-status-host { display:none !important; }
+:host([data-profile="tablet"]) .utility-header,
+:host([data-profile="desktop"]) .utility-header { display:grid; }
+:host([data-profile="tablet"]) .ticker,
+:host([data-profile="desktop"]) .ticker { display:flex; }
+:host([data-profile="tablet"]) .drawer-host,
+:host([data-profile="desktop"]) .drawer-host { display:block; }
 @media (prefers-reduced-motion:reduce) {
   .phone-status-ticker-track { animation:none; }
   .phone-status-ticker-sequence[aria-hidden="true"] { display:none; }
 }
 `;
 
+if (!customElements.get('home-status-card-editor')) customElements.define('home-status-card-editor', HomeStatusCardEditor);
 if (!customElements.get('home-status-card')) customElements.define('home-status-card', HomeStatusCard);
 window.customCards = window.customCards || [];
 if (!window.customCards.some(card => card.type === 'home-status-card')) window.customCards.push({ type: 'home-status-card', name: 'Home Status Card', description: 'Home Status ticker with local notification drawer', preview: true });

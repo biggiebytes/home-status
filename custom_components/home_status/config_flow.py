@@ -14,6 +14,7 @@ from .const import (
     CONF_ENTITY_IDS,
     DOMAIN,
     NAVIGATION_TARGETS,
+    PROVIDER_CONTRACT_VERSION,
     SUPPORTED_PROVIDERS,
     normalize_provider_options,
     normalize_providers,
@@ -26,18 +27,99 @@ _LOGGER = logging.getLogger(__name__)
 class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._setup_options: dict = {}
+
     async def async_step_user(self, user_input=None):
         if user_input is not None:
-            await self.async_set_unique_id("home_status")
-            self._abort_if_unique_id_configured()
+            profile = user_input["setup_profile"]
+            self._setup_options = {
+                "setup_profile": profile,
+                "provider_contract_version": PROVIDER_CONTRACT_VERSION,
+                "enabled_providers": list(SUPPORTED_PROVIDERS),
+                "media_enabled": True,
+                "include_nws_alerts": True,
+                "include_sprinkler_schedule": True,
+                "include_waste_collection": True,
+            }
+            if profile == "essentials":
+                self._setup_options["enabled_providers"] = [
+                    provider
+                    for provider in SUPPORTED_PROVIDERS
+                    if provider
+                    in {"security", "weather", "schedule", "maintenance", "laundry"}
+                ]
+            if profile == "custom":
+                return await self.async_step_sources()
+            return await self.async_step_weather()
+
+        await self.async_set_unique_id("home_status")
+        self._abort_if_unique_id_configured()
+        schema = vol.Schema({
+            vol.Required("setup_profile", default="recommended"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["recommended", "essentials", "custom"],
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+        })
+        return self.async_show_form(step_id="user", data_schema=schema)
+
+    async def async_step_sources(self, user_input=None):
+        if user_input is not None:
+            self._setup_options.update(user_input)
+            self._setup_options["enabled_providers"] = normalize_providers(
+                self._setup_options.get("enabled_providers")
+            )
+            return await self.async_step_weather()
+
+        history_choices = HomeStatusOptionsFlow.direct_history_choices(self.hass)
+        return self.async_show_form(
+            step_id="sources",
+            data_schema=vol.Schema({
+                vol.Required(
+                    "enabled_providers",
+                    default=list(SUPPORTED_PROVIDERS),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=list(SUPPORTED_PROVIDERS),
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Optional(
+                    "history_entities",
+                    default=[choice["value"] for choice in history_choices],
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=history_choices,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+        )
+
+    async def async_step_weather(self, user_input=None):
+        if user_input is not None:
+            self._setup_options.update(user_input)
             return self.async_create_entry(
                 title="Home Status",
-                data={},
+                data=normalize_provider_options(self._setup_options),
             )
 
-        # Entity selection belongs to the optional Customize flow, not setup.
-        schema = vol.Schema({})
-        return self.async_show_form(step_id="user", data_schema=schema)
+        return self.async_show_form(
+            step_id="weather",
+            data_schema=vol.Schema({
+                vol.Optional("forecast_entity"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="weather")
+                ),
+                vol.Optional(
+                    "include_nws_alerts",
+                    default=self._setup_options.get("include_nws_alerts", True),
+                ): selector.BooleanSelector(),
+            }),
+        )
 
     @staticmethod
     @callback
@@ -48,6 +130,15 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class HomeStatusOptionsFlow(config_entries.OptionsFlow):
     PROVIDERS = list(SUPPORTED_PROVIDERS)
     NAVIGATION_TARGETS = list(NAVIGATION_TARGETS)
+    MENU_OPTIONS = [
+        "general",
+        "information_sources",
+        "weather",
+        "appearance",
+        "navigation",
+        "customize",
+        "advanced",
+    ]
 
     @staticmethod
     def _entity_selection(value):
@@ -60,14 +151,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
     def _current(self):
         return normalize_provider_options({**self.config_entry.data, **self.config_entry.options})
 
-    def _direct_history_choices(self):
+    @staticmethod
+    def direct_history_choices(hass):
         supported_binary_classes = {
             "door", "window", "opening", "garage_door", "lock",
             "moisture", "smoke", "gas", "carbon_monoxide",
         }
         supported_cover_classes = {"door", "garage", "gate", "window"}
         choices = []
-        for state in self.hass.states.async_all():
+        for state in hass.states.async_all():
             domain = state.entity_id.split(".", 1)[0]
             device_class = str(state.attributes.get("device_class") or "").lower()
             supported = (
@@ -85,6 +177,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 ),
             })
         return sorted(choices, key=lambda choice: choice["label"].casefold())
+
+    def _direct_history_choices(self):
+        return self.direct_history_choices(self.hass)
+
+    def _settings_menu(self):
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=self.MENU_OPTIONS,
+        )
 
     async def _discovered_views(self):
         """Load friendly dashboard/view choices from Lovelace configs."""
@@ -131,10 +232,10 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 provider = key.removeprefix("navigation_")
                 options[key] = self._recommended_target(provider, discovered) or "none"
         self.hass.config_entries.async_update_entry(self.config_entry, options=options)
-        return self.async_show_menu(step_id="init", menu_options=["general", "information_sources", "weather", "appearance", "navigation"])
+        return self._settings_menu()
 
     async def async_step_init(self, user_input=None):
-        return self.async_show_menu(step_id="init", menu_options=["general", "information_sources", "weather", "appearance", "navigation"])
+        return self._settings_menu()
 
     @staticmethod
     def _recommended_target(provider, choices):
@@ -341,7 +442,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     updated[selected] = {k: v for k in ("provider_override", "label_override", "icon_override", "priority_override", "publish_mode") if (v := user_input.get(k)) not in (None, "", "none")}
             options["entity_overrides"] = updated
             self.hass.config_entries.async_update_entry(self.config_entry, options=options)
-            return self.async_show_menu(step_id="init", menu_options=["general", "information_sources", "weather", "appearance", "navigation"])
+            return self._settings_menu()
         return self.async_show_form(step_id="customize", data_schema=vol.Schema({
             vol.Optional("override_entity"): selector.EntitySelector(),
             vol.Optional("provider_override", default=existing.get("provider_override", "none")): selector.SelectSelector(

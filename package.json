@@ -1,0 +1,11 @@
+{
+  "name": "home-status",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "test:card": "node tests/card-editor.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

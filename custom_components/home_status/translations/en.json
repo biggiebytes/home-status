@@ -2,9 +2,39 @@
   "config": {
     "step": {
       "user": {
-        "title": "Home Status",
-        "description": "Configure Home Status from the settings menu. You can optionally customize individual items later."
-    }
+        "title": "Welcome to Home Status",
+        "description": "Choose a starting point. Recommended works for most homes and every setting can be changed later.",
+        "data": {
+          "setup_profile": "How would you like to begin?"
+        },
+        "data_description": {
+          "setup_profile": "Recommended enables the complete experience. Essentials starts with the most common household information. Custom lets you choose each information source now."
+        }
+      },
+      "sources": {
+        "title": "Choose your information",
+        "description": "Select the kinds of household information Home Status should organize. You can change these later.",
+        "data": {
+          "enabled_providers": "Information sources",
+          "history_entities": "Safety event history"
+        },
+        "data_description": {
+          "enabled_providers": "Choose the providers that should contribute notifications and awareness.",
+          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+        }
+      },
+      "weather": {
+        "title": "Weather awareness",
+        "description": "Choose a weather entity, or leave it empty and Home Status will use it automatically when exactly one weather entity is available.",
+        "data": {
+          "forecast_entity": "Weather provider",
+          "include_nws_alerts": "Include National Weather Service alerts"
+        },
+        "data_description": {
+          "forecast_entity": "Optional. Select the weather entity Home Status should use for forecasts.",
+          "include_nws_alerts": "Include official alerts when an NWS alert entity is available."
+        }
+      }
     }
   },
   "options": {
@@ -83,6 +113,13 @@
     }
   },
   "selector": {
+    "setup_profile": {
+      "options": {
+        "recommended": "Recommended setup",
+        "essentials": "Essentials only",
+        "custom": "Choose everything myself"
+      }
+    },
     "enabled_providers": {
       "options": {
         "security": "Security",
