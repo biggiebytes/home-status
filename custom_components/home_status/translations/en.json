@@ -35,6 +35,9 @@
           "include_nws_alerts": "Include official alerts when an NWS alert entity is available."
         }
       }
+    },
+    "abort": {
+      "already_configured": "Home Status is already configured."
     }
   },
   "options": {
@@ -52,13 +55,153 @@
           "advanced": "Advanced Settings"
         }
       },
-      "general": { "title": "General", "description": "Control timing, history, and item limits.", "data": { "refresh_interval": "Update Frequency", "history_retention_days": "History Length", "max_recent_items": "Recent Events", "max_upcoming_items": "Upcoming Events", "max_insight_items": "Smart Insights" }, "data_description": { "refresh_interval": "How often Home Status checks for new information.", "history_retention_days": "How many days completed events are kept.", "max_recent_items": "Maximum number of recent notifications to remember.", "max_upcoming_items": "Maximum number of upcoming reminders to display.", "max_insight_items": "Maximum number of insights Home Status keeps available." } },
-      "information_sources": { "title": "Information Sources", "description": "Choose what Home Status keeps track of.", "data": { "enabled_providers": "Information Sources", "history_entities": "Safety Event History" }, "data_description": { "enabled_providers": "Choose the kinds of information Home Status should keep track of.", "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered." } },
-      "navigation": { "title": "Open Pages When Tapped", "description": "Choose what opens when you tap information in the Notification Center.", "data": { "navigation_enabled": "Open pages when I tap notifications", "navigation_security": "When I tap Security History", "navigation_weather": "When I tap Weather", "navigation_schedule": "When I tap Calendar Events", "navigation_sprinklers": "When I tap Sprinklers", "navigation_waste": "When I tap Trash & Recycling", "navigation_maintenance": "When I tap Maintenance", "navigation_laundry": "When I tap Laundry", "navigation_climate": "When I tap Climate", "navigation_cameras": "When I tap Camera Alerts", "navigation_family": "When I tap Family Location", "navigation_lighting": "When I tap Exterior Lighting" }, "data_description": { "navigation_enabled": "Open a related page when available.", "navigation_schedule": "Choose the page for calendar events.", "navigation_sprinklers": "Choose the page for watering schedules and rain delay.", "navigation_waste": "Choose the page for garbage and recycling collection.", "navigation_cameras": "Choose the page for camera status and live views.", "navigation_family": "Choose the map or location page for your household.", "navigation_lighting": "Choose the page where exterior lights can be checked and controlled." } },
-      "appearance": { "title": "Appearance", "description": "Control how information is shown on your dashboard.", "data": { "hero_rotation_seconds": "Rotate Main Information Every (seconds)", "media_enabled": "Show Media", "collapse_repeated_events": "Combine Similar Notifications", "deduplicate_by_entity": "Hide Duplicate Notifications", "enable_insights": "Show Helpful Insights" }, "data_description": { "hero_rotation_seconds": "How many seconds each main item stays visible.", "media_enabled": "Show photos and other rich media when available.", "collapse_repeated_events": "Combine similar notifications into one item.", "deduplicate_by_entity": "Hide repeated notifications from the same source.", "enable_insights": "Show helpful suggestions based on recent activity." } },
-      "weather": { "title": "Weather & Schedules", "description": "Configure forecasts, alerts, sprinklers, and collection days.", "data": { "include_nws_alerts": "National Weather Alerts", "include_sprinkler_schedule": "Sprinkler Schedule", "include_waste_collection": "Trash & Recycling", "forecast_entity": "Weather Provider", "weather_preview_condition": "Weather Preview" }, "data_description": { "include_nws_alerts": "Include official National Weather Service alerts.", "include_sprinkler_schedule": "Include the next scheduled sprinkler watering.", "include_waste_collection": "Include upcoming trash and recycling collection.", "forecast_entity": "Choose the weather service used for forecasts.", "weather_preview_condition": "Temporarily preview a weather visual. Leave blank to use live weather." } },
-      "customize": { "title": "Customize Notifications", "description": "Change how an individual item appears in Home Status.", "data": { "override_entity": "Item to Customize", "provider_override": "Category", "label_override": "Display Name", "icon_override": "Display Icon", "priority_override": "Importance", "publish_mode": "Show In", "reset_override": "Remove Customization" }, "data_description": { "override_entity": "Select an item only if you want to customize it.", "provider_override": "Choose the category shown for this item.", "label_override": "Set a friendly name for this item.", "icon_override": "Set the icon shown for this item.", "priority_override": "Choose how important this item is.", "publish_mode": "Choose where this item appears.", "reset_override": "Remove the saved customization for this item." } },
-      "advanced": { "title": "Advanced Settings", "description": "Tools for troubleshooting and advanced customization.", "data": { "debug_logging": "Debug Logging", "contact_footer_pilot_enabled": "Completed Door & Window Timeline Pilot", "refrigerator_door_delay_minutes": "Alert When a Refrigerator Door Is Open For", "refrigerator_temperature_delay_minutes": "Alert When Temperature Is High For", "refrigerator_fridge_high_temperature": "Refrigerator High Temperature", "refrigerator_freezer_high_temperature": "Freezer High Temperature", "navigation_custom_security": "Custom Security Page", "navigation_custom_weather": "Custom Weather Page", "navigation_custom_schedule": "Custom Calendar Page", "navigation_custom_sprinklers": "Custom Sprinklers Page", "navigation_custom_waste": "Custom Trash & Recycling Page", "navigation_custom_maintenance": "Custom Maintenance Page", "navigation_custom_laundry": "Custom Laundry Page", "navigation_custom_climate": "Custom Climate Page", "navigation_custom_cameras": "Custom Cameras Page", "navigation_custom_family": "Custom Family Location Page", "navigation_custom_lighting": "Custom Lighting Page" }, "data_description": { "debug_logging": "Enable detailed logs for troubleshooting.", "contact_footer_pilot_enabled": "Show stable completed door and window events in the footer using the new timeline pipeline. Turn this off to restore the previous behavior.", "refrigerator_door_delay_minutes": "Minutes a refrigerator or freezer door may remain open before Home Status alerts you.", "refrigerator_temperature_delay_minutes": "Minutes a high temperature must continue before Home Status alerts you.", "refrigerator_fridge_high_temperature": "Alert when the refrigerator remains above this temperature.", "refrigerator_freezer_high_temperature": "Alert when the freezer remains above this temperature.", "navigation_custom_weather": "Only used when Weather is set to Custom Page (Advanced)." } },
+      "general": {
+        "title": "General",
+        "description": "Control timing, history, and item limits.",
+        "data": {
+          "refresh_interval": "Update Frequency",
+          "history_retention_days": "History Length",
+          "max_recent_items": "Recent Events",
+          "max_upcoming_items": "Upcoming Events",
+          "max_insight_items": "Smart Insights"
+        },
+        "data_description": {
+          "refresh_interval": "How often Home Status checks for new information.",
+          "history_retention_days": "How many days completed events are kept.",
+          "max_recent_items": "Maximum number of recent notifications to remember.",
+          "max_upcoming_items": "Maximum number of upcoming reminders to display.",
+          "max_insight_items": "Maximum number of insights Home Status keeps available."
+        }
+      },
+      "information_sources": {
+        "title": "Information Sources",
+        "description": "Choose what Home Status keeps track of.",
+        "data": {
+          "enabled_providers": "Information Sources",
+          "history_entities": "Safety Event History"
+        },
+        "data_description": {
+          "enabled_providers": "Choose the kinds of information Home Status should keep track of.",
+          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+        }
+      },
+      "navigation": {
+        "title": "Open Pages When Tapped",
+        "description": "Choose what opens when you tap information in the Notification Center.",
+        "data": {
+          "navigation_enabled": "Open pages when I tap notifications",
+          "navigation_security": "When I tap Security History",
+          "navigation_weather": "When I tap Weather",
+          "navigation_schedule": "When I tap Calendar Events",
+          "navigation_sprinklers": "When I tap Sprinklers",
+          "navigation_waste": "When I tap Trash & Recycling",
+          "navigation_maintenance": "When I tap Maintenance",
+          "navigation_laundry": "When I tap Laundry",
+          "navigation_climate": "When I tap Climate",
+          "navigation_cameras": "When I tap Camera Alerts",
+          "navigation_family": "When I tap Family Location",
+          "navigation_lighting": "When I tap Exterior Lighting"
+        },
+        "data_description": {
+          "navigation_enabled": "Open a related page when available.",
+          "navigation_schedule": "Choose the page for calendar events.",
+          "navigation_sprinklers": "Choose the page for watering schedules and rain delay.",
+          "navigation_waste": "Choose the page for garbage and recycling collection.",
+          "navigation_cameras": "Choose the page for camera status and live views.",
+          "navigation_family": "Choose the map or location page for your household.",
+          "navigation_lighting": "Choose the page where exterior lights can be checked and controlled."
+        }
+      },
+      "appearance": {
+        "title": "Appearance",
+        "description": "Control how information is shown on your dashboard.",
+        "data": {
+          "hero_rotation_seconds": "Rotate Main Information Every (seconds)",
+          "media_enabled": "Show Media",
+          "collapse_repeated_events": "Combine Similar Notifications",
+          "deduplicate_by_entity": "Hide Duplicate Notifications",
+          "enable_insights": "Show Helpful Insights"
+        },
+        "data_description": {
+          "hero_rotation_seconds": "How many seconds each main item stays visible.",
+          "media_enabled": "Show photos and other rich media when available.",
+          "collapse_repeated_events": "Combine similar notifications into one item.",
+          "deduplicate_by_entity": "Hide repeated notifications from the same source.",
+          "enable_insights": "Show helpful suggestions based on recent activity."
+        }
+      },
+      "weather": {
+        "title": "Weather & Schedules",
+        "description": "Configure forecasts, alerts, sprinklers, and collection days.",
+        "data": {
+          "include_nws_alerts": "National Weather Alerts",
+          "include_sprinkler_schedule": "Sprinkler Schedule",
+          "include_waste_collection": "Trash & Recycling",
+          "forecast_entity": "Weather Provider",
+          "weather_preview_condition": "Weather Preview"
+        },
+        "data_description": {
+          "include_nws_alerts": "Include official National Weather Service alerts.",
+          "include_sprinkler_schedule": "Include the next scheduled sprinkler watering.",
+          "include_waste_collection": "Include upcoming trash and recycling collection.",
+          "forecast_entity": "Choose the weather service used for forecasts.",
+          "weather_preview_condition": "Temporarily preview a weather visual. Leave blank to use live weather."
+        }
+      },
+      "customize": {
+        "title": "Customize Notifications",
+        "description": "Change how an individual item appears in Home Status.",
+        "data": {
+          "override_entity": "Item to Customize",
+          "provider_override": "Category",
+          "label_override": "Display Name",
+          "icon_override": "Display Icon",
+          "priority_override": "Importance",
+          "publish_mode": "Show In",
+          "reset_override": "Remove Customization"
+        },
+        "data_description": {
+          "override_entity": "Select an item only if you want to customize it.",
+          "provider_override": "Choose the category shown for this item.",
+          "label_override": "Set a friendly name for this item.",
+          "icon_override": "Set the icon shown for this item.",
+          "priority_override": "Choose how important this item is.",
+          "publish_mode": "Choose where this item appears.",
+          "reset_override": "Remove the saved customization for this item."
+        }
+      },
+      "advanced": {
+        "title": "Advanced Settings",
+        "description": "Tools for troubleshooting and advanced customization.",
+        "data": {
+          "debug_logging": "Debug Logging",
+          "contact_footer_pilot_enabled": "Completed Door & Window Timeline Pilot",
+          "refrigerator_door_delay_minutes": "Alert When a Refrigerator Door Is Open For",
+          "refrigerator_temperature_delay_minutes": "Alert When Temperature Is High For",
+          "refrigerator_fridge_high_temperature": "Refrigerator High Temperature",
+          "refrigerator_freezer_high_temperature": "Freezer High Temperature",
+          "navigation_custom_security": "Custom Security Page",
+          "navigation_custom_weather": "Custom Weather Page",
+          "navigation_custom_schedule": "Custom Calendar Page",
+          "navigation_custom_sprinklers": "Custom Sprinklers Page",
+          "navigation_custom_waste": "Custom Trash & Recycling Page",
+          "navigation_custom_maintenance": "Custom Maintenance Page",
+          "navigation_custom_laundry": "Custom Laundry Page",
+          "navigation_custom_climate": "Custom Climate Page",
+          "navigation_custom_cameras": "Custom Cameras Page",
+          "navigation_custom_family": "Custom Family Location Page",
+          "navigation_custom_lighting": "Custom Lighting Page"
+        },
+        "data_description": {
+          "debug_logging": "Enable detailed logs for troubleshooting.",
+          "contact_footer_pilot_enabled": "Show stable completed door and window events in the footer using the new timeline pipeline. Turn this off to restore the previous behavior.",
+          "refrigerator_door_delay_minutes": "Minutes a refrigerator or freezer door may remain open before Home Status alerts you.",
+          "refrigerator_temperature_delay_minutes": "Minutes a high temperature must continue before Home Status alerts you.",
+          "refrigerator_fridge_high_temperature": "Alert when the refrigerator remains above this temperature.",
+          "refrigerator_freezer_high_temperature": "Alert when the freezer remains above this temperature.",
+          "navigation_custom_weather": "Only used when Weather is set to Custom Page (Advanced)."
+        }
+      },
       "init_legacy": {
         "title": "Home Status settings",
         "data": {
@@ -166,8 +309,5 @@
         "normal": "Normal"
       }
     }
-  },
-  "abort": {
-    "already_configured": "Home Status is already configured."
   }
 }
