@@ -9,160 +9,347 @@
 <h1 align="center">Home Status</h1>
 
 <p align="center">
-  A notification and awareness platform for Home Assistant.
+  <strong>A modern notification and awareness platform for Home Assistant.</strong>
 </p>
 
-Home Status transforms Home Assistant into a unified household notification
-center. It combines important information—weather, schedules, maintenance,
-appliances, security awareness, and more—into a single, consistent experience
-across phones, tablets, and desktop dashboards.
+Home Status transforms Home Assistant into a clean, modern household awareness experience.
 
-The integration decides what information is relevant. The bundled card decides
-how to present it.
+Instead of building dashboards from dozens of unrelated cards, sensors, and automations, Home Status brings the most important household information together into one unified Notification Center.
 
-## Screenshots
+Weather, schedules, maintenance, appliances, security awareness, cameras, news, and everyday household activity are automatically presented through a single interface designed for phones, tablets, and desktop dashboards.
 
-### Tablet Notification Center
+For many homes, Home Status can replace numerous individual dashboard cards with one coordinated experience that is easier to understand, easier to maintain, and more enjoyable to use.
+
+Designed with sensible defaults and guided setup, Home Status is approachable for new Home Assistant users while still giving experienced users deep customization through visual configuration and optional YAML.
+
+The integration determines **what** information is important.
+
+The Notification Center determines **how** it is presented.
+
+The Configuration App determines **how** homeowners personalize the experience.
+
+---
+
+# Screenshots
+
+## Tablet Notification Center
 
 ![Home Status Tablet Notification Center](docs/screenshots/tablet-notification-center.png)
 
-### Phone Layout
+## Phone Experience
 
 ![Home Status Phone Layout](docs/screenshots/phone-layout.png)
 
-### Media Hero
+## Media Hero
 
 ![Home Status Media Hero](docs/screenshots/media-hero.png)
 
-### Live Security Awareness
+## Live Security Awareness
 
 ![Home Status Live Security Awareness](docs/screenshots/live-security-awareness.png)
 
-Additional views of the navigation drawer, weather animations, and ticker are
-being prepared for the public release.
+Additional screenshots of the navigation drawer, weather animations, onboarding, configuration, and timeline are included throughout the documentation.
 
-## Features
+---
 
-- **Unified Notification Center** for household information in one place
-- **Live security awareness** for alarms, doors, windows, locks, and leaks
-- **Weather forecasts and NWS alerts** with local animation assets
-- **Calendars and schedules** for upcoming household events
-- **Laundry and appliance notifications** for useful lifecycle updates
-- **Maintenance reminders** for recurring household needs
-- **News awareness** through optional RSS providers
-- **Camera context** for availability and doorbell events
-- **Responsive layouts** for phones, tablets, and desktop dashboards
-- **Timeline and ticker streams** for current and recent activity
+# Why Home Status?
 
-## Architecture
+Home Status is designed to simplify Home Assistant dashboards.
 
-Home Status turns household entities and optional information providers into one
-stable data contract for dashboards.
+Instead of maintaining separate cards for weather, calendars, maintenance, laundry, appliance status, security, notifications, cameras, and news, Home Status combines them into one coordinated experience.
 
-### Notification Center
+Highlights include:
 
-Owns informational awareness such as weather, schedules, maintenance, laundry,
-news, reminders, and backend-produced events.
+- Modern minimalist design
+- Large, easy-to-read Notification Center
+- Replaces many individual dashboard cards
+- Guided onboarding
+- Visual configuration editor
+- Live security awareness
+- Responsive phone, tablet, and desktop layouts
+- Timeline and ticker
+- Rich weather animations
+- Navigation drawer with quick access to your existing dashboards
 
-### Direct card logic
+---
 
-Reads immediate household conditions such as alarms, doors, windows, locks, and
-leaks directly from Home Assistant.
+# Responsive by Design
 
-### Foreground Manager
+Home Status is designed around how each device is actually used—not by simply shrinking the same dashboard.
 
-Remains separate from this repository. It is responsible only for exceptional
-tablet interruptions such as alarm and doorbell takeovers.
+## Phone
 
-## Repository layout
+The phone experience focuses on **usability and control**.
+
+Rather than showing every piece of household information, it prioritizes the actions people use most throughout the day.
+
+Features include:
+
+- Quick music controls
+- Essential household awareness
+- Large touch-friendly controls
+- Fast navigation buttons
+- Clean minimalist layout
+- One-handed operation
+
+**Less information. Just as powerful.**
+
+---
+
+## Tablet
+
+The tablet becomes the home's primary Notification Center.
+
+Designed to be read comfortably from across the room, it emphasizes awareness over control while maintaining a clean, modern interface.
+
+Features include:
+
+- Rich Notification Center
+- Media Hero
+- Live household awareness
+- Weather animations
+- Timeline
+- Footer ticker
+- Navigation drawer
+- Large typography for at-a-glance readability
+
+---
+
+## Desktop
+
+Desktop balances information density with readability while preserving the same Home Status experience.
+
+---
+
+# Navigation Drawer
+
+The built-in slide-out drawer provides fast access to the Home Assistant dashboards you already use.
+
+Examples include:
+
+- Security
+- Cameras
+- Music
+- Lighting
+- Calendar
+- Weather
+- Energy
+- Any custom dashboard or view
+
+Home Status complements your existing dashboards rather than replacing them.
+
+---
+
+# Architecture
+
+Home Status is built from three tightly integrated components.
+
+## Home Status Integration
+
+Responsible for collecting, normalizing, and publishing household information.
+
+Responsibilities include:
+
+- Provider discovery
+- Timeline management
+- Notification policy
+- Configuration storage
+- Publishing `sensor.home_status`
+
+The integration determines **what** information is important.
+
+---
+
+## Notification Center
+
+Responsible for presenting household awareness.
+
+Features include:
+
+- Unified household notifications
+- Weather forecasts and alerts
+- Live security awareness
+- Calendar awareness
+- Appliance updates
+- Maintenance reminders
+- News awareness
+- Media Hero
+- Timeline
+- Footer ticker
+- Responsive layouts
+
+Immediate household conditions—including alarms, doors, windows, locks, and leaks—are read directly from Home Assistant for real-time awareness.
+
+The Notification Center determines **how** information is presented.
+
+---
+
+## Configuration App
+
+Responsible for setup and personalization.
+
+Features include:
+
+- Guided onboarding
+- Visual card editor
+- Provider selection
+- Appearance settings
+- Navigation settings
+- Presentation presets
+- Advanced configuration
+
+The Configuration App determines **how** Home Status is personalized.
+
+---
+
+## Foreground Manager
+
+Foreground Manager is maintained separately from this repository.
+
+Its responsibility is limited to exceptional tablet interruptions such as alarm takeovers and doorbell events.
+
+---
+
+# Repository Layout
 
 ```text
-custom_components/home_status/  Home Assistant integration
-www/home-status-card/            Lovelace card and local assets
-design-assets/home-status-branding/
-                                Beacon identity source and exports
+custom_components/home_status/      Home Status integration
+www/home-status-card/               Notification Center frontend
+design-assets/home-status-branding/ Beacon branding assets
+docs/                               Documentation and screenshots
 ```
 
-## Installation
+---
 
-This repository is being prepared for an initial public release. Until release
-packaging is finalized, install it manually.
+# Installation
 
-### Integration
+Home Status is currently installed manually while release packaging is finalized.
 
-1. Copy `custom_components/home_status` to
-   `/config/custom_components/home_status`.
+## Integration
+
+1. Copy `custom_components/home_status` into:
+
+```
+/config/custom_components/
+```
+
 2. Restart Home Assistant.
-3. Open **Settings → Devices & services → Add integration**.
-4. Search for **Home Status** and complete setup.
 
-### Home Status card
+3. Open:
 
-1. Copy `www/home-status-card` to `/config/www/home-status-card`.
-2. Add the following dashboard resource:
+**Settings → Devices & Services → Add Integration**
 
-   ```yaml
-   url: /local/home-status-card/home-status-card.js
-   type: module
-   ```
+4. Search for **Home Status**.
+
+5. Complete the guided setup wizard.
+
+---
+
+## Notification Center
+
+1. Copy `www/home-status-card` into:
+
+```
+/config/www/home-status-card
+```
+
+2. Add the dashboard resource:
+
+```yaml
+url: /local/home-status-card/home-status-card.js
+type: module
+```
 
 3. Add the card:
 
-   ```yaml
-   type: custom:home-status-card
-   entity: sensor.home_status
-   layout: tablet-default
-   ```
+```yaml
+type: custom:home-status-card
+entity: sensor.home_status
+layout: tablet-default
+```
 
-See [`www/home-status-card/example.yaml`](www/home-status-card/example.yaml)
-for a fuller configuration example.
+The visual editor configures most options without requiring YAML.
 
-## Configuration
+See `www/home-status-card/example.yaml` for a complete configuration example.
 
-The integration is configured through **Settings → Devices & services → Home
-Status → Configure**. Available sections cover general behavior, information
-sources, weather, appearance, and navigation.
+---
 
-Entity IDs shown in examples are illustrative. Select entities that exist in
-your own Home Assistant installation.
+# Configuration
 
-## Branding
+Configure Home Status through:
 
-Beacon is the official Home Status identity. Editable SVG sources, light and
-dark variants, integration icons, README logos, documentation banners, colors,
-and usage rules are in
-[`design-assets/home-status-branding`](design-assets/home-status-branding/README.md).
+**Settings → Devices & Services → Home Status → Configure**
 
-## Privacy
+Available sections include:
 
-Home Status runs inside Home Assistant. The repository does not include a Home
-Assistant database, `.storage` data, dashboards, secrets, addresses, account
-identifiers, access tokens, or household-specific configuration.
+- General
+- Weather
+- Information Sources
+- Appearance
+- Navigation
+- Notification Settings
+- Advanced
 
-Optional RSS providers make outbound requests only when their provider is
-enabled.
+The visual card editor makes common customization available without editing YAML while preserving advanced options for experienced users.
 
-## Roadmap
+---
 
-- Guided onboarding wizard
-- Expanded per-device presentation profiles
-- HACS-compatible release packaging
-- Additional information providers
-- Timeline improvements
+# Branding
+
+Beacon is the official Home Status identity.
+
+The repository includes:
+
+- Editable SVG source files
+- Integration icons
+- Documentation banners
+- README artwork
+- Light and dark variants
+- Color palette
+- Branding guidelines
+
+---
+
+# Privacy
+
+Home Status runs entirely inside Home Assistant.
+
+The public repository intentionally excludes:
+
+- `.storage`
+- Databases
+- Dashboards
+- Secrets
+- Tokens
+- Household-specific configuration
+
+Optional RSS providers make outbound requests only when explicitly enabled.
+
+---
+
+# Roadmap
+
+- One-click HACS installation
+- Expanded presentation profiles
+- Additional providers
+- Timeline enhancements
+- Richer media experiences
 - Expanded notification routing
 
-Home Status is under active development. The backend contract and card are
-functional, while the homeowner-oriented setup experience and release packaging
-continue to evolve.
+---
 
-## License
+# Vision
 
-Home Status code and Beacon branding are available under the
-[MIT License](LICENSE). Bundled third-party assets retain the license notices
-stored beside them.
+Home Status is not intended to replace Home Assistant.
 
-## Vision
+It is intended to replace the clutter that often develops around it.
 
-Home Status isn't intended to replace Home Assistant dashboards. Its goal is to
-become the notification and awareness layer that helps every member of the
-household understand what's happening at home at a glance.
+Its goal is to become the notification and awareness layer that helps every member of the household understand what's happening at home through a clean, modern, family-friendly experience.
+
+---
+
+# License
+
+Home Status and the Beacon branding are released under the MIT License.
+
+Bundled third-party assets retain their original license notices.
