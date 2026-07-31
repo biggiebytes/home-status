@@ -12,12 +12,52 @@
   A notification and awareness platform for Home Assistant.
 </p>
 
-Home Status turns household entities and optional information providers into one
-stable data contract for dashboards. The integration decides what information
-is relevant; the bundled card decides how to present it for phones, tablets,
-and desktop dashboards.
+Home Status transforms Home Assistant into a unified household notification
+center. It combines important information—weather, schedules, maintenance,
+appliances, security awareness, and more—into a single, consistent experience
+across phones, tablets, and desktop dashboards.
+
+The integration decides what information is relevant. The bundled card decides
+how to present it.
+
+## Screenshots
+
+### Tablet Notification Center
+
+![Home Status Tablet Notification Center](docs/screenshots/tablet-notification-center.png)
+
+### Phone Layout
+
+![Home Status Phone Layout](docs/screenshots/phone-layout.png)
+
+### Media Hero
+
+![Home Status Media Hero](docs/screenshots/media-hero.png)
+
+### Live Security Awareness
+
+![Home Status Live Security Awareness](docs/screenshots/live-security-awareness.png)
+
+Additional views of the navigation drawer, weather animations, and ticker are
+being prepared for the public release.
+
+## Features
+
+- **Unified Notification Center** for household information in one place
+- **Live security awareness** for alarms, doors, windows, locks, and leaks
+- **Weather forecasts and NWS alerts** with local animation assets
+- **Calendars and schedules** for upcoming household events
+- **Laundry and appliance notifications** for useful lifecycle updates
+- **Maintenance reminders** for recurring household needs
+- **News awareness** through optional RSS providers
+- **Camera context** for availability and doorbell events
+- **Responsive layouts** for phones, tablets, and desktop dashboards
+- **Timeline and ticker streams** for current and recent activity
 
 ## Architecture
+
+Home Status turns household entities and optional information providers into one
+stable data contract for dashboards.
 
 ### Notification Center
 
@@ -33,21 +73,6 @@ leaks directly from Home Assistant.
 
 Remains separate from this repository. It is responsible only for exceptional
 tablet interruptions such as alarm and doorbell takeovers.
-
-## Current capabilities
-
-- One `sensor.home_status` data source
-- Active, current, upcoming, and timeline streams
-- Provider-aware priority and category handling
-- Weather alerts and forecasts
-- Calendars, waste collection, and watering schedules
-- Laundry and appliance lifecycle events
-- Maintenance and refrigerator awareness
-- Camera availability and doorbell context
-- Household presence summaries
-- Optional news awareness
-- Responsive Home Status card layouts
-- Local weather animation assets with bundled licenses
 
 ## Repository layout
 
@@ -117,14 +142,27 @@ identifiers, access tokens, or household-specific configuration.
 Optional RSS providers make outbound requests only when their provider is
 enabled.
 
-## Development status
+## Roadmap
+
+- Guided onboarding wizard
+- Expanded per-device presentation profiles
+- HACS-compatible release packaging
+- Additional information providers
+- Timeline improvements
+- Expanded notification routing
 
 Home Status is under active development. The backend contract and card are
 functional, while the homeowner-oriented setup experience and release packaging
-are still being refined.
+continue to evolve.
 
 ## License
 
 Home Status code and Beacon branding are available under the
 [MIT License](LICENSE). Bundled third-party assets retain the license notices
 stored beside them.
+
+## Vision
+
+Home Status isn't intended to replace Home Assistant dashboards. Its goal is to
+become the notification and awareness layer that helps every member of the
+household understand what's happening at home at a glance.

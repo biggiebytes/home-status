@@ -1,13 +1,15 @@
 # Home Status Card
 
-Home Assistant Lovelace card with a browser-local expandable notification drawer. It reads the existing Home Status sensors and does not require Browser Mod, an `input_boolean`, or backend changes.
+Home Assistant Lovelace card with a browser-local expandable notification
+drawer. It reads `sensor.home_status` and does not require Browser Mod or
+additional helper entities.
 
 Copy the entire `home-status-card` directory to `/config/www/home-status-card`. Weather renderers load their player and animations from the bundled `vendor` and `assets` directories; they do not use a CDN.
 
 Resource:
 
 ```yaml
-url: /local/home-status-card/home-status-card.js?v=7
+url: /local/home-status-card/home-status-card.js
 type: module
 ```
 
@@ -17,3 +19,4 @@ Third-party notices are stored beside the relevant local assets:
 
 - `vendor/lottie-web.LICENSE.md`
 - `assets/weather/rain-background.LICENSE.md`
+- `assets/weather/meteocons.LICENSE`
