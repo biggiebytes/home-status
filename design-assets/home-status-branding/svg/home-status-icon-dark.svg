@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Home Status icon</title>
+  <desc id="desc">A luminous house and shield outline containing a three-point live status timeline.</desc>
+  <defs>
+    <linearGradient id="background" x1="132" y1="72" x2="862" y2="950" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A2638"/>
+      <stop offset="0.52" stop-color="#0D1726"/>
+      <stop offset="1" stop-color="#07101C"/>
+    </linearGradient>
+    <linearGradient id="outline" x1="264" y1="232" x2="744" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3F8FF"/>
+      <stop offset="0.42" stop-color="#BFD7FF"/>
+      <stop offset="0.72" stop-color="#4B9CFF"/>
+      <stop offset="1" stop-color="#1476F2"/>
+    </linearGradient>
+    <linearGradient id="status" x1="356" y1="0" x2="668" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A70BC"/>
+      <stop offset="0.5" stop-color="#54D7FF"/>
+      <stop offset="1" stop-color="#2A70BC"/>
+    </linearGradient>
+    <radialGradient id="liveCore">
+      <stop stop-color="#E9FBFF"/>
+      <stop offset="0.38" stop-color="#61E2FF"/>
+      <stop offset="1" stop-color="#1688F5"/>
+    </radialGradient>
+    <filter id="outerGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feFlood flood-color="#1688F5" flood-opacity="0.48"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="liveGlow" x="-160%" y="-160%" width="420%" height="420%">
+      <feGaussianBlur stdDeviation="22" result="blur"/>
+      <feFlood flood-color="#45D8FF" flood-opacity="0.75"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="iconClip">
+      <rect x="30" y="30" width="964" height="964" rx="218"/>
+    </clipPath>
+  </defs>
+
+  <rect x="30" y="30" width="964" height="964" rx="218" fill="url(#background)"/>
+  <rect x="31.5" y="31.5" width="961" height="961" rx="216.5" fill="none" stroke="#6D86A9" stroke-opacity="0.34" stroke-width="3"/>
+  <g clip-path="url(#iconClip)">
+  <path d="M214 474L512 218L810 474V632C810 742 719 830 512 894C305 830 214 742 214 632V474Z"
+        fill="none" stroke="#167FF4" stroke-opacity="0.28" stroke-width="72"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#outerGlow)"/>
+  <path d="M214 474L512 218L810 474V632C810 742 719 830 512 894C305 830 214 742 214 632V474Z"
+        fill="none" stroke="url(#outline)" stroke-width="42"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M352 621H672" stroke="#183B65" stroke-width="18" stroke-linecap="round"/>
+  <path d="M352 621H672" stroke="url(#status)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="388" cy="621" r="26" fill="#102A49" stroke="#4C9DF6" stroke-width="10"/>
+  <circle cx="636" cy="621" r="26" fill="#102A49" stroke="#4C9DF6" stroke-width="10"/>
+  <circle cx="512" cy="621" r="49" fill="#138AF7" fill-opacity="0.24" filter="url(#liveGlow)"/>
+  <circle cx="512" cy="621" r="34" fill="url(#liveCore)" stroke="#BFF5FF" stroke-width="6"/>
+  <circle cx="502" cy="611" r="8" fill="#FFFFFF" fill-opacity="0.78"/>
+  </g>
+</svg>

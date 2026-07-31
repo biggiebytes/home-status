@@ -1,0 +1,52 @@
+type: custom:home-status-card
+entity: sensor.home_status
+layout: tablet-default
+grid_options:
+  columns: full
+  rows: auto
+show_active_count: true
+show_normal_items: true
+pause_on_hover: true
+utility_header:
+  enabled: true
+  security_entity: alarm_control_panel.alarmo
+  security_path: /dashboard-security
+  music_entity: media_player.spotifyplus
+  music_path: /dashboard-music
+quick_status:
+  entities:
+    - entity: alarm_control_panel.alarmo
+      name: Security System
+    - entity: binary_sensor.front_door
+      name: Front Door
+    - entity: binary_sensor.kitchen_window
+      name: Kitchen Window
+    - entity: binary_sensor.kitchen_sink_moisture
+      name: Kitchen Sink Leak
+hero:
+  rotate: true
+sidebar:
+  rotate: true
+  interval: 7
+footer:
+  rotate: false
+  speed: 35
+context_actions:
+  calendar:
+    type: navigate
+    path: /calendar
+  music:
+    type: navigate
+    path: /dashboard-music
+  location:
+    type: navigate
+    path: /dashboard-maps
+  movies:
+    type: navigate
+    path: /dashboard-movies
+  sprinklers:
+    type: navigate
+    path: /dashboard-sprinkler
+  energy:
+    type: navigate
+    path: /energy

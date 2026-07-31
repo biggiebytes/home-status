@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Home Status icon, light variant</title>
+  <desc id="desc">A navy and blue house and shield outline containing a three-point live status timeline.</desc>
+  <defs>
+    <linearGradient id="background" x1="126" y1="82" x2="884" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset="0.55" stop-color="#EAF2FC"/>
+      <stop offset="1" stop-color="#DCE8F7"/>
+    </linearGradient>
+    <linearGradient id="outline" x1="260" y1="230" x2="748" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10243E"/>
+      <stop offset="0.45" stop-color="#173E70"/>
+      <stop offset="0.74" stop-color="#176FCE"/>
+      <stop offset="1" stop-color="#0C91E8"/>
+    </linearGradient>
+    <linearGradient id="status" x1="356" y1="0" x2="668" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5D8FBE"/>
+      <stop offset="0.5" stop-color="#159DDC"/>
+      <stop offset="1" stop-color="#5D8FBE"/>
+    </linearGradient>
+    <radialGradient id="liveCore">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.34" stop-color="#8CE7FF"/>
+      <stop offset="1" stop-color="#087ED4"/>
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#1688F5" flood-opacity="0.25"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="iconClip">
+      <rect x="30" y="30" width="964" height="964" rx="218"/>
+    </clipPath>
+  </defs>
+
+  <rect x="30" y="30" width="964" height="964" rx="218" fill="url(#background)"/>
+  <rect x="31.5" y="31.5" width="961" height="961" rx="216.5" fill="none" stroke="#7F99B9" stroke-opacity="0.5" stroke-width="3"/>
+  <g clip-path="url(#iconClip)">
+
+  <path d="M214 474L512 218L810 474V632C810 742 719 830 512 894C305 830 214 742 214 632V474Z"
+        fill="none" stroke="#2189E6" stroke-opacity="0.2" stroke-width="70"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)"/>
+  <path d="M214 474L512 218L810 474V632C810 742 719 830 512 894C305 830 214 742 214 632V474Z"
+        fill="none" stroke="url(#outline)" stroke-width="42"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M352 621H672" stroke="#B6CAE0" stroke-width="18" stroke-linecap="round"/>
+  <path d="M352 621H672" stroke="url(#status)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="388" cy="621" r="26" fill="#E3EEF9" stroke="#2D79BE" stroke-width="10"/>
+  <circle cx="636" cy="621" r="26" fill="#E3EEF9" stroke="#2D79BE" stroke-width="10"/>
+  <circle cx="512" cy="621" r="48" fill="#24A8EC" fill-opacity="0.18" filter="url(#softGlow)"/>
+  <circle cx="512" cy="621" r="34" fill="url(#liveCore)" stroke="#0876C7" stroke-width="6"/>
+  <circle cx="502" cy="611" r="8" fill="#FFFFFF" fill-opacity="0.86"/>
+  </g>
+</svg>
