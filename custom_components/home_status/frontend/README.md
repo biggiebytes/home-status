@@ -4,14 +4,10 @@ Home Assistant Lovelace card with a browser-local expandable notification
 drawer. It reads `sensor.home_status` and does not require Browser Mod or
 additional helper entities.
 
-Copy the entire `home-status-card` directory to `/config/www/home-status-card`. Weather renderers load their player and animations from the bundled `vendor` and `assets` directories; they do not use a CDN.
-
-Resource:
-
-```yaml
-url: /local/home-status-card/home-status-card.js
-type: module
-```
+The card, visual editor, weather player, and animations are bundled inside the
+Home Status integration. Home Assistant serves and registers the JavaScript
+module automatically when the integration loads. No `/config/www` copy,
+Dashboard Resource, or CDN is required.
 
 Rain uses its approved local Lottie renderer. Sunny uses an original local WebM animation with an MP4 fallback. Clouds, fog, wind, storm, and night continue using the existing CSS renderer until their ambient assets are individually approved.
 

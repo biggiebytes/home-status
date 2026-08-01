@@ -94,10 +94,11 @@ const DEFAULT_LEAK_ENTITIES = Object.freeze([
   { entity: 'binary_sensor.laundry_room_moisture', name: 'Laundry Room' }
 ]);
 
-const LOTTIE_PLAYER_URL = '/local/home-status-card/vendor/lottie_light_canvas.min.js';
+const FRONTEND_ASSET_BASE = '/home_status';
+const LOTTIE_PLAYER_URL = `${FRONTEND_ASSET_BASE}/vendor/lottie_light_canvas.min.js`;
 const LOTTIE_WEATHER_ASSETS = Object.freeze({
   rain: Object.freeze({
-    url: '/local/home-status-card/assets/weather/rain-background.json',
+    url: `${FRONTEND_ASSET_BASE}/assets/weather/rain-background.json`,
     className: 'lottie-rain-layer',
     preserveAspectRatio: 'none'
   })
@@ -105,8 +106,8 @@ const LOTTIE_WEATHER_ASSETS = Object.freeze({
 const VIDEO_WEATHER_ASSETS = Object.freeze({
   clear: Object.freeze({
     sources: Object.freeze([
-      Object.freeze({ src: '/local/home-status-card/assets/weather/sunny-ambient.webm', type: 'video/webm' }),
-      Object.freeze({ src: '/local/home-status-card/assets/weather/sunny-ambient.mp4', type: 'video/mp4' })
+      Object.freeze({ src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.webm`, type: 'video/webm' }),
+      Object.freeze({ src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.mp4`, type: 'video/mp4' })
     ])
   })
 });

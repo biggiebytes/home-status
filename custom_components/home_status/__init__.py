@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from homeassistant.components import frontend as ha_frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS
+from .const import FRONTEND_MODULE_URL, FRONTEND_URL_BASE, PLATFORMS
 from .coordinator import HomeStatusCoordinator
+
+FRONTEND_PATH = Path(__file__).parent / "frontend"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the bundled Home Status card with the frontend."""
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(FRONTEND_URL_BASE, str(FRONTEND_PATH), False)]
+    )
+    ha_frontend.add_extra_js_url(hass, FRONTEND_MODULE_URL)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

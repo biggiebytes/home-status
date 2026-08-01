@@ -1,6 +1,11 @@
 import re
 
 DOMAIN = "home_status"
+INTEGRATION_VERSION = "0.2.1"
+FRONTEND_URL_BASE = "/home_status"
+FRONTEND_MODULE_URL = (
+    f"{FRONTEND_URL_BASE}/home-status-card.js?v={INTEGRATION_VERSION}"
+)
 PLATFORMS = ["sensor"]
 CONF_ENTITY_IDS = "entity_ids"
 CONF_ENTITIES = "entities"

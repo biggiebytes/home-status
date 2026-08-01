@@ -213,8 +213,7 @@ Its responsibility is limited to exceptional tablet interruptions such as alarm 
 # Repository Layout
 
 ```text
-custom_components/home_status/      Home Status integration
-www/home-status-card/               Notification Center frontend
+custom_components/home_status/      Integration and bundled card frontend
 design-assets/home-status-branding/ Beacon branding assets
 docs/                               Documentation and screenshots
 ```
@@ -223,44 +222,37 @@ docs/                               Documentation and screenshots
 
 # Installation
 
-Home Status is currently installed manually while release packaging is finalized.
+Home Status installs as one HACS integration. The backend, visual card editor,
+weather assets, and Notification Center card are delivered together.
 
-## Integration
+## HACS
 
-1. Copy `custom_components/home_status` into:
+1. In HACS, add `https://github.com/biggiebytes/home-status` as an Integration
+   repository.
+2. Download **Home Status**.
+3. Restart Home Assistant.
+4. Open **Settings → Devices & Services → Add Integration**.
+5. Search for **Home Status** and complete the guided setup.
 
-```
-/config/custom_components/
-```
+The card becomes available in the dashboard card picker when the integration
+loads. No separate frontend installation is needed.
 
-2. Restart Home Assistant.
+### Manual installation
 
-3. Open:
-
-**Settings → Devices & Services → Add Integration**
-
-4. Search for **Home Status**.
-
-5. Complete the guided setup wizard.
+Copy `custom_components/home_status` into `/config/custom_components/`, restart
+Home Assistant, and add the integration. The bundled card is still registered
+automatically.
 
 ---
 
 ## Notification Center
 
-1. Copy `www/home-status-card` into:
+The Home Status card is bundled with the integration and registered with the
+Home Assistant frontend automatically. No `/config/www` copy or manual
+Dashboard Resource is required.
 
-```
-/config/www/home-status-card
-```
-
-2. Add the dashboard resource:
-
-```yaml
-url: /local/home-status-card/home-status-card.js
-type: module
-```
-
-3. Add the card:
+After Home Status is installed, restarted, and configured, add the card from
+the dashboard card picker or use:
 
 ```yaml
 type: custom:home-status-card
@@ -270,7 +262,12 @@ layout: tablet-default
 
 The visual editor configures most options without requiring YAML.
 
-See `www/home-status-card/example.yaml` for a complete configuration example.
+See `custom_components/home_status/frontend/example.yaml` for a complete
+configuration example.
+
+Users upgrading from an earlier manual card installation can remove the old
+`/local/home-status-card/home-status-card.js` Dashboard Resource after this
+version is installed and Home Assistant has restarted.
 
 ---
 
@@ -329,7 +326,7 @@ Optional RSS providers make outbound requests only when explicitly enabled.
 
 # Roadmap
 
-- One-click HACS installation
+- HACS catalog publication
 - Expanded presentation profiles
 - Additional providers
 - Timeline enhancements

@@ -3,10 +3,10 @@
   "name": "Home Status",
   "codeowners": ["@biggiebytes"],
   "config_flow": true,
-  "dependencies": ["lovelace"],
+  "dependencies": ["frontend", "http", "lovelace"],
   "documentation": "https://github.com/biggiebytes/home-status",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/biggiebytes/home-status/issues",
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

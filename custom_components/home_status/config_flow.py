@@ -23,12 +23,175 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+ESSENTIAL_PROVIDERS = {
+    "security",
+    "weather",
+    "schedule",
+    "maintenance",
+    "laundry",
+}
+CAPABILITY_LABELS = {
+    "weather": "Weather",
+    "calendar": "Calendar",
+    "laundry": "Laundry",
+    "waste": "Waste",
+    "security": "Security",
+    "sprinklers": "Sprinklers",
+    "maintenance": "Maintenance",
+    "climate": "Climate",
+    "cameras": "Cameras",
+    "family": "Family",
+    "lighting": "Lighting",
+    "news": "News",
+}
+CAPABILITY_ORDER = tuple(CAPABILITY_LABELS)
+
 
 class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
         self._setup_options: dict = {}
+        self._detected_capabilities: set[str] = set()
+        self._weather_entities: list[str] = []
+
+    @staticmethod
+    def _matches(text: str, *terms: str) -> bool:
+        return any(term in text for term in terms)
+
+    def _discover_environment(self) -> dict[str, list[str]]:
+        """Discover supported household sources without requiring entity IDs."""
+        groups: dict[str, set[str]] = {}
+        detected: set[str] = set()
+        weather_entities: list[str] = []
+
+        def add(role: str, entity_id: str) -> None:
+            groups.setdefault(role, set()).add(entity_id)
+
+        for state in self.hass.states.async_all():
+            entity_id = state.entity_id
+            domain = entity_id.split(".", 1)[0]
+            device_class = str(state.attributes.get("device_class") or "").lower()
+            friendly_name = str(state.attributes.get("friendly_name") or "")
+            text = f"{entity_id} {friendly_name}".replace("_", " ").replace("-", " ").lower()
+
+            if domain == "weather":
+                detected.add("weather")
+                weather_entities.append(entity_id)
+
+            if domain == "calendar":
+                if self._matches(text, "waste", "trash", "garbage", "recycling", "yard waste"):
+                    detected.add("waste")
+                    add("waste_schedule", entity_id)
+                elif self._matches(text, "sprinkler", "irrigation", "watering"):
+                    detected.add("sprinklers")
+                    add("sprinkler_schedule", entity_id)
+                else:
+                    detected.add("calendar")
+                    add("family_calendar", entity_id)
+
+            if (
+                domain in {"alarm_control_panel", "lock"}
+                or (domain == "binary_sensor" and device_class in {
+                    "door", "window", "opening", "garage_door", "moisture",
+                    "smoke", "gas", "carbon_monoxide",
+                })
+                or (domain == "cover" and device_class in {"door", "garage", "gate", "window"})
+            ):
+                detected.add("security")
+
+            if domain == "camera":
+                detected.add("cameras")
+            if domain == "person":
+                detected.add("family")
+            if domain == "light":
+                detected.add("lighting")
+            if domain == "climate":
+                detected.add("climate")
+
+            is_sprinkler = self._matches(text, "sprinkler", "irrigation", "watering")
+            if is_sprinkler:
+                detected.add("sprinklers")
+                if domain == "valve":
+                    add("sprinkler_valves", entity_id)
+                elif domain in {"sensor", "switch", "calendar"}:
+                    add("sprinkler_schedule", entity_id)
+
+            is_waste = self._matches(text, "waste", "trash", "garbage", "recycling", "yard waste")
+            if is_waste and domain in {"sensor", "calendar"}:
+                detected.add("waste")
+                add("waste_schedule", entity_id)
+
+            is_appliance = self._matches(text, "washer", "dryer", "dishwasher")
+            if is_appliance and domain in {"sensor", "binary_sensor"}:
+                detected.add("laundry")
+                if self._matches(text, "remaining", "time remaining", "completion time"):
+                    add("laundry_remaining", entity_id)
+                elif self._matches(text, "rinse", "clean reminder", "maintenance", "refill"):
+                    add("appliance_maintenance", entity_id)
+                else:
+                    add("laundry_state", entity_id)
+
+            is_filter = self._matches(text, "filter", "blocked vent")
+            is_maintenance = (
+                domain == "update"
+                or device_class == "problem"
+                or is_filter
+                or self._matches(text, "maintenance", "service due", "fault")
+            )
+            if is_maintenance:
+                detected.add("maintenance")
+                if domain == "update":
+                    add("system_updates", entity_id)
+                elif is_filter and self._matches(text, "usage", "percent", "percentage"):
+                    add("filter_usage", entity_id)
+                elif is_filter:
+                    add("filter_status", entity_id)
+                else:
+                    add("maintenance_sensors", entity_id)
+
+            if domain == "sensor" and device_class == "temperature" and self._matches(
+                text, "thermostat", "climate", "indoor", "room temperature"
+            ):
+                detected.add("climate")
+                add("climate_temperature", entity_id)
+
+            if domain == "sensor" and (
+                ("nws" in text and "alert" in text)
+                or isinstance(state.attributes.get("alerts"), list)
+            ):
+                detected.add("weather")
+                add("weather_alert", entity_id)
+
+            if domain == "sensor" and self._matches(text, "news", "headline", "rss feed"):
+                detected.add("news")
+                add("news_sources", entity_id)
+
+        self._detected_capabilities = detected
+        self._weather_entities = sorted(dict.fromkeys(weather_entities))
+        return {
+            role: sorted(entity_ids)
+            for role, entity_ids in groups.items()
+            if entity_ids
+        }
+
+    def _apply_automatic_discovery(self) -> None:
+        groups = self._discover_environment()
+        if groups:
+            self._setup_options["source_entities"] = groups
+        history_entities = [
+            choice["value"]
+            for choice in HomeStatusOptionsFlow.direct_history_choices(self.hass)
+        ]
+        if history_entities:
+            self._setup_options["history_entities"] = history_entities
+
+    async def _continue_automatic_setup(self):
+        if len(self._weather_entities) == 1:
+            self._setup_options["forecast_entity"] = self._weather_entities[0]
+        if len(self._weather_entities) > 1:
+            return await self.async_step_weather()
+        return await self.async_step_summary()
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
@@ -46,12 +209,13 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._setup_options["enabled_providers"] = [
                     provider
                     for provider in SUPPORTED_PROVIDERS
-                    if provider
-                    in {"security", "weather", "schedule", "maintenance", "laundry"}
+                    if provider in ESSENTIAL_PROVIDERS
                 ]
             if profile == "custom":
+                self._discover_environment()
                 return await self.async_step_sources()
-            return await self.async_step_weather()
+            self._apply_automatic_discovery()
+            return await self._continue_automatic_setup()
 
         await self.async_set_unique_id("home_status")
         self._abort_if_unique_id_configured()
@@ -71,6 +235,8 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._setup_options["enabled_providers"] = normalize_providers(
                 self._setup_options.get("enabled_providers")
             )
+            if "weather" not in self._setup_options["enabled_providers"]:
+                return await self.async_step_summary()
             return await self.async_step_weather()
 
         history_choices = HomeStatusOptionsFlow.direct_history_choices(self.hass)
@@ -103,15 +269,15 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_weather(self, user_input=None):
         if user_input is not None:
             self._setup_options.update(user_input)
-            return self.async_create_entry(
-                title="Home Status",
-                data=normalize_provider_options(self._setup_options),
-            )
+            return await self.async_step_summary()
 
+        forecast_field = vol.Optional("forecast_entity")
+        if self._setup_options.get("setup_profile") != "custom" and len(self._weather_entities) > 1:
+            forecast_field = vol.Required("forecast_entity")
         return self.async_show_form(
             step_id="weather",
             data_schema=vol.Schema({
-                vol.Optional("forecast_entity"): selector.EntitySelector(
+                forecast_field: selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
                 vol.Optional(
@@ -119,6 +285,34 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=self._setup_options.get("include_nws_alerts", True),
                 ): selector.BooleanSelector(),
             }),
+        )
+
+    async def async_step_summary(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(
+                title="Home Status",
+                data=normalize_provider_options(self._setup_options),
+            )
+
+        if not self._detected_capabilities:
+            self._discover_environment()
+        detected = [
+            CAPABILITY_LABELS[key]
+            for key in CAPABILITY_ORDER
+            if key in self._detected_capabilities
+        ]
+        not_detected = [
+            CAPABILITY_LABELS[key]
+            for key in CAPABILITY_ORDER
+            if key not in self._detected_capabilities
+        ]
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "detected": "\n".join(f"• {label}" for label in detected) or "• Nothing yet",
+                "not_detected": "\n".join(f"• {label}" for label in not_detected) or "• None",
+            },
         )
 
     @staticmethod

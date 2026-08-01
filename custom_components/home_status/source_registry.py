@@ -20,6 +20,12 @@ class SourceRegistry:
     @classmethod
     def from_config(cls, configured: list[str] | dict[str, list[str]] | None = None) -> "SourceRegistry":
         configured_list = configured if isinstance(configured, list) else []
+        explicitly_configured = {
+            entity_id
+            for role, sources in configured.items()
+            if role not in LIVE_STATE_ROLES and isinstance(sources, list)
+            for entity_id in sources
+        } if isinstance(configured, dict) else set()
         groups = {
             role: tuple(dict.fromkeys(sources))
             for role, sources in DEFAULT_SOURCE_GROUPS.items()
@@ -31,14 +37,22 @@ class SourceRegistry:
         elif configured_list:
             groups["configured"] = tuple(dict.fromkeys(configured_list))
         groups = {
-            role: tuple(entity_id for entity_id in sources if cls._is_notification_source(role, entity_id))
+            role: tuple(
+                entity_id
+                for entity_id in sources
+                if cls._is_notification_source(role, entity_id, explicitly_configured)
+            )
             for role, sources in groups.items()
         }
         return cls(groups)
 
     @staticmethod
-    def _is_notification_source(role: str, entity_id: str) -> bool:
+    def _is_notification_source(
+        role: str, entity_id: str, explicitly_configured: set[str] | None = None
+    ) -> bool:
         if entity_id in EXPLICIT_BINARY_NOTIFICATION_SOURCES:
+            return True
+        if explicitly_configured and entity_id in explicitly_configured:
             return True
         if role in LIVE_STATE_ROLES:
             return False

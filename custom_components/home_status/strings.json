@@ -24,16 +24,20 @@
         }
       },
       "weather": {
-        "title": "Weather awareness",
-        "description": "Choose a weather entity, or leave it empty and Home Status will use it automatically when exactly one weather entity is available.",
+        "title": "Choose your weather source",
+        "description": "Home Status found more than one weather provider. Weather is only one part of the whole-home awareness experience.",
         "data": {
           "forecast_entity": "Weather provider",
           "include_nws_alerts": "Include National Weather Service alerts"
         },
         "data_description": {
-          "forecast_entity": "Optional. Select the weather entity Home Status should use for forecasts.",
+          "forecast_entity": "Select the weather entity Home Status should use for forecasts.",
           "include_nws_alerts": "Include official alerts when an NWS alert entity is available."
         }
+      },
+      "summary": {
+        "title": "Home Status is ready",
+        "description": "Detected:\n{detected}\n\nNot detected:\n{not_detected}\n\nYou can change these later from Configure.\n\nHome Status creates sensor.home_status. Next, add the Home Status card to any dashboard."
       }
     },
     "abort": {

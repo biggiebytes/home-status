@@ -120,8 +120,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict]):
         updated_options = normalize_provider_options(dict(self.entry.options))
         if updated_options != dict(self.entry.options):
             self.hass.config_entries.async_update_entry(self.entry, options=updated_options)
+        configured_sources = self.options.get("source_entities")
         merged_sources = list(self.registry.all())
-        if self.options.get("source_entities") != merged_sources:
+        if not isinstance(configured_sources, dict) and configured_sources != merged_sources:
             updated_options = dict(self.entry.options)
             updated_options["source_entities"] = merged_sources
             self.hass.config_entries.async_update_entry(self.entry, options=updated_options)
