@@ -33,7 +33,7 @@ const LeakHandler = {
     return {
       id: `direct:${state.entity}`,
       entity_id: state.entity,
-      message: `${state.name || 'Kitchen Sink'} Leak`,
+      message: `${state.name || 'Water'} Leak`,
       category: state.group,
       detail: 'Water detected',
       priority: 'critical',
@@ -87,12 +87,6 @@ const BACKEND_PROVIDER_ALIASES = Object.freeze({
   sprinklers: 'schedule',
   fault: 'maintenance'
 });
-
-const DEFAULT_LEAK_ENTITIES = Object.freeze([
-  { entity: 'binary_sensor.kitchen_sink_moisture', name: 'Kitchen Sink' },
-  { entity: 'binary_sensor.bathroom_sink_moisture', name: 'Bathroom Sink' },
-  { entity: 'binary_sensor.laundry_room_moisture', name: 'Laundry Room' }
-]);
 
 const FRONTEND_ASSET_BASE = '/home_status';
 const LOTTIE_PLAYER_URL = `${FRONTEND_ASSET_BASE}/vendor/lottie_light_canvas.min.js`;
@@ -606,10 +600,10 @@ class HomeStatusCard extends HTMLElement {
       display: config.display || {},
       utility_header: {
         enabled: utilityHeader.enabled !== false,
-        security_entity: utilityHeader.security_entity || 'alarm_control_panel.alarmo',
-        security_path: utilityHeader.security_path || '/dashboard-security',
-        music_entity: utilityHeader.music_entity || 'media_player.spotifyplus',
-        music_path: utilityHeader.music_path || '/dashboard-music'
+        security_entity: utilityHeader.security_entity || '',
+        security_path: utilityHeader.security_path || '',
+        music_entity: utilityHeader.music_entity || '',
+        music_path: utilityHeader.music_path || ''
       },
       visibility: {
         hero: visibility.hero !== false,
@@ -628,7 +622,7 @@ class HomeStatusCard extends HTMLElement {
       weather_effect: String(config.weather_effect || 'auto').toLowerCase(),
       show_normal_items: config.show_normal_items === true,
       pause_on_hover: config.pause_on_hover !== false,
-      time_entity: config.time_entity || 'sensor.time',
+      time_entity: config.time_entity || '',
       recent_ticker_limit: Number.isFinite(Number(config.recent_ticker_limit)) ? Number(config.recent_ticker_limit) : 6,
       recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
       rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
@@ -1036,7 +1030,8 @@ class HomeStatusCard extends HTMLElement {
     const entity = String(item?.entity_id || '').toLowerCase();
     const text = `${item?.title || ''} ${item?.message || ''} ${item?.state || ''}`.toLowerCase();
     if (
-      entity === 'alarm_control_panel.alarmo'
+      entity
+      && entity === String(this._config.utility_header.security_entity || '').toLowerCase()
       && /\b(?:disarmed|alarm off)\b/.test(text)
     ) {
       // The persistent Security header is authoritative for the disarmed
@@ -1111,10 +1106,6 @@ class HomeStatusCard extends HTMLElement {
     if (/sprinklers rain delay active/i.test(title)) title = 'Rain Delay Active';
     let summary = item.body || item.summary || item.detail || item.secondary || 'Tap for its actions';
     if (item.expires_at) summary = `${summary} • Until ${this._formatDateTime(item.expires_at)}`;
-    const visitorText = `${item.title || ''} ${item.message || ''} ${item.category || ''}`;
-    const frontDoorVisitor = /front\s*door|doorbell|visitor/i.test(visitorText)
-      && /visitor|bell|ring|detected|security/i.test(visitorText);
-    const eventStamp = item.created_at || item.timestamp || item.last_changed || '';
     return {
       id: item.id,
       message: title,
@@ -1131,10 +1122,10 @@ class HomeStatusCard extends HTMLElement {
       created_at: item.created_at,
       resolved_at: item.resolved_at,
       timestamp: item.timestamp,
-      navigation: item.action || item.navigation || (frontDoorVisitor ? '/dashboard-cameras/front-door' : undefined),
+      navigation: item.action || item.navigation,
       icon: item.icon,
-      media_url: item.media_url || item.media?.url || item.image_url || (frontDoorVisitor ? `/api/camera_proxy/camera.front_door${eventStamp ? `?t=${encodeURIComponent(eventStamp)}` : ''}` : ''),
-      media_type: item.media_type || item.media?.type || (frontDoorVisitor || item.image_url ? 'image' : ''),
+      media_url: item.media_url || item.media?.url || item.image_url || '',
+      media_type: item.media_type || item.media?.type || (item.image_url ? 'image' : ''),
       visual_effect: item.visual_effect || '',
     };
   }
@@ -1252,11 +1243,8 @@ class HomeStatusCard extends HTMLElement {
     if (item?.source !== 'status') return false;
     const entity = String(item.entity_id || '').toLowerCase();
     const text = `${item.title || ''} ${item.message || ''} ${item.summary || ''} ${item.state || ''}`.toLowerCase();
-    if (entity === 'alarm_control_panel.alarmo') {
+    if (entity && entity === String(this._config.utility_header.security_entity || '').toLowerCase()) {
       return /\b(?:alarm off|disarmed)\b/.test(text);
-    }
-    if (entity === 'switch.sprinklers_rain_delay') {
-      return /\b(?:off|inactive|disabled)\b/.test(text);
     }
     return false;
   }
@@ -1657,6 +1645,14 @@ class HomeStatusCard extends HTMLElement {
     if (!this._config.utility_header.enabled) return '';
     const security = this._utilitySecurityState();
     const music = this._utilityMusicState();
+    const securityNavigation = this._config.context_actions.security?.type === 'navigate'
+      ? this._config.context_actions.security.path
+      : this._config.utility_header.security_path;
+    const musicNavigation = this._config.context_actions.music?.type === 'navigate'
+      ? this._config.context_actions.music.path
+      : this._config.utility_header.music_path;
+    const securityNavigationDisabled = securityNavigation ? '' : ' disabled';
+    const musicNavigationDisabled = musicNavigation ? '' : ' disabled';
     const disabled = music.available ? '' : ' disabled';
     const volumeDisabled = music.available && music.volumeAvailable ? '' : ' disabled';
     const sourceOptions = music.sources.map(source =>
@@ -1664,9 +1660,9 @@ class HomeStatusCard extends HTMLElement {
     ).join('');
     return `<section class="utility-header" aria-label="Home controls">
       <div class="utility-clock" aria-label="Current time"><span class="utility-time"><strong data-clock-hour></strong><span class="utility-clock-seconds" data-clock-seconds></span><small data-clock-period></small></span><span class="utility-date" data-clock-date></span></div>
-      <button class="utility-security tone-${this._escape(security.tone)}" type="button" data-utility-security aria-label="${this._escape(`Security: ${security.state}`)}"><ha-icon icon="${this._escape(security.icon)}"></ha-icon><span><strong>Security</strong><small>${this._escape(security.state)}</small></span></button>
+      <button class="utility-security tone-${this._escape(security.tone)}" type="button" data-utility-security aria-label="${this._escape(`Security: ${security.state}`)}"${securityNavigationDisabled}><ha-icon icon="${this._escape(security.icon)}"></ha-icon><span><strong>Security</strong><small>${this._escape(security.state)}</small></span></button>
       <section class="utility-music${music.playing ? ' playing' : ''}" aria-label="Music player">
-        <button class="utility-music-summary" type="button" data-utility-music-nav aria-label="${this._escape(`Music: ${music.title}`)}"><span class="utility-music-art${music.artwork ? ' has-art' : ''}"><img data-music-art src="${this._escape(music.artwork)}" alt=""${music.artwork ? '' : ' hidden'}><ha-icon data-music-icon icon="${this._escape(music.icon)}"></ha-icon></span><span><small>Music</small><strong data-music-title>${this._escape(music.title)}</strong><em data-music-secondary>${this._escape(music.secondary)}</em></span></button>
+        <button class="utility-music-summary" type="button" data-utility-music-nav aria-label="${this._escape(`Music: ${music.title}`)}"${musicNavigationDisabled}><span class="utility-music-art${music.artwork ? ' has-art' : ''}"><img data-music-art src="${this._escape(music.artwork)}" alt=""${music.artwork ? '' : ' hidden'}><ha-icon data-music-icon icon="${this._escape(music.icon)}"></ha-icon></span><span><small>Music</small><strong data-music-title>${this._escape(music.title)}</strong><em data-music-secondary>${this._escape(music.secondary)}</em></span></button>
         <div class="utility-music-controls">
           <div class="music-control-row">
             <button type="button" data-music-command="media_previous_track" aria-label="Previous track"${disabled}><ha-icon icon="mdi:skip-previous"></ha-icon></button>
@@ -1793,27 +1789,30 @@ class HomeStatusCard extends HTMLElement {
 
   _contextActions(data = this._getRuntimeData()) {
     return [
-      ['security', 'mdi:shield-home', 'Security', '/dashboard-security'],
-      ['lighting', 'mdi:home-lightbulb', 'Lighting', '/dashboard-lighting'],
-      ['cameras', 'mdi:cctv', 'Cameras', '/dashboard-cameras'],
-      ['calendar', 'mdi:calendar', 'Calendar', '/calendar'],
-      ['music', 'mdi:music', 'Music', '/dashboard-music'],
-      ['location', 'mdi:map-marker', 'Location', '/dashboard-maps'],
-      ['movies', 'mdi:movie-open', 'Movies', '/dashboard-movies'],
-      ['sprinklers', 'mdi:sprinkler', 'Sprinklers', '/dashboard-sprinkler'],
-      ['energy', 'mdi:lightning-bolt', 'Energy', '/energy']
-    ].map(([id, icon, label, path]) => ({
-      id,
-      label,
-      ...this._contextActionState(id, icon, data),
-      config: this._config.context_actions[id] || { type: 'navigate', path }
-    }));
+      ['security', 'mdi:shield-home', 'Security'],
+      ['lighting', 'mdi:home-lightbulb', 'Lighting'],
+      ['cameras', 'mdi:cctv', 'Cameras'],
+      ['calendar', 'mdi:calendar', 'Calendar'],
+      ['music', 'mdi:music', 'Music'],
+      ['location', 'mdi:map-marker', 'Location'],
+      ['movies', 'mdi:movie-open', 'Movies'],
+      ['sprinklers', 'mdi:sprinkler', 'Sprinklers'],
+      ['energy', 'mdi:lightning-bolt', 'Energy']
+    ].filter(([id]) => homeStatusObject(this._config.context_actions[id]).type)
+      .map(([id, icon, label]) => ({
+        id,
+        label,
+        ...this._contextActionState(id, icon, data),
+        config: this._config.context_actions[id]
+      }));
   }
 
   _contextActionState(id, defaultIcon, data) {
     const neutral = (state, icon = defaultIcon) => ({ state, icon, tone: 'neutral', active: false });
     if (id === 'security') {
-      const value = String(this._state('alarm_control_panel.alarmo')?.state || 'unavailable').toLowerCase();
+      const entity = this._config.context_actions?.security?.entity
+        || this._config.utility_header.security_entity;
+      const value = String(this._state(entity)?.state || 'unavailable').toLowerCase();
       const states = {
         disarmed: ['Disarmed', 'mdi:shield-off-outline', 'neutral'],
         armed_home: ['Armed Home', 'mdi:shield-home', 'success'],
@@ -1828,9 +1827,8 @@ class HomeStatusCard extends HTMLElement {
     }
     if (id === 'lighting') {
       const configured = this._config.context_actions?.lighting?.entities;
-      const entities = Array.isArray(configured) && configured.length
-        ? configured
-        : Object.keys(this._hass?.states || {}).filter(entity => entity.startsWith('light.'));
+      const entities = Array.isArray(configured) ? configured : [];
+      if (!entities.length) return neutral('Not configured');
       const count = entities.filter(entity => this._state(entity)?.state === 'on').length;
       return {
         state: count ? `${count} Light${count === 1 ? '' : 's'} On` : 'All Lights Off',
@@ -1859,7 +1857,9 @@ class HomeStatusCard extends HTMLElement {
         : neutral(state);
     }
     if (id === 'music') {
-      const player = this._state('media_player.spotifyplus');
+      const entity = this._config.context_actions?.music?.entity
+        || this._config.utility_header.music_entity;
+      const player = this._state(entity);
       const value = String(player?.state || 'unavailable').toLowerCase();
       if (value === 'playing') {
         return {
@@ -1890,20 +1890,22 @@ class HomeStatusCard extends HTMLElement {
       };
     }
     if (id === 'sprinklers') {
-      const watering = [];
-      for (let zone = 1; zone <= 6; zone += 1) {
-        const state = this._state(`valve.sprinklers_zone${zone}`);
-        if (['open', 'opening', 'on'].includes(String(state?.state || '').toLowerCase())) watering.push(zone);
-      }
+      const configured = this._config.context_actions?.sprinklers?.entities;
+      const entities = Array.isArray(configured) ? configured : [];
+      if (!entities.length) return neutral('Not configured');
+      const watering = entities.filter(entity =>
+        ['open', 'opening', 'on'].includes(String(this._state(entity)?.state || '').toLowerCase())
+      );
       if (watering.length) {
         return {
-          state: watering.length === 1 ? `Watering Zone ${watering[0]}` : `Watering ${watering.length} Zones`,
+          state: watering.length === 1 ? 'Watering' : `Watering ${watering.length} Zones`,
           icon: 'mdi:sprinkler-variant',
           tone: 'information',
           active: true
         };
       }
-      if (this._state('switch.sprinklers_rain_delay')?.state === 'on') {
+      const rainDelay = this._config.context_actions?.sprinklers?.rain_delay_entity;
+      if (rainDelay && this._state(rainDelay)?.state === 'on') {
         return { state: 'Rain Delay', icon: 'mdi:weather-rainy', tone: 'attention', active: true };
       }
       return neutral('Idle');
@@ -2424,7 +2426,7 @@ class HomeStatusCard extends HTMLElement {
       entity: 'sensor.home_status',
       profile: 'auto',
       layout: 'responsive',
-      time_entity: 'sensor.time',
+      time_entity: '',
       recent_ticker_limit: 6,
       recent_drawer_limit: 10,
       rotation_seconds: 4,
@@ -2535,9 +2537,17 @@ class HomeStatusCardEditor extends HTMLElement {
     return warnings;
   }
 
-  _render() {
-    if (!this.shadowRoot) return;
-    const entity = String(this._value('entity', 'sensor.home_status'));
+ _render() {
+   if (!this.shadowRoot) return;
+    const hadEditor = Boolean(this.shadowRoot.querySelector('.editor'));
+    const openSections = new Set(
+      [...this.shadowRoot.querySelectorAll('details[data-section][open]')]
+        .map(section => section.dataset.section)
+    );
+    const sectionOpen = (section, defaultOpen = false) => hadEditor
+      ? openSections.has(section)
+      : defaultOpen;
+   const entity = String(this._value('entity', 'sensor.home_status'));
     const entityMissing = Boolean(this._hass && !this._hass.states?.[entity]);
     const unknown = this._unknownKeys();
     const validationWarnings = this._validationWarnings();
@@ -2583,7 +2593,7 @@ class HomeStatusCardEditor extends HTMLElement {
       <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration providers and notification rules remain in Settings → Devices & services → Home Status.</small></div>
       ${entityMissing ? `<div class="warning"><strong>Home Status sensor not found</strong><br><span>${this._escape(entity)}</span><small>Finish integration setup or choose an existing Home Status sensor below. The card will show an unavailable message until the entity exists.</small></div>` : ''}
       ${validationWarnings.length ? `<div class="warning"><strong>Check these settings</strong>${validationWarnings.map(message => `<small>${this._escape(message)}</small>`).join('')}</div>` : ''}
-      <details open><summary>Profile & data source</summary><div class="section">
+      <details data-section="profile"${sectionOpen('profile', true) ? ' open' : ''}><summary>Profile & data source</summary><div class="section">
         <label><span>Presentation profile</span><div class="profile-row"><select data-profile-picker>${profiles.map(option => `<option value="${option.value}"${this._value('profile', 'auto') === option.value ? ' selected' : ''}>${option.label}</option>`).join('')}</select><button type="button" data-apply-profile>Apply</button></div><small>Applying a preset changes known presentation settings only. Custom YAML and unknown options are preserved.</small></label>
         ${this._text('entity', 'Home Status sensor', 'sensor.home_status', 'Usually sensor.home_status.', 'home-status-sensors')}
         ${this._select('layout', 'Layout style', [
@@ -2593,7 +2603,7 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'desktop-wide', label: 'Desktop wide' }
         ], 'responsive')}
       </div></details>
-      <details open><summary>Visibility</summary><div class="section">
+      <details data-section="visibility"${sectionOpen('visibility', true) ? ' open' : ''}><summary>Visibility</summary><div class="section">
         ${this._toggle('utility_header.enabled', 'Clock, security & music header', true)}
         ${this._toggle('visibility.hero', 'Main notification area', true)}
         ${this._toggle('visibility.sidebar', 'Side information area', true)}
@@ -2602,7 +2612,7 @@ class HomeStatusCardEditor extends HTMLElement {
         ${this._toggle('visibility.drawer', 'Notification drawer', true, 'Allow the expanded details drawer to open when the card is tapped.')}
         ${this._toggle('show_normal_items', 'Include normal-status items', false)}
       </div></details>
-      <details><summary>Ticker & animation</summary><div class="section">
+      <details data-section="ticker"${sectionOpen('ticker') ? ' open' : ''}><summary>Ticker & animation</summary><div class="section">
         ${this._number('footer.speed', 'Ticker speed', 35, 8, 120, 'Lower values move faster.')}
         ${this._number('recent_ticker_limit', 'Ticker item limit', 6, 1, 30)}
         ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
@@ -2617,21 +2627,21 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'none', label: 'None' }
         ], 'full')}
       </div></details>
-      <details><summary>Media & weather effects</summary><div class="section">
+      <details data-section="media"${sectionOpen('media') ? ' open' : ''}><summary>Media & weather effects</summary><div class="section">
         ${this._toggle('display.media_enabled', 'Show notification media', true)}
         ${this._select('weather_effect', 'Weather effect', weatherEffects, 'auto')}
-        ${this._text('utility_header.music_entity', 'Music player', 'media_player.spotifyplus', 'Entity used by the card music controls.', 'home-status-media')}
-        ${this._text('time_entity', 'Time sensor', 'sensor.time', 'Optional; the browser clock is used when unavailable.', 'home-status-sensors')}
+        ${this._text('utility_header.music_entity', 'Music player', '', 'Optional. Choose the player used by the card music controls.', 'home-status-media')}
+        ${this._text('time_entity', 'Time sensor', '', 'Optional. Leave blank to use the browser clock.', 'home-status-sensors')}
       </div></details>
-      <details><summary>Navigation & controls</summary><div class="section">
-        ${this._text('utility_header.security_entity', 'Security entity', 'alarm_control_panel.alarmo', '', 'home-status-alarms')}
-        ${this._text('utility_header.security_path', 'Security page', '/dashboard-security')}
-        ${this._text('utility_header.music_path', 'Music page', '/dashboard-music')}
-        ${this._text('context_actions.calendar.path', 'Calendar page', '/calendar')}
-        ${this._text('context_actions.cameras.path', 'Cameras page', '/dashboard-cameras')}
-        ${this._text('context_actions.lighting.path', 'Lights page', '/dashboard-lights')}
+      <details data-section="navigation"${sectionOpen('navigation') ? ' open' : ''}><summary>Navigation & controls</summary><div class="section">
+        ${this._text('utility_header.security_entity', 'Security entity', '', 'Optional. Leave blank when no alarm panel is available.', 'home-status-alarms')}
+        ${this._text('utility_header.security_path', 'Security page', '', 'Optional. Navigation remains disabled until configured.')}
+        ${this._text('utility_header.music_path', 'Music page', '', 'Optional. Navigation remains disabled until configured.')}
+        ${this._text('context_actions.calendar.path', 'Calendar page', '', 'Optional. No dashboard path is assumed.')}
+        ${this._text('context_actions.cameras.path', 'Cameras page', '', 'Optional. No dashboard path is assumed.')}
+        ${this._text('context_actions.lighting.path', 'Lights page', '', 'Optional. No dashboard path is assumed.')}
       </div></details>
-      <details><summary>Card sizing</summary><div class="section">
+      <details data-section="sizing"${sectionOpen('sizing') ? ' open' : ''}><summary>Card sizing</summary><div class="section">
         ${this._select('grid_options.columns', 'Grid width', [
           { value: 'full', label: 'Full width' },
           { value: '12', label: '12 columns' },

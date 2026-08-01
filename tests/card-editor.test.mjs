@@ -62,7 +62,50 @@ try {
   }));
   assert.equal(registration.picker, true, 'card is registered in the Lovelace picker');
   assert.equal(registration.stub.entity, 'sensor.home_status');
+  assert.equal(registration.stub.utility_header.enabled, false);
+  assert.equal(registration.stub.utility_header.security_entity, undefined);
+  assert.equal(registration.stub.utility_header.music_entity, undefined);
+ assert.equal(registration.stub.context_actions, undefined);
+  assert.equal(registration.stub.time_entity, '');
   assert.equal(registration.editorTag, 'HOME-STATUS-CARD-EDITOR');
+
+  const cleanDefaults = await page.evaluate(() => {
+    const editor = document.createElement('home-status-card-editor');
+    editor.hass = window.testHass;
+    editor.setConfig(customElements.get('home-status-card').getStubConfig());
+    document.querySelector('#editor-host').replaceChildren(editor);
+    const value = path => editor.shadowRoot.querySelector(`[data-path="${path}"]`)?.value;
+    const card = document.createElement('home-status-card');
+    card.setConfig(customElements.get('home-status-card').getStubConfig());
+    return {
+      securityEntity: value('utility_header.security_entity'),
+      musicEntity: value('utility_header.music_entity'),
+      securityPath: value('utility_header.security_path'),
+      musicPath: value('utility_header.music_path'),
+      calendarPath: value('context_actions.calendar.path'),
+      camerasPath: value('context_actions.cameras.path'),
+      lightsPath: value('context_actions.lighting.path'),
+      timeEntity: value('time_entity'),
+      runtimeSecurityEntity: card._config.utility_header.security_entity,
+      runtimeMusicEntity: card._config.utility_header.music_entity,
+      runtimeTimeEntity: card._config.time_entity,
+      runtimeActions: card._contextActions({}).length
+    };
+  });
+  assert.deepEqual(cleanDefaults, {
+    securityEntity: '',
+    musicEntity: '',
+    securityPath: '',
+    musicPath: '',
+    calendarPath: '',
+    camerasPath: '',
+    lightsPath: '',
+    timeEntity: '',
+    runtimeSecurityEntity: '',
+    runtimeMusicEntity: '',
+    runtimeTimeEntity: '',
+    runtimeActions: 0
+  });
 
   const original = {
     type: 'custom:home-status-card',
@@ -96,10 +139,30 @@ try {
       preserved: editor.shadowRoot.textContent.includes('mystery_option')
     };
   }, edited);
-  assert.equal(reopened.speed, '44');
-  assert.equal(reopened.preserved, true);
+ assert.equal(reopened.speed, '44');
+ assert.equal(reopened.preserved, true);
 
-  const preset = await page.evaluate(async config => {
+  const sectionState = await page.evaluate(async config => {
+    const editor = document.querySelector('home-status-card-editor');
+    editor.setConfig(config);
+    const profile = editor.shadowRoot.querySelector('details[data-section="profile"]');
+    const navigation = editor.shadowRoot.querySelector('details[data-section="navigation"]');
+    profile.open = false;
+    navigation.open = true;
+    const changed = new Promise(resolve => editor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));
+    const input = editor.shadowRoot.querySelector('[data-path="utility_header.security_path"]');
+    input.value = '/security';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    const updated = await changed;
+    editor.setConfig(updated);
+    return {
+      profile: editor.shadowRoot.querySelector('details[data-section="profile"]').open,
+      navigation: editor.shadowRoot.querySelector('details[data-section="navigation"]').open
+    };
+  }, edited);
+  assert.deepEqual(sectionState, { profile: false, navigation: true });
+
+ const preset = await page.evaluate(async config => {
     const editor = document.querySelector('home-status-card-editor');
     editor.setConfig(config);
     const changed = new Promise(resolve => editor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));

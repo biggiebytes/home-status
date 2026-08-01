@@ -72,6 +72,20 @@ def test_hacs_install_contains_the_complete_card_runtime():
 
     card_source = (FRONTEND_PATH / "home-status-card.js").read_text(encoding="utf-8")
     assert "/local/home-status-card" not in card_source
+    for private_default in (
+        "alarm_control_panel.alarmo",
+        "media_player.spotifyplus",
+        "/dashboard-security",
+        "/dashboard-music",
+        "/dashboard-cameras",
+        "/dashboard-lights",
+       "camera.front_door",
+        "sensor.time",
+        "binary_sensor.kitchen_sink_moisture",
+        "binary_sensor.bathroom_sink_moisture",
+        "binary_sensor.laundry_room_moisture",
+    ):
+        assert private_default not in card_source
     assert "if (!customElements.get('home-status-card'))" in card_source
     assert "customElements.define('home-status-card'" in card_source
     assert "customElements.define('home-status-card-editor'" in card_source
