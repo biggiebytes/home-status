@@ -107,6 +107,58 @@ try {
     runtimeActions: 0
   });
 
+  const cardRegressionCoverage = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      grid_options: { columns: 'full', rows: 'auto' }
+    });
+    card.hass = window.testHass;
+    document.querySelector('#card-host').replaceChildren(card);
+
+    const automaticGrid = card.getGridOptions();
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      grid_options: { columns: '8', rows: '6' }
+    });
+    const numericGrid = card.getGridOptions();
+
+    const streamItem = document.createElement('button');
+    streamItem.dataset.streamNavigation = '/details';
+    card.shadowRoot.append(streamItem);
+    let activated = false;
+    card.addEventListener('location-changed', () => {
+      activated = true;
+    });
+    card._bindStreamItems();
+    streamItem.click();
+
+    return {
+      automaticGrid,
+      numericGrid,
+      streamBound: streamItem.dataset.bound,
+      streamActivated: activated,
+      streamPath: window.location.pathname
+    };
+  });
+  assert.deepEqual(cardRegressionCoverage.automaticGrid, {
+    columns: 12,
+    rows: 4,
+    min_columns: 3,
+    min_rows: 2
+  });
+  assert.deepEqual(cardRegressionCoverage.numericGrid, {
+    columns: 8,
+    rows: 6,
+    min_columns: 3,
+    min_rows: 2
+  });
+  assert.equal(cardRegressionCoverage.streamBound, 'true');
+  assert.equal(cardRegressionCoverage.streamActivated, true);
+  assert.equal(cardRegressionCoverage.streamPath, '/details');
+
   const original = {
     type: 'custom:home-status-card',
     entity: 'sensor.home_status',

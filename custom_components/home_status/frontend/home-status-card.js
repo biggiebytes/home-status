@@ -2351,7 +2351,7 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _bindStreamItems() {
-    this.shadowRoot.querySelectorAll('.zone-item, .phone-status-current, .phone-status-ticker-item, [data-footer-group-labels]').forEach(item => {
+    this.shadowRoot.querySelectorAll('.zone-item, .phone-status-current, .phone-status-ticker-item, [data-footer-group-labels], [data-stream-navigation], [data-stream-entity]').forEach(item => {
       if (item.dataset.bound) return;
       item.dataset.bound = 'true';
       item.addEventListener('click', event => {
@@ -2410,8 +2410,15 @@ class HomeStatusCard extends HTMLElement {
   getGridOptions() {
     const configured = homeStatusObject(this._rawConfig?.grid_options);
     return {
-      columns: configured.columns || 'full',
-      rows: configured.rows || 'auto',
+      // Sections expects numeric grid dimensions. Values such as "full" and
+      // "auto" are valid in some card configs but break HA's section layout
+      // renderer when this card is re-created after switching views.
+      columns: Number.isFinite(Number(configured.columns))
+        ? Math.max(3, Math.min(12, Number(configured.columns)))
+        : 12,
+      rows: Number.isFinite(Number(configured.rows))
+        ? Math.max(2, Number(configured.rows))
+        : 4,
       min_columns: 3,
       min_rows: 2
     };

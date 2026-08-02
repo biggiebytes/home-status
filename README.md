@@ -9,32 +9,101 @@
 <h1 align="center">Home Status</h1>
 
 <p align="center">
-  <strong>A modern notification and awareness platform for Home Assistant.</strong>
+  <strong>A Notification Center for Home Assistant.</strong>
 </p>
 
-Home Status transforms Home Assistant into a clean, modern household awareness experience.
+<p align="center">
+  <a href="https://buymeacoffee.com/biggiebytes">
+    <img src="https://img.shields.io/badge/Support-Buy_Me_a_Coffee-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=000000"
+         alt="Support Home Status on Buy Me a Coffee">
+  </a>
+</p>
 
-Instead of building dashboards from dozens of unrelated cards, sensors, and automations, Home Status brings the most important household information together into one unified Notification Center.
+Modern homes have hundreds—even thousands—of sensors. Most dashboards expect you to constantly scan dozens of cards to discover whether something has changed.
 
-Weather, schedules, maintenance, appliances, security awareness, cameras, news, and everyday household activity are automatically presented through a single interface designed for phones, tablets, and desktop dashboards.
+Home Status takes the opposite approach.
 
-For many homes, Home Status can replace numerous individual dashboard cards with one coordinated experience that is easier to understand, easier to maintain, and more enjoyable to use.
+Instead of displaying everything all the time, it continuously monitors your home and surfaces only the information that matters, when it matters.
 
-Designed with sensible defaults and guided setup, Home Status is approachable for new Home Assistant users while still giving experienced users deep customization through visual configuration and optional YAML.
+The goal isn't to display every sensor.
 
-The integration determines **what** information is important.
+**The goal is to keep you informed.**
 
-The Notification Center determines **how** it is presented.
+Home Status becomes the single place where your home quietly keeps you aware of what matters, while your existing dashboards remain dedicated to control and exploration.
 
-The Configuration App determines **how** homeowners personalize the experience.
+![Home Status Tablet Notification Center](docs/screenshots/tablet-notification-center.png)
+
+---
+
+# Why Home Status?
+
+## A different philosophy
+
+Traditional Home Assistant dashboards ask:
+
+> What is every device doing right now?
+
+Home Status asks:
+
+> Is there anything I should know?
+
+Every connected system contributes information:
+
+- 🚪 Doors and windows
+- 🌦️ Weather
+- 🚨 Alerts
+- 🧺 Laundry
+- 🌱 Sprinklers
+- 🗑️ Waste collection
+- ⚡ Energy
+- 🌡️ Climate
+- 📦 Deliveries
+- 🚗 Traffic
+- …and more
+
+Instead of competing for screen space, they share a common Notification Center.
+
+The highest-priority information appears first, while everything else quietly rotates in the background.
+
+## Built for real homes
+
+Home Status was designed for family wall tablets—not just power users.
+
+It focuses on:
+
+- Large, glanceable information
+- Automatic prioritization
+- Natural language instead of entity names
+- Smooth, non-distracting updates
+- Responsive layouts for phones, tablets, and desktops
+
+Your home should keep you informed without demanding your attention.
+
+## Not another dashboard
+
+Home Status doesn't replace your dashboards. It complements them.
+
+Use dedicated dashboards for:
+
+- Cameras
+- Security
+- Energy
+- Music
+- Climate
+
+Use Home Status to know **when** you need to open them.
+
+## Design philosophy
+
+Every part of your home has something useful to say.
+
+Not every sensor needs to speak all the time.
+
+Home Status gives every part of your home a voice—without letting any one thing dominate the conversation.
 
 ---
 
 # Screenshots
-
-## Tablet Notification Center
-
-![Home Status Tablet Notification Center](docs/screenshots/tablet-notification-center.png)
 
 ## Phone Experience
 
@@ -49,27 +118,6 @@ The Configuration App determines **how** homeowners personalize the experience.
 ![Home Status Live Security Awareness](docs/screenshots/live-security-awareness.png)
 
 Additional screenshots of the navigation drawer, weather animations, onboarding, configuration, and timeline are included throughout the documentation.
-
----
-
-# Why Home Status?
-
-Home Status is designed to simplify Home Assistant dashboards.
-
-Instead of maintaining separate cards for weather, calendars, maintenance, laundry, appliance status, security, notifications, cameras, and news, Home Status combines them into one coordinated experience.
-
-Highlights include:
-
-- Modern minimalist design
-- Large, easy-to-read Notification Center
-- Replaces many individual dashboard cards
-- Guided onboarding
-- Visual configuration editor
-- Live security awareness
-- Responsive phone, tablet, and desktop layouts
-- Timeline and ticker
-- Rich weather animations
-- Navigation drawer with quick access to your existing dashboards
 
 ---
 
@@ -342,6 +390,20 @@ Home Status is not intended to replace Home Assistant.
 It is intended to replace the clutter that often develops around it.
 
 Its goal is to become the notification and awareness layer that helps every member of the household understand what's happening at home through a clean, modern, family-friendly experience.
+
+Your home already knows what's happening.
+
+**Home Status makes sure you do, too.**
+
+---
+
+# ☕ Support Home Status
+
+If Home Status has made your Home Assistant dashboard more useful, consider supporting development.
+
+Every contribution helps fund new features, testing, documentation, and long-term maintenance.
+
+**[Buy Me a Coffee](https://buymeacoffee.com/biggiebytes)**
 
 ---
 
