@@ -41,8 +41,8 @@ async def test_recommended_onboarding(hass):
     assert result["data"]["enabled_providers"] == list(SUPPORTED_PROVIDERS)
     assert result["data"]["setup_profile"] == "recommended"
     assert result["data"]["forecast_entity"] == "weather.home"
-    assert result["data"]["source_entities"]["family_calendar"] == ["calendar.family"]
-    assert result["data"]["source_entities"]["laundry_state"] == ["sensor.washer_machine_state"]
+    assert "source_entities" not in result["data"]
+    assert "history_entities" not in result["data"]
 
 
 async def test_recommended_only_asks_when_multiple_weather_entities_exist(hass):
@@ -188,6 +188,14 @@ async def test_experimental_sensor_options_require_explicit_selection(hass):
             "remove_sensor": False,
         },
     )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "review"
+    assert "capability_sensors" not in entry.options
+    assert "Capability Sensors" in result["description_placeholders"]["changes"]
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {}
+    )
     assert result["type"] is FlowResultType.MENU
     assert entry.options["capability_sensors"] == {
         "sensor.office_temperature": {
@@ -198,3 +206,75 @@ async def test_experimental_sensor_options_require_explicit_selection(hass):
             "publish_current": False,
         }
     }
+
+
+async def test_stable_provider_changes_are_discovered_reviewed_and_reversible(hass):
+    hass.states.async_set("weather.home", "sunny")
+    hass.states.async_set(
+        "binary_sensor.front_door",
+        "off",
+        {"device_class": "door", "friendly_name": "Front Door"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "information_sources"}
+    )
+    assert result["step_id"] == "information_sources"
+    assert result["description_placeholders"]["detected"] == "Security, Weather"
+    schema = result["data_schema"].schema
+    history_field = next(key for key in schema if key.schema == "history_entities")
+    assert history_field.default() == []
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "enabled_providers": ["security", "weather"],
+            "history_entities": ["binary_sensor.front_door"],
+        },
+    )
+    assert result["step_id"] == "review"
+    assert entry.options == {}
+    assert "Enabled Providers" in result["description_placeholders"]["changes"]
+    assert "No problems found" in result["description_placeholders"]["warnings"]
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options["enabled_providers"] == ["security", "weather"]
+    assert entry.options["history_entities"] == ["binary_sensor.front_door"]
+
+
+async def test_options_warn_without_blocking_when_all_providers_are_disabled(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "information_sources"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"enabled_providers": [], "history_entities": []}
+    )
+    assert result["step_id"] == "review"
+    assert "Notification Center may be empty" in result["description_placeholders"]["warnings"]
+    assert entry.options == {}
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options["enabled_providers"] == []

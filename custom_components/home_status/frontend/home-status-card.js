@@ -442,7 +442,7 @@ const HOME_STATUS_CARD_PROFILES = {
     hero: { rotate: true },
     sidebar: { rotate: true, interval: 7 },
     footer: { rotate: false, speed: 35 },
-    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   phone: {
@@ -452,7 +452,7 @@ const HOME_STATUS_CARD_PROFILES = {
     hero: { rotate: false },
     sidebar: { rotate: false },
     footer: { rotate: false, speed: 26 },
-    visibility: { hero: false, sidebar: false, footer: false, phone_ticker: true },
+    home_status_visibility: { hero: false, sidebar: false, footer: false, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   tablet: {
@@ -462,7 +462,7 @@ const HOME_STATUS_CARD_PROFILES = {
     hero: { rotate: true },
     sidebar: { rotate: true, interval: 7 },
     footer: { rotate: false, speed: 35 },
-    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   desktop: {
@@ -472,7 +472,7 @@ const HOME_STATUS_CARD_PROFILES = {
     hero: { rotate: true },
     sidebar: { rotate: true, interval: 7 },
     footer: { rotate: false, speed: 40 },
-    visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
     sizing: { max_width: 1800, min_height: 0 }
   }
 };
@@ -481,7 +481,7 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
   'show_active_count', 'show_normal_items', 'pause_on_hover',
   'utility_header', 'quick_status', 'hero', 'sidebar', 'footer',
-  'context_actions', 'display', 'visibility', 'sizing', 'animation',
+  'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
   'weather_effect', 'time_entity', 'recent_ticker_limit',
   'recent_drawer_limit', 'rotation_seconds', 'footer_speed', 'entities', 'mode'
 ]);
@@ -578,7 +578,11 @@ class HomeStatusCard extends HTMLElement {
     const requestedFooterSpeed = Number(
       footerConfig.speed ?? footerConfig.marquee_speed ?? config.footer_speed
     );
-    const visibility = homeStatusObject(config.visibility);
+    const namespacedVisibility = homeStatusObject(config.home_status_visibility);
+    const legacyVisibility = homeStatusObject(config.visibility);
+    const visibility = Object.keys(namespacedVisibility).length
+      ? namespacedVisibility
+      : legacyVisibility;
     const sizing = homeStatusObject(config.sizing);
     const animation = homeStatusObject(config.animation);
     const profile = ['auto', 'phone', 'tablet', 'desktop'].includes(config.profile)
@@ -605,7 +609,7 @@ class HomeStatusCard extends HTMLElement {
         music_entity: utilityHeader.music_entity || '',
         music_path: utilityHeader.music_path || ''
       },
-      visibility: {
+      home_status_visibility: {
         hero: visibility.hero !== false,
         sidebar: visibility.sidebar !== false,
         footer: visibility.footer !== false,
@@ -1145,9 +1149,9 @@ class HomeStatusCard extends HTMLElement {
   _zoneItems(data) {
     // sensor.home_status is authoritative for zone routing. YAML provider
     // lists are deprecated; only presentation settings are consumed here.
-    const left = (this._config.visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
+    const left = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
       .filter(item => !this._isNormalSecurityItem(item));
-    const right = (this._config.visibility.hero && Array.isArray(data.hero) ? data.hero : [])
+    const right = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
       .filter(item => !this._isNormalSecurityItem(item));
     return {
       left,
@@ -1156,7 +1160,7 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _buildFooterStream(data) {
-    if (!this._config.visibility.footer) return [];
+    if (!this._config.home_status_visibility.footer) return [];
     const authoritativeFooter = Array.isArray(data.footer) ? data.footer : [];
     const items = authoritativeFooter
       .filter(item => !this._isRoutineFooterStatus(item))
@@ -1223,7 +1227,7 @@ class HomeStatusCard extends HTMLElement {
         <span class="phone-status-copy"><small>Home Status</small><strong>${this._escape(title)}</strong><span>${this._escape(summary)}</span></span>
         ${actionable ? '<ha-icon class="phone-status-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}
       </button>
-      ${this._config.visibility.phone_ticker ? `<div class="phone-status-ticker" aria-label="${this._escape(tickerText)}">
+      ${this._config.home_status_visibility.phone_ticker ? `<div class="phone-status-ticker" aria-label="${this._escape(tickerText)}">
         <div class="phone-status-ticker-track"><div class="phone-status-ticker-sequence">${phoneTickerSequence}</div><div class="phone-status-ticker-sequence" aria-hidden="true">${phoneTickerSequence}</div></div>
       </div>` : ''}
     </section>`;
@@ -1798,13 +1802,18 @@ class HomeStatusCard extends HTMLElement {
       ['movies', 'mdi:movie-open', 'Movies'],
       ['sprinklers', 'mdi:sprinkler', 'Sprinklers'],
       ['energy', 'mdi:lightning-bolt', 'Energy']
-    ].filter(([id]) => homeStatusObject(this._config.context_actions[id]).type)
-      .map(([id, icon, label]) => ({
+    ].map(([id, icon, label]) => {
+      const configured = homeStatusObject(this._config.context_actions[id]);
+      const config = !configured.type && configured.path
+        ? { ...configured, type: 'navigate' }
+        : configured;
+      return {
         id,
         label,
         ...this._contextActionState(id, icon, data),
-        config: this._config.context_actions[id]
-      }));
+        config
+      };
+    }).filter(action => action.config.type);
   }
 
   _contextActionState(id, defaultIcon, data) {
@@ -2093,7 +2102,7 @@ class HomeStatusCard extends HTMLElement {
     }
     const actions = this._contextActions(data);
     const signature = actions.map(action => `${action.id}|${action.label}`).join('||');
-    if (signature === this._drawerSignature) {
+    if (signature === this._drawerSignature && host.querySelector('.context-bar')) {
       this._updateContextActionStates(actions);
       if (!host.classList.contains('drawer-active')) {
         const panel = host.querySelector('.context-bar');
@@ -2299,10 +2308,10 @@ class HomeStatusCard extends HTMLElement {
       ticker.addEventListener('touchstart', () => { this._rotationPaused = true; }, { passive: true });
       ticker.addEventListener('touchend', () => { this._rotationPaused = false; }, { passive: true });
       ticker.addEventListener('click', () => {
-        if (this._config.visibility.drawer) this._toggleDrawer();
+        if (this._config.home_status_visibility.drawer) this._toggleDrawer();
       });
       ticker.addEventListener('keydown', event => {
-        if (this._config.visibility.drawer && (event.key === 'Enter' || event.key === ' ')) {
+        if (this._config.home_status_visibility.drawer && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
           this._toggleDrawer();
         }
@@ -2324,8 +2333,11 @@ class HomeStatusCard extends HTMLElement {
         this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: button.dataset.entity } }));
       } else {
         const action = button.dataset.contextAction;
-        const config = this._config.context_actions[action]
+        const configured = this._config.context_actions[action]
           || this._contextActions(null).find(candidate => candidate.id === action)?.config;
+        const config = configured && !configured.type && configured.path
+          ? { ...configured, type: 'navigate' }
+          : configured;
         if (!config?.type) {
           this.dispatchEvent(new CustomEvent('home-status-action', { bubbles: true, composed: true, detail: { action, config: config || {} } }));
           return;
@@ -2414,11 +2426,11 @@ class HomeStatusCard extends HTMLElement {
       // "auto" are valid in some card configs but break HA's section layout
       // renderer when this card is re-created after switching views.
       columns: Number.isFinite(Number(configured.columns))
-        ? Math.max(3, Math.min(12, Number(configured.columns)))
-        : 12,
+        ? Math.max(3, Math.min(36, Number(configured.columns)))
+        : 36,
       rows: Number.isFinite(Number(configured.rows))
         ? Math.max(2, Number(configured.rows))
-        : 4,
+        : 7,
       min_columns: 3,
       min_rows: 2
     };
@@ -2441,12 +2453,19 @@ class HomeStatusCard extends HTMLElement {
       hero: { rotate: true },
       sidebar: { rotate: true, interval: 7 },
       footer: { rotate: false, speed: 35 },
-      visibility: {
+      grid_options: { columns: 36, rows: 7 },
+      sizing: { max_width: 0, min_height: 0 },
+      animation: { level: 'full' },
+      display: { media_enabled: true },
+      weather_effect: 'auto',
+      pause_on_hover: true,
+      show_normal_items: false,
+      home_status_visibility: {
         hero: true,
         sidebar: true,
         footer: true,
         phone_ticker: true,
-        drawer: true
+        drawer: false
       }
     };
   }
@@ -2458,6 +2477,7 @@ class HomeStatusCardEditor extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this._config = HomeStatusCard.getStubConfig();
     this._hass = null;
+    this._editorLevel = 'recommended';
   }
 
   set hass(value) {
@@ -2471,6 +2491,12 @@ class HomeStatusCardEditor extends HTMLElement {
 
   setConfig(config) {
     this._config = homeStatusClone(homeStatusObject(config));
+    const legacyVisibility = homeStatusObject(this._config.visibility);
+    const namespacedVisibility = homeStatusObject(this._config.home_status_visibility);
+    if (Object.keys(legacyVisibility).length && !Object.keys(namespacedVisibility).length) {
+      this._config.home_status_visibility = homeStatusClone(legacyVisibility);
+    }
+    if (this._config.visibility === legacyVisibility) delete this._config.visibility;
     if (!this._config.type) this._config.type = 'custom:home-status-card';
     this._render();
   }
@@ -2528,6 +2554,24 @@ class HomeStatusCardEditor extends HTMLElement {
     const warnings = [];
     const entity = String(this._value('entity', 'sensor.home_status'));
     if (!entity.includes('.')) warnings.push('The Home Status sensor must be a valid entity ID.');
+    const profile = String(this._value('profile', 'auto'));
+    const columns = Number(this._value('grid_options.columns', 36));
+    const rows = Number(this._value('grid_options.rows', 7));
+    if (['auto', 'tablet', 'desktop'].includes(profile) && Number.isFinite(columns) && columns < 24) {
+      warnings.push('This width may force the compact phone presentation or clip the full Tablet/Desktop layout. Use 36 columns for the recommended Sections view.');
+    }
+    if (['auto', 'tablet', 'desktop'].includes(profile) && Number.isFinite(rows) && rows < 7) {
+      warnings.push('The full layout needs at least 7 rows. A shorter grid can overlap the next dashboard section.');
+    }
+    const visibility = homeStatusObject(this._value('home_status_visibility', {}));
+    if ([visibility.hero, visibility.sidebar, visibility.footer, visibility.phone_ticker].every(value => value === false)) {
+      warnings.push('Every information area is hidden, so the card may appear empty. Enable at least one presentation area.');
+    }
+    const configuredActions = Object.values(homeStatusObject(this._value('context_actions', {})))
+      .filter(action => homeStatusObject(action).path || homeStatusObject(action).type);
+    if (visibility.drawer !== false && !configuredActions.length) {
+      warnings.push('The drawer is enabled but has no navigation buttons. Add destinations in Advanced, or turn the drawer off.');
+    }
     const paths = [
       'utility_header.security_path',
       'utility_header.music_path',
@@ -2554,6 +2598,7 @@ class HomeStatusCardEditor extends HTMLElement {
     const sectionOpen = (section, defaultOpen = false) => hadEditor
       ? openSections.has(section)
       : defaultOpen;
+    const levelHidden = level => this._editorLevel === level ? '' : ' hidden';
    const entity = String(this._value('entity', 'sensor.home_status'));
     const entityMissing = Boolean(this._hass && !this._hass.states?.[entity]);
     const unknown = this._unknownKeys();
@@ -2595,12 +2640,38 @@ class HomeStatusCardEditor extends HTMLElement {
       .toggle strong { display:block; }
       .profile-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
       button { padding:0 14px; border:0; border-radius:8px; background:var(--primary-color); color:var(--text-primary-color,#fff); font:inherit; font-weight:600; cursor:pointer; }
+      [hidden] { display:none !important; }
+      .level-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; padding:5px; border-radius:12px; background:var(--secondary-background-color); }
+      .level-nav button { min-height:42px; background:transparent; color:var(--secondary-text-color); }
+      .level-nav button.active { background:var(--primary-color); color:var(--text-primary-color,#fff); }
+      .recommended-card { display:grid; gap:12px; padding:16px; border:1px solid color-mix(in srgb,var(--primary-color) 42%,var(--divider-color)); border-radius:14px; background:color-mix(in srgb,var(--primary-color) 7%,var(--card-background-color)); }
+      .recommended-card h3,.recommended-card p { margin:0; }
+      .recommended-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }
+      .recommended-item { display:flex; align-items:center; gap:8px; min-height:34px; color:var(--secondary-text-color); }
+      .recommended-item ha-icon { color:var(--success-color,#43a047); }
+      .recommended-actions { display:flex; justify-content:flex-start; }
+      .recommended-actions button { min-height:42px; }
+      .advanced-note { padding:12px 14px; border-left:4px solid var(--warning-color,#ff9800); border-radius:8px; background:color-mix(in srgb,var(--warning-color,#ff9800) 9%,transparent); }
       @media (max-width:520px) { .section { grid-template-columns:1fr; } }
     </style><div class="editor">
       <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration providers and notification rules remain in Settings → Devices & services → Home Status.</small></div>
       ${entityMissing ? `<div class="warning"><strong>Home Status sensor not found</strong><br><span>${this._escape(entity)}</span><small>Finish integration setup or choose an existing Home Status sensor below. The card will show an unavailable message until the entity exists.</small></div>` : ''}
       ${validationWarnings.length ? `<div class="warning"><strong>Check these settings</strong>${validationWarnings.map(message => `<small>${this._escape(message)}</small>`).join('')}</div>` : ''}
-      <details data-section="profile"${sectionOpen('profile', true) ? ' open' : ''}><summary>Profile & data source</summary><div class="section">
+      <nav class="level-nav" aria-label="Editor level">${['recommended', 'customize', 'advanced'].map(level => `<button type="button" data-editor-level="${level}" class="${this._editorLevel === level ? 'active' : ''}">${level[0].toUpperCase()}${level.slice(1)}</button>`).join('')}</nav>
+      <section class="recommended-card"${levelHidden('recommended')}>
+        <h3>Recommended for most homes</h3>
+        <p>Home Status automatically adapts between phone, tablet, and desktop while using a safe full-width Sections layout.</p>
+        <div class="recommended-list">
+          <span class="recommended-item"><ha-icon icon="mdi:check-circle"></ha-icon>Responsive layout</span>
+          <span class="recommended-item"><ha-icon icon="mdi:check-circle"></ha-icon>36 x 7 Sections size</span>
+          <span class="recommended-item"><ha-icon icon="mdi:check-circle"></ha-icon>Balanced animation</span>
+          <span class="recommended-item"><ha-icon icon="mdi:check-circle"></ha-icon>Recommended visibility</span>
+        </div>
+        <div class="recommended-actions"><button type="button" data-restore-recommended>Restore Recommended</button></div>
+        <small>Restores safe presentation defaults while preserving your sensor, navigation destinations, native Home Assistant visibility rules, and expert YAML options.</small>
+      </section>
+      <div class="advanced-note"${levelHidden('advanced')}><strong>Advanced controls</strong><br><small>These settings can create clipped, empty, or device-specific layouts. Restore Recommended recovers a safe presentation without removing expert YAML.</small></div>
+      <details data-section="profile"${sectionOpen('profile', true) ? ' open' : ''}${levelHidden('advanced')}><summary>Layout & data source</summary><div class="section">
         <label><span>Presentation profile</span><div class="profile-row"><select data-profile-picker>${profiles.map(option => `<option value="${option.value}"${this._value('profile', 'auto') === option.value ? ' selected' : ''}>${option.label}</option>`).join('')}</select><button type="button" data-apply-profile>Apply</button></div><small>Applying a preset changes known presentation settings only. Custom YAML and unknown options are preserved.</small></label>
         ${this._text('entity', 'Home Status sensor', 'sensor.home_status', 'Usually sensor.home_status.', 'home-status-sensors')}
         ${this._select('layout', 'Layout style', [
@@ -2610,19 +2681,17 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'desktop-wide', label: 'Desktop wide' }
         ], 'responsive')}
       </div></details>
-      <details data-section="visibility"${sectionOpen('visibility', true) ? ' open' : ''}><summary>Visibility</summary><div class="section">
+      <details data-section="visibility"${sectionOpen('visibility', true) ? ' open' : ''}${levelHidden('customize')}><summary>What appears</summary><div class="section">
         ${this._toggle('utility_header.enabled', 'Clock, security & music header', true)}
-        ${this._toggle('visibility.hero', 'Main notification area', true)}
-        ${this._toggle('visibility.sidebar', 'Side information area', true)}
-        ${this._toggle('visibility.footer', 'Tablet ticker', true)}
-        ${this._toggle('visibility.phone_ticker', 'Phone ticker', true)}
-        ${this._toggle('visibility.drawer', 'Notification drawer', true, 'Allow the expanded details drawer to open when the card is tapped.')}
+        ${this._toggle('home_status_visibility.hero', 'Main notification area', true)}
+        ${this._toggle('home_status_visibility.sidebar', 'Details panel', true)}
+        ${this._toggle('home_status_visibility.footer', 'Footer ticker', true)}
+        ${this._toggle('home_status_visibility.phone_ticker', 'Phone ticker', true)}
+        ${this._toggle('home_status_visibility.drawer', 'Navigation drawer', false, 'Enable after adding destinations in Advanced. Opens configured navigation buttons when the main card is tapped.')}
         ${this._toggle('show_normal_items', 'Include normal-status items', false)}
       </div></details>
-      <details data-section="ticker"${sectionOpen('ticker') ? ' open' : ''}><summary>Ticker & animation</summary><div class="section">
+      <details data-section="ticker"${sectionOpen('ticker', true) ? ' open' : ''}${levelHidden('customize')}><summary>Motion & timing</summary><div class="section">
         ${this._number('footer.speed', 'Ticker speed', 35, 8, 120, 'Lower values move faster.')}
-        ${this._number('recent_ticker_limit', 'Ticker item limit', 6, 1, 30)}
-        ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
         ${this._number('rotation_seconds', 'Default rotation time', 4, 1, 120)}
         ${this._number('sidebar.interval', 'Side rotation time', 7, 2, 120)}
         ${this._toggle('hero.rotate', 'Rotate main items', true)}
@@ -2634,33 +2703,39 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'none', label: 'None' }
         ], 'full')}
       </div></details>
-      <details data-section="media"${sectionOpen('media') ? ' open' : ''}><summary>Media & weather effects</summary><div class="section">
+      <details data-section="media"${sectionOpen('media') ? ' open' : ''}${levelHidden('customize')}><summary>Media & weather effects</summary><div class="section">
         ${this._toggle('display.media_enabled', 'Show notification media', true)}
         ${this._select('weather_effect', 'Weather effect', weatherEffects, 'auto')}
+      </div></details>
+      <details data-section="limits"${sectionOpen('limits') ? ' open' : ''}${levelHidden('advanced')}><summary>Item limits</summary><div class="section">
+        ${this._number('recent_ticker_limit', 'Ticker item limit', 6, 1, 30)}
+        ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
+      </div></details>
+      <details data-section="entities"${sectionOpen('entities') ? ' open' : ''}${levelHidden('advanced')}><summary>Manual entities</summary><div class="section">
         ${this._text('utility_header.music_entity', 'Music player', '', 'Optional. Choose the player used by the card music controls.', 'home-status-media')}
         ${this._text('time_entity', 'Time sensor', '', 'Optional. Leave blank to use the browser clock.', 'home-status-sensors')}
-      </div></details>
-      <details data-section="navigation"${sectionOpen('navigation') ? ' open' : ''}><summary>Navigation & controls</summary><div class="section">
         ${this._text('utility_header.security_entity', 'Security entity', '', 'Optional. Leave blank when no alarm panel is available.', 'home-status-alarms')}
+      </div></details>
+      <details data-section="navigation"${sectionOpen('navigation') ? ' open' : ''}${levelHidden('advanced')}><summary>Navigation destinations</summary><div class="section">
         ${this._text('utility_header.security_path', 'Security page', '', 'Optional. Navigation remains disabled until configured.')}
         ${this._text('utility_header.music_path', 'Music page', '', 'Optional. Navigation remains disabled until configured.')}
         ${this._text('context_actions.calendar.path', 'Calendar page', '', 'Optional. No dashboard path is assumed.')}
         ${this._text('context_actions.cameras.path', 'Cameras page', '', 'Optional. No dashboard path is assumed.')}
         ${this._text('context_actions.lighting.path', 'Lights page', '', 'Optional. No dashboard path is assumed.')}
       </div></details>
-      <details data-section="sizing"${sectionOpen('sizing') ? ' open' : ''}><summary>Card sizing</summary><div class="section">
+      <details data-section="sizing"${sectionOpen('sizing') ? ' open' : ''}${levelHidden('advanced')}><summary>Card sizing</summary><div class="section">
         ${this._select('grid_options.columns', 'Grid width', [
-          { value: 'full', label: 'Full width' },
-          { value: '12', label: '12 columns' },
-          { value: '6', label: '6 columns' },
-          { value: '3', label: '3 columns' }
-        ], 'full')}
+          { value: '36', label: 'Full width (36 columns)' },
+          { value: '24', label: 'Two-thirds width (24 columns)' },
+          { value: '18', label: 'Half width (18 columns)' },
+          { value: '12', label: 'One-third width (12 columns)' }
+        ], '36')}
         ${this._select('grid_options.rows', 'Grid height', [
-          { value: 'auto', label: 'Automatic' },
-          { value: '2', label: '2 rows' },
-          { value: '4', label: '4 rows' },
-          { value: '6', label: '6 rows' }
-        ], 'auto')}
+          { value: '7', label: 'Recommended (7 rows)' },
+          { value: '10', label: 'Extra drawer room (10 rows)' },
+          { value: '4', label: 'Compact (4 rows)' },
+          { value: '2', label: 'Minimal (2 rows)' }
+        ], '7')}
         ${this._number('sizing.max_width', 'Maximum width (px)', 0, 0, 3000, '0 uses all available width.')}
         ${this._number('sizing.min_height', 'Minimum height (px)', 0, 0, 1600, '0 uses the card’s natural height.')}
         ${this._number('card_size', 'Dashboard card size', 4, 1, 12)}
@@ -2674,6 +2749,17 @@ class HomeStatusCardEditor extends HTMLElement {
   }
 
   _bind() {
+    this.shadowRoot.querySelectorAll('[data-editor-level]').forEach(button => {
+      button.addEventListener('click', () => {
+        this._editorLevel = button.dataset.editorLevel;
+        this._render();
+      });
+    });
+    this.shadowRoot.querySelector('[data-restore-recommended]')?.addEventListener('click', () => {
+      this._config = homeStatusMerge(this._config, HomeStatusCard.getStubConfig());
+      this._emit();
+      this._render();
+    });
     this.shadowRoot.querySelectorAll('[data-path]').forEach(control => {
       control.addEventListener('change', event => {
         const target = event.currentTarget;
@@ -2880,7 +2966,12 @@ const CSS = `
 @keyframes ambient-night { from { transform:translate3d(-2%,0,0); } to { transform:translate3d(2%,1%,0); } }
 @media (prefers-reduced-motion:reduce) { .weather-renderer-layer { transition:none; } }
 @container (max-width:600px) {
-  .utility-header,.ticker,.drawer-host { display:none !important; }
+  :host([data-profile="auto"]) .utility-header,
+  :host([data-profile="auto"]) .ticker,
+  :host([data-profile="auto"]) .drawer-host,
+  :host([data-profile="phone"]) .utility-header,
+  :host([data-profile="phone"]) .ticker,
+  :host([data-profile="phone"]) .drawer-host { display:none !important; }
   .phone-status-host { display:block; }
   .phone-status-shell { overflow:hidden; border:1px solid rgba(255,255,255,.085); border-radius:18px; background:linear-gradient(135deg,rgba(31,37,44,.82),rgba(15,19,24,.78)); box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035); }
   .phone-status-current { display:grid; grid-template-columns:42px minmax(0,1fr) 22px; align-items:center; gap:10px; width:100%; min-height:78px; padding:10px 13px; border:0; background:none; color:inherit; font:inherit; text-align:left; }

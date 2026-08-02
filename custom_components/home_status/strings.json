@@ -51,7 +51,7 @@
         "description": "Choose what Home Status monitors and how it appears.",
         "menu_options": {
           "general": "General",
-          "information_sources": "Information Sources",
+          "information_sources": "Stable Providers",
           "experimental_sensors": "Experimental Sensor Providers",
           "navigation": "Open Pages When Tapped",
           "appearance": "Appearance",
@@ -79,8 +79,8 @@
         }
       },
       "information_sources": {
-        "title": "Information Sources",
-        "description": "Choose what Home Status keeps track of.",
+        "title": "Stable Providers",
+        "description": "Choose stable information providers. Detected now: {detected}. Discovery suggests what is available but does not select or monitor entities for you.",
         "data": {
           "enabled_providers": "Information Sources",
           "history_entities": "Safety Event History"
@@ -89,6 +89,10 @@
           "enabled_providers": "Choose the kinds of information Home Status should keep track of.",
           "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
         }
+      },
+      "review": {
+        "title": "Review changes",
+        "description": "Nothing has been saved yet.\n\nSettings changing:\n{changes}\n\nChecks:\n{warnings}\n\nSubmit to apply these changes, or go back to revise them."
       },
       "experimental_sensors": {
         "title": "Experimental Sensor Providers",

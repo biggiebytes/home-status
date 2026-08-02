@@ -178,15 +178,8 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
 
     def _apply_automatic_discovery(self) -> None:
-        groups = self._discover_environment()
-        if groups:
-            self._setup_options["source_entities"] = groups
-        history_entities = [
-            choice["value"]
-            for choice in HomeStatusOptionsFlow.direct_history_choices(self.hass)
-        ]
-        if history_entities:
-            self._setup_options["history_entities"] = history_entities
+        """Discover available capabilities without selecting entities."""
+        self._discover_environment()
 
     async def _continue_automatic_setup(self):
         if len(self._weather_entities) == 1:
@@ -257,7 +250,7 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(
                     "history_entities",
-                    default=[choice["value"] for choice in history_choices],
+                    default=[],
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=history_choices,
@@ -337,6 +330,11 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         "advanced",
     ]
 
+    def __init__(self) -> None:
+        self._pending_options: dict | None = None
+        self._pending_summary = ""
+        self._pending_warnings = ""
+
     @staticmethod
     def _entity_selection(value):
         """Return an entity ID only when a non-empty selection was supplied."""
@@ -384,6 +382,46 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             menu_options=self.MENU_OPTIONS,
         )
 
+    def _detected_stable_providers(self) -> set[str]:
+        """Return provider capabilities found without selecting any entity."""
+        detected: set[str] = set()
+        for state in self.hass.states.async_all():
+            entity_id = state.entity_id
+            domain = entity_id.split(".", 1)[0]
+            device_class = str(state.attributes.get("device_class") or "").lower()
+            text = f"{entity_id} {state.attributes.get('friendly_name') or ''}".replace(
+                "_", " "
+            ).lower()
+            if domain == "weather":
+                detected.add("weather")
+            if domain == "calendar":
+                detected.add("schedule")
+            if domain in {"alarm_control_panel", "lock"} or (
+                domain == "binary_sensor"
+                and device_class in {
+                    "door", "window", "opening", "garage_door", "moisture",
+                    "smoke", "gas", "carbon_monoxide",
+                }
+            ) or (domain == "cover" and device_class in {"door", "garage", "gate", "window"}):
+                detected.add("security")
+            if domain == "camera":
+                detected.add("cameras")
+            if domain == "person":
+                detected.add("family")
+            if domain == "light":
+                detected.add("lighting")
+            if domain == "climate" or (domain == "sensor" and device_class in {"temperature", "humidity"}):
+                detected.add("climate")
+            if any(term in text for term in ("washer", "dryer", "dishwasher")):
+                detected.add("laundry")
+            if domain == "update" or device_class == "problem" or any(
+                term in text for term in ("filter", "maintenance", "service due", "fault")
+            ):
+                detected.add("maintenance")
+            if domain == "sensor" and any(term in text for term in ("news", "headline", "rss feed")):
+                detected.add("news")
+        return detected
+
     async def _discovered_views(self):
         """Load friendly dashboard/view choices from Lovelace configs."""
         lovelace = self.hass.data.get(LOVELACE_DATA)
@@ -428,11 +466,56 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             if key.startswith("navigation_") and key != "navigation_enabled" and not key.startswith("navigation_custom_") and value not in valid_targets:
                 provider = key.removeprefix("navigation_")
                 options[key] = self._recommended_target(provider, discovered) or "none"
-        self.hass.config_entries.async_update_entry(self.config_entry, options=options)
-        return self._settings_menu()
+        changed = sorted(user_input)
+        self._pending_options = options
+        self._pending_summary = "\n".join(
+            f"â€¢ {key.replace('_', ' ').title()}"
+            for key in changed
+        ) or "â€¢ No setting changes"
+        warnings = []
+        effective = normalize_provider_options({
+            **self.config_entry.data,
+            **options,
+        })
+        enabled = normalize_providers(effective.get("enabled_providers"))
+        if not enabled:
+            warnings.append(
+                "No informational providers are enabled. Direct household state can still work, but the Notification Center may be empty."
+            )
+        detected = self._detected_stable_providers()
+        missing = [
+            CAPABILITY_LABELS.get(provider, provider.title())
+            for provider in enabled
+            if provider not in detected
+        ]
+        if missing:
+            warnings.append(
+                "No compatible entities are currently detected for: " + ", ".join(missing) + ". These providers will remain enabled but may not publish items until configured."
+            )
+        self._pending_warnings = "\n".join(f"â€¢ {warning}" for warning in warnings) or "â€¢ No problems found"
+        return await self.async_step_review()
 
     async def async_step_init(self, user_input=None):
         return self._settings_menu()
+
+    async def async_step_review(self, user_input=None):
+        if self._pending_options is None:
+            return self._settings_menu()
+        if user_input is not None:
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                options=self._pending_options,
+            )
+            self._pending_options = None
+            return self._settings_menu()
+        return self.async_show_form(
+            step_id="review",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "changes": self._pending_summary,
+                "warnings": self._pending_warnings,
+            },
+        )
 
     @staticmethod
     def _recommended_target(provider, choices):
@@ -521,15 +604,28 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             return await self._save_step(user_input)
         current = self._current()
         history_choices = self._direct_history_choices()
-        discovered_history = [choice["value"] for choice in history_choices]
+        detected = self._detected_stable_providers()
+        provider_choices = [
+            {
+                "value": provider,
+                "label": f"{CAPABILITY_LABELS.get(provider, provider.title())}{' â€” Detected' if provider in detected else ''}",
+            }
+            for provider in self.PROVIDERS
+        ]
         return self.async_show_form(step_id="information_sources", data_schema=vol.Schema({
             vol.Optional("enabled_providers", default=current.get("enabled_providers", self.PROVIDERS)): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=self.PROVIDERS, multiple=True, mode=selector.SelectSelectorMode.LIST)
+                selector.SelectSelectorConfig(options=provider_choices, multiple=True, mode=selector.SelectSelectorMode.LIST)
             ),
-            vol.Optional("history_entities", default=current.get("history_entities", discovered_history)): selector.SelectSelector(
+            vol.Optional("history_entities", default=current.get("history_entities", [])): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=history_choices, multiple=True, mode=selector.SelectSelectorMode.LIST)
             ),
-        }))
+        }), description_placeholders={
+            "detected": ", ".join(
+                CAPABILITY_LABELS.get(provider, provider.title())
+                for provider in self.PROVIDERS
+                if provider in detected
+            ) or "None yet",
+        })
 
     def _capability_candidates(self):
         registry = CapabilityProviderRegistry()
@@ -752,17 +848,13 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         existing = overrides.get(selected, {}) if selected else {}
         existing = existing if isinstance(existing, dict) else {}
         if user_input is not None:
-            options = dict(self.config_entry.options)
-            options.update({k: v for k, v in user_input.items() if k not in {"override_entity", "reset_override"}})
             updated = dict(overrides)
             if selected:
                 if user_input.get("reset_override"):
                     updated.pop(selected, None)
                 else:
                     updated[selected] = {k: v for k in ("provider_override", "label_override", "icon_override", "priority_override", "publish_mode") if (v := user_input.get(k)) not in (None, "", "none")}
-            options["entity_overrides"] = updated
-            self.hass.config_entries.async_update_entry(self.config_entry, options=options)
-            return self._settings_menu()
+            return await self._save_step({"entity_overrides": updated})
         return self.async_show_form(step_id="customize", data_schema=vol.Schema({
             vol.Optional("override_entity"): selector.EntitySelector(),
             vol.Optional("provider_override", default=existing.get("provider_override", "none")): selector.SelectSelector(

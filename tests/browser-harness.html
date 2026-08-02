@@ -55,9 +55,8 @@
     const editor = document.createElement('home-status-card-editor');
     editor.hass = window.testHass;
     editor.setConfig({
+      ...customElements.get('home-status-card').getStubConfig(),
       type: 'custom:home-status-card',
-      entity: 'sensor.home_status',
-      profile: 'auto',
       example_unknown_option: { preserved: true }
     });
     document.querySelector('#editor-host').append(editor);
