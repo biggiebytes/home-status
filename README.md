@@ -376,10 +376,13 @@ Optional RSS providers make outbound requests only when explicitly enabled.
 
 - HACS catalog publication
 - Expanded presentation profiles
-- Additional providers
+- Capability-based providers ([staged provider roadmap](docs/provider-roadmap.md))
 - Timeline enhancements
 - Richer media experiences
 - Expanded notification routing
+
+Community testers can share privacy-safe entity metadata using the
+[provider testing guide](docs/provider-testing.md).
 
 ---
 

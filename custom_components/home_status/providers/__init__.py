@@ -8,6 +8,8 @@ from .climate import ClimateProviderMixin
 from .schedule import ScheduleProviderMixin
 from .cameras import CameraProviderMixin
 from .family import FamilyProviderMixin
+from .base import DiscoveredEntity, ProviderEvaluation, ProviderStatus
+from .capability_registry import CapabilityProviderRegistry
 
 __all__ = [
     "WeatherProviderMixin",
@@ -18,4 +20,8 @@ __all__ = [
     "ScheduleProviderMixin",
     "CameraProviderMixin",
     "FamilyProviderMixin",
+    "CapabilityProviderRegistry",
+    "DiscoveredEntity",
+    "ProviderEvaluation",
+    "ProviderStatus",
 ]

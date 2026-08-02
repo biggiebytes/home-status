@@ -48,6 +48,7 @@ from .const import (
     plain_entity_name,
 )
 from .providers import (
+    CapabilityProviderRegistry,
     WeatherProviderMixin,
     SecurityProviderMixin,
     MaintenanceProviderMixin,
@@ -101,6 +102,7 @@ class HomeStatusCoordinator(
         self.options["enabled_providers"] = normalize_providers(self.options.get("enabled_providers"))
         self.entity_ids = list(self.options.get(CONF_ENTITIES, self.options.get(CONF_ENTITY_IDS, [])))
         self.registry = SourceRegistry.from_config(self.options.get("source_entities", self.entity_ids))
+        self.capability_registry = CapabilityProviderRegistry()
         self.store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.timeline_store = Store(
             hass, TIMELINE_STORAGE_VERSION, TIMELINE_STORAGE_KEY
@@ -420,6 +422,7 @@ class HomeStatusCoordinator(
             *self.registry.all(),
             *self._camera_health_entity_ids(),
             *self._presence_entity_ids(),
+            *self.capability_registry.selected_entity_ids(self.options),
         ]))
 
     def _sources(self, role: str) -> tuple[str, ...]:
@@ -848,6 +851,13 @@ class HomeStatusCoordinator(
             self.hass.async_create_task(self.store.async_save({"events": self.history}))
 
     def _build_items(self, entity_id: str, state: State) -> list[dict]:
+        capability_items = self.capability_registry.active_items(
+            state, self.options
+        )
+        if entity_id in self.capability_registry.selected_entity_ids(
+            self.options
+        ):
+            return capability_items
         alerts = state.attributes.get("Alerts") or state.attributes.get("alerts")
         if isinstance(alerts, list):
             return [self._build_weather_item(entity_id, state, alert) for alert in alerts if isinstance(alert, dict)]
@@ -1415,6 +1425,9 @@ class HomeStatusCoordinator(
         # Adapter output is already normalized. Keeping it in the same current
         # stream lets the card decide presentation without source-specific UI.
         current.extend(dict(item) for item in self._source_items)
+        current.extend(
+            self.capability_registry.current_items(self.hass, self.options)
+        )
 
         for entity_id in self._resolved_source_ids():
             if entity_id not in self._resolved_source_ids():

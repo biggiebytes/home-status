@@ -52,6 +52,7 @@
         "menu_options": {
           "general": "General",
           "information_sources": "Information Sources",
+          "experimental_sensors": "Experimental Sensor Providers",
           "navigation": "Open Pages When Tapped",
           "appearance": "Appearance",
           "weather": "Weather & Schedules",
@@ -87,6 +88,33 @@
         "data_description": {
           "enabled_providers": "Choose the kinds of information Home Status should keep track of.",
           "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+        }
+      },
+      "experimental_sensors": {
+        "title": "Experimental Sensor Providers",
+        "description": "Choose a Temperature or Humidity sensor to configure. Discovery only creates this list; Home Status never monitors every matching sensor automatically.",
+        "data": {
+          "capability_entity": "Sensor"
+        },
+        "data_description": {
+          "capability_entity": "Only sensors using standard Home Assistant Temperature or Humidity metadata appear here."
+        }
+      },
+      "experimental_sensor": {
+        "title": "Configure {capability}",
+        "description": "Configure {entity}. Thresholds use {unit}. Leave a threshold empty to disable that direction.",
+        "data": {
+          "low_threshold": "Low threshold",
+          "high_threshold": "High threshold",
+          "priority": "Alert importance",
+          "publish_current": "Also show the current value",
+          "remove_sensor": "Stop monitoring this sensor"
+        },
+        "data_description": {
+          "low_threshold": "Create an event only when the value falls below this limit.",
+          "high_threshold": "Create an event only when the value rises above this limit.",
+          "publish_current": "Off by default. Turn on only if you want the normal reading published continuously.",
+          "remove_sensor": "Removes this sensor from Home Status without changing the Home Assistant entity."
         }
       },
       "navigation": {
@@ -256,7 +284,8 @@
       }
     },
     "error": {
-      "custom_page_must_start_with_slash": "Custom pages must begin with /."
+      "custom_page_must_start_with_slash": "Custom pages must begin with /.",
+      "low_threshold_must_be_less_than_high": "The low threshold must be less than the high threshold."
     }
   },
   "selector": {

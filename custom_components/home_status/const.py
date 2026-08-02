@@ -11,6 +11,7 @@ CONF_ENTITY_IDS = "entity_ids"
 CONF_ENTITIES = "entities"
 CONF_OPTIONS = "options"
 CONF_CONTACT_FOOTER_PILOT = "contact_footer_pilot_enabled"
+CONF_CAPABILITY_SENSORS = "capability_sensors"
 STORAGE_VERSION = 1
 STORAGE_KEY = "home_status_history"
 ALARM_ENTITY = "alarm_control_panel.alarmo"
@@ -241,6 +242,39 @@ def normalize_provider_options(options: dict) -> dict:
     # alerts. Remove the retired elapsed-time warning option.
     normalized.pop("exterior_light_delay_minutes", None)
     normalized.setdefault(CONF_CONTACT_FOOTER_PILOT, False)
+    raw_capability_sensors = normalized.get(CONF_CAPABILITY_SENSORS)
+    capability_sensors = {}
+    if isinstance(raw_capability_sensors, dict):
+        for entity_id, raw_config in raw_capability_sensors.items():
+            if (
+                not isinstance(entity_id, str)
+                or not entity_id.startswith("sensor.")
+                or not isinstance(raw_config, dict)
+            ):
+                continue
+            capability = str(raw_config.get("capability") or "").casefold()
+            if capability not in {"temperature", "humidity"}:
+                continue
+            config = {"capability": capability}
+            for key in ("low_threshold", "high_threshold"):
+                value = raw_config.get(key)
+                if value in (None, ""):
+                    continue
+                try:
+                    config[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            priority = str(raw_config.get("priority") or "attention")
+            config["priority"] = (
+                priority
+                if priority in {"normal", "activity", "attention", "critical"}
+                else "attention"
+            )
+            config["publish_current"] = bool(
+                raw_config.get("publish_current", False)
+            )
+            capability_sensors[entity_id] = config
+    normalized[CONF_CAPABILITY_SENSORS] = capability_sensors
     try:
         contract_version = int(normalized.get("provider_contract_version", 0))
     except (TypeError, ValueError):

@@ -10,6 +10,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_CONTACT_FOOTER_PILOT,
+    CONF_CAPABILITY_SENSORS,
     CONF_ENTITIES,
     CONF_ENTITY_IDS,
     DOMAIN,
@@ -20,6 +21,7 @@ from .const import (
     normalize_providers,
     plain_entity_name,
 )
+from .providers import CapabilityProviderRegistry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -327,6 +329,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
     MENU_OPTIONS = [
         "general",
         "information_sources",
+        "experimental_sensors",
         "weather",
         "appearance",
         "navigation",
@@ -527,6 +530,129 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 selector.SelectSelectorConfig(options=history_choices, multiple=True, mode=selector.SelectSelectorMode.LIST)
             ),
         }))
+
+    def _capability_candidates(self):
+        registry = CapabilityProviderRegistry()
+        candidates = {item.entity_id: item for item in registry.discover(self.hass)}
+        current = registry.configs(self._current())
+        choices = []
+        for entity_id in sorted(set(candidates) | set(current)):
+            item = candidates.get(entity_id)
+            capability = (
+                item.capability if item else current[entity_id]["capability"]
+            )
+            name = item.name if item else plain_entity_name(entity_id)
+            area = f" · {item.area_name}" if item and item.area_name else ""
+            choices.append({
+                "value": entity_id,
+                "label": f"{name} — {capability.title()}{area}",
+            })
+        return choices, candidates, current
+
+    async def async_step_experimental_sensors(self, user_input=None):
+        choices, _, current = self._capability_candidates()
+        if user_input is not None:
+            selected = self._entity_selection(
+                user_input.get("capability_entity")
+            )
+            if selected:
+                self._selected_capability_entity = selected
+                return await self.async_step_experimental_sensor()
+            return self._settings_menu()
+        default = next(iter(current), choices[0]["value"] if choices else None)
+        schema = {}
+        field = vol.Optional("capability_entity")
+        if default:
+            field = vol.Optional("capability_entity", default=default)
+        schema[field] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=choices,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+        return self.async_show_form(
+            step_id="experimental_sensors",
+            data_schema=vol.Schema(schema),
+        )
+
+    async def async_step_experimental_sensor(self, user_input=None):
+        entity_id = getattr(self, "_selected_capability_entity", None)
+        choices, candidates, current = self._capability_candidates()
+        if not entity_id or entity_id not in {choice["value"] for choice in choices}:
+            return await self.async_step_experimental_sensors()
+        existing = current.get(entity_id, {})
+        candidate = candidates.get(entity_id)
+        capability = (
+            candidate.capability if candidate else existing.get("capability")
+        )
+        errors = {}
+        if user_input is not None:
+            low = user_input.get("low_threshold")
+            high = user_input.get("high_threshold")
+            if low is not None and high is not None and float(low) >= float(high):
+                errors["base"] = "low_threshold_must_be_less_than_high"
+            else:
+                configured = dict(current)
+                if user_input.get("remove_sensor"):
+                    configured.pop(entity_id, None)
+                else:
+                    sensor_config = {
+                        "capability": capability,
+                        "priority": user_input.get("priority", "attention"),
+                        "publish_current": user_input.get(
+                            "publish_current", False
+                        ),
+                    }
+                    if low is not None:
+                        sensor_config["low_threshold"] = low
+                    if high is not None:
+                        sensor_config["high_threshold"] = high
+                    configured[entity_id] = sensor_config
+                self._selected_capability_entity = None
+                return await self._save_step({
+                    CONF_CAPABILITY_SENSORS: configured
+                })
+        schema = {}
+        low_field = vol.Optional("low_threshold")
+        high_field = vol.Optional("high_threshold")
+        if "low_threshold" in existing:
+            low_field = vol.Optional(
+                "low_threshold", default=existing["low_threshold"]
+            )
+        if "high_threshold" in existing:
+            high_field = vol.Optional(
+                "high_threshold", default=existing["high_threshold"]
+            )
+        number_selector = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                mode=selector.NumberSelectorMode.BOX
+            )
+        )
+        schema[low_field] = number_selector
+        schema[high_field] = number_selector
+        schema[vol.Optional(
+            "priority", default=existing.get("priority", "attention")
+        )] = selector.SelectSelector(selector.SelectSelectorConfig(
+            options=["normal", "activity", "attention", "critical"],
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        ))
+        schema[vol.Optional(
+            "publish_current",
+            default=existing.get("publish_current", False),
+        )] = selector.BooleanSelector()
+        schema[vol.Optional("remove_sensor", default=False)] = (
+            selector.BooleanSelector()
+        )
+        return self.async_show_form(
+            step_id="experimental_sensor",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={
+                "entity": entity_id,
+                "capability": str(capability).title(),
+                "unit": candidate.unit if candidate and candidate.unit else "the entity's native unit",
+            },
+        )
 
     async def async_step_appearance(self, user_input=None):
         if user_input is not None:

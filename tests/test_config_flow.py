@@ -2,6 +2,7 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.home_status.const import DOMAIN, SUPPORTED_PROVIDERS
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 async def test_recommended_onboarding(hass):
@@ -136,9 +137,64 @@ async def test_custom_onboarding_and_permanent_settings_menu(hass):
     assert options["menu_options"] == [
         "general",
         "information_sources",
+        "experimental_sensors",
         "weather",
         "appearance",
         "navigation",
         "customize",
         "advanced",
     ]
+
+
+async def test_experimental_sensor_options_require_explicit_selection(hass):
+    hass.states.async_set(
+        "sensor.office_temperature",
+        "72",
+        {
+            "device_class": "temperature",
+            "state_class": "measurement",
+            "unit_of_measurement": "°F",
+            "friendly_name": "Office Temperature",
+        },
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_sensors"}
+    )
+    assert result["step_id"] == "experimental_sensors"
+    assert "capability_sensors" not in entry.options
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"capability_entity": "sensor.office_temperature"},
+    )
+    assert result["step_id"] == "experimental_sensor"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "low_threshold": 60,
+            "high_threshold": 80,
+            "priority": "attention",
+            "publish_current": False,
+            "remove_sensor": False,
+        },
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options["capability_sensors"] == {
+        "sensor.office_temperature": {
+            "capability": "temperature",
+            "low_threshold": 60.0,
+            "high_threshold": 80.0,
+            "priority": "attention",
+            "publish_current": False,
+        }
+    }
