@@ -162,6 +162,107 @@ try {
   assert.equal(cardRegressionCoverage.streamActivated, true);
   assert.equal(cardRegressionCoverage.streamPath, '/details');
 
+  const adaptiveZonePlacement = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true }
+    });
+    const compactHousehold = {
+      id: 'presence',
+      title: 'Everyone Away',
+      summary: 'Tester: Away',
+      provider: 'presence',
+      priority: 'normal'
+    };
+    const verboseNews = {
+      id: 'nhc-news',
+      title: 'Atlantic Tropical Weather Outlook',
+      summary: 'Tropical Weather Outlook from the National Hurricane Center with a detailed regional forecast and conditions.',
+      provider: 'news',
+      priority: 'normal'
+    };
+    const urgentHousehold = {
+      id: 'leak',
+      title: 'Water Leak Detected',
+      summary: 'Kitchen sink moisture sensor is wet',
+      provider: 'maintenance',
+      priority: 'critical'
+    };
+    const flexible = card._zoneItems({ sidebar: [compactHousehold], hero: [verboseNews] });
+    const priorityFirst = card._zoneItems({ sidebar: [compactHousehold], hero: [verboseNews, urgentHousehold] });
+    const single = card._zoneItems({ sidebar: [], hero: [verboseNews] });
+    return {
+      flexibleLeft: flexible.left.map(item => item.id),
+      flexibleRight: flexible.right.map(item => item.id),
+      priorityLeft: priorityFirst.left.map(item => item.id),
+      singleLeft: single.left.map(item => item.id),
+      singleRight: single.right.map(item => item.id)
+    };
+  });
+  assert.deepEqual(adaptiveZonePlacement.flexibleLeft, ['nhc-news']);
+  assert.deepEqual(adaptiveZonePlacement.flexibleRight, ['presence']);
+  assert.deepEqual(adaptiveZonePlacement.priorityLeft.slice(0, 2), ['leak', 'nhc-news']);
+  assert.deepEqual(adaptiveZonePlacement.singleLeft, ['nhc-news']);
+  assert.deepEqual(adaptiveZonePlacement.singleRight, []);
+
+  const glanceableWeather = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    const markup = card._zoneMarkup({
+      id: 'current:weather:weather.home',
+      title: 'Weather',
+      summary: '75° • Partlycloudy',
+      provider: 'weather',
+      icon: 'mdi:weather-partly-cloudy'
+    }, '');
+    return {
+      markup,
+      friendlyKnown: card._friendlyWeatherCondition('partlycloudy'),
+      friendlyFallback: card._friendlyWeatherCondition('mostly-sunny')
+    };
+  });
+  assert.match(glanceableWeather.markup, /is-brief is-current-weather/);
+  assert.match(glanceableWeather.markup, />75°<\/span>/);
+  assert.match(glanceableWeather.markup, />Partly cloudy<\/span>/);
+  assert.doesNotMatch(glanceableWeather.markup, />Weather<\/span>/);
+  assert.equal(glanceableWeather.friendlyKnown, 'Partly cloudy');
+  assert.equal(glanceableWeather.friendlyFallback, 'Mostly sunny');
+
+  const footerWeather = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    const item = {
+      id: 'current:weather:weather.home',
+      title: 'Weather',
+      summary: '75° • Partlycloudy',
+      provider: 'weather',
+      icon: 'mdi:weather-partly-cloudy'
+    };
+    const display = card._formatFooterItem(item);
+    card.shadowRoot.innerHTML = '<div class="bottom-stream"></div>';
+    card._renderFooterStream([item]);
+    return { display, markup: card.shadowRoot.innerHTML };
+  });
+  assert.equal(footerWeather.display.title, '75°');
+  assert.equal(footerWeather.display.summary, 'Partly cloudy');
+  assert.equal(footerWeather.display.currentWeather, true);
+  assert.match(footerWeather.markup, /footer-marquee-item is-current-weather/);
+  assert.doesNotMatch(footerWeather.markup, />Weather<\/strong>/);
+
+  const weatherIconSizing = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    document.querySelector('#card-host').replaceChildren(card);
+    const styles = card._styles();
+    return {
+      large: styles.includes('--mdc-icon-size:42px'),
+      footer: styles.includes('--mdc-icon-size:34px')
+    };
+  });
+  assert.deepEqual(weatherIconSizing, { large: true, footer: true });
+
   const original = {
     type: 'custom:home-status-card',
     entity: 'sensor.home_status',

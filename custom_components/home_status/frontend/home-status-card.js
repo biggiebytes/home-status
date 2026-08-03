@@ -1152,16 +1152,58 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _zoneItems(data) {
-    // sensor.home_status is authoritative for zone routing. YAML provider
-    // lists are deprecated; only presentation settings are consumed here.
-    const left = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
+    // sensor.home_status remains authoritative for which items are available.
+    // The card chooses presentation slots so verbose or urgent content is not
+    // trapped in the narrower right-hand panel by its provider category.
+    const sidebar = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
       .filter(item => !this._isNormalSecurityItem(item));
-    const right = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
+    const hero = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
       .filter(item => !this._isNormalSecurityItem(item));
-    return {
-      left,
-      right,
-    };
+    const seen = new Set();
+    const items = [...sidebar, ...hero].filter(item => {
+      const key = item?.id || item?.entity_id || `${this._label(item)}|${item?.summary || item?.secondary || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (items.length < 2) return { left: items, right: [] };
+
+    const ranked = items
+      .map((item, index) => ({ item, index, score: this._wideSlotScore(item) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+    const left = ranked.filter(entry => entry.score >= 90).map(entry => entry.item);
+    const right = ranked.filter(entry => entry.score < 90).map(entry => entry.item);
+
+    // Preserve the familiar two-panel balance when all content is compact.
+    if (!left.length) {
+      const preferred = sidebar[0] || ranked[0].item;
+      left.push(preferred);
+      const preferredKey = preferred?.id || preferred?.entity_id || preferred;
+      const rightIndex = right.findIndex(item => (item?.id || item?.entity_id || item) === preferredKey);
+      if (rightIndex >= 0) right.splice(rightIndex, 1);
+    }
+    // If everything qualifies for the wide slot, keep the shortest routine
+    // item as supporting context unless every item is attention-worthy.
+    if (!right.length && left.length > 1) {
+      const candidate = [...left]
+        .reverse()
+        .find(item => !['critical', 'attention'].includes(String(item?.priority || 'normal').toLowerCase()));
+      if (candidate) {
+        left.splice(left.indexOf(candidate), 1);
+        right.push(candidate);
+      }
+    }
+    return { left, right };
+  }
+
+  _wideSlotScore(item) {
+    const priority = String(item?.priority || 'normal').toLowerCase();
+    const priorityScore = { critical: 1000, attention: 700, activity: 120, normal: 0 }[priority] || 0;
+    const title = this._label(item);
+    const summary = String(item?.summary || item?.secondary || item?.detail || '');
+    const textScore = Math.min(180, title.length + summary.length);
+    const mediaScore = this._heroMedia(item) ? 120 : 0;
+    return priorityScore + textScore + mediaScore;
   }
 
   _buildFooterStream(data) {
@@ -1349,16 +1391,20 @@ class HomeStatusCard extends HTMLElement {
     let title = this._label(item);
     let summary = item.summary || item.secondary || '';
     let icon = item.icon || 'mdi:information-outline';
+    const currentWeather = provider === 'weather' && id.startsWith('current:weather:');
+    if (currentWeather) {
+      const weatherSummary = String(summary).replace(/\s*(?:\u2022|\u00e2\u20ac\u00a2)\s*\d+\s*(?:min|hr|day)s?\s+ago\s*$/i, '');
+      const parts = weatherSummary.split(/\s*(?:\u2022|\u00e2\u20ac\u00a2|\|)\s*/, 2);
+      title = parts[0] || title;
+      summary = this._friendlyWeatherCondition(parts[1] || item.state || '');
+      icon = 'mdi:thermometer';
+    }
     const relativeStamp = item.source === 'direct_history'
       || item.source === 'recent'
       || String(item.source || '').endsWith('_cleared')
       ? item.resolved_at || item.created_at || item.timestamp || ''
       : '';
-    if (provider === 'weather' && id.startsWith('current:weather:')) {
-      title = 'Weather';
-      summary = String(summary).replace(/\s*•\s*\d+\s*(?:min|hr|day)s?\s+ago\s*$/i, '');
-      icon = 'mdi:thermometer';
-    } else if (provider === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
+    if (provider === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
       title = String(title).replace(/^NT WEATHER\s*/i, '').replace(/\s+/g, ' ').trim();
       summary = item.expires_at ? `Until ${this._formatDateTime(item.expires_at)}` : '';
       icon = 'mdi:weather-alert';
@@ -1386,7 +1432,8 @@ class HomeStatusCard extends HTMLElement {
       title: String(title).replace(/\s+/g, ' ').trim().slice(0, 60),
       summary: String(summary).replace(/\s+/g, ' ').trim().slice(0, 48),
       icon,
-      relativeStamp
+      relativeStamp,
+      currentWeather
     };
   }
 
@@ -1430,7 +1477,7 @@ class HomeStatusCard extends HTMLElement {
       const groupedLabels = Array.isArray(item.grouped_contact_labels)
         ? ` data-footer-group-labels="${this._escape(JSON.stringify(item.grouped_contact_labels))}" data-footer-group-title="${this._escape(display.title)}"`
         : '';
-      return `<span class="footer-marquee-item"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupedLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
+      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupedLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
     }).join('');
     const sequence = items.length ? renderSequence() : '';
     const duplicateSequence = sequence;
@@ -1478,12 +1525,43 @@ class HomeStatusCard extends HTMLElement {
 
   _zoneMarkup(item, emptyLabel) {
     if (!item) return `<span class="zone-item zone-empty">${this._escape(emptyLabel)}</span>`;
-    const title = this._label(item);
-    const summary = item.summary || item.secondary || item.detail || '';
+    let title = this._label(item);
+    let summary = item.summary || item.secondary || item.detail || '';
+    const provider = this._providerFor(item);
+    const currentWeather = provider === 'weather'
+      && (/^current:weather:/i.test(String(item.id || '')) || /^weather$/i.test(title));
+    if (currentWeather) {
+      const parts = String(summary).split(/\s*(?:\u2022|\u00e2\u20ac\u00a2|\|)\s*/, 2);
+      if (parts[0]) title = parts[0];
+      summary = this._friendlyWeatherCondition(parts[1] || item.state || '');
+    }
+    const brief = `${title} ${summary}`.trim().length <= 42;
     const media = this._heroMedia(item);
     const mediaMarkup = media ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true"><span class="hero-media-overlay"></span></span>` : '';
     const content = `<span class="hero-content"><span class="zone-title"><ha-icon class="icon-tone-${this._iconTone(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
-    return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
+    return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''}${brief ? ' is-brief' : ''}${currentWeather ? ' is-current-weather' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
+  }
+
+  _friendlyWeatherCondition(value) {
+    const condition = String(value || '').trim().toLowerCase();
+    const labels = {
+      'clear-night': 'Clear night',
+      cloudy: 'Cloudy',
+      fog: 'Foggy',
+      hail: 'Hail',
+      lightning: 'Lightning',
+      'lightning-rainy': 'Thunderstorms',
+      partlycloudy: 'Partly cloudy',
+      pouring: 'Heavy rain',
+      rainy: 'Rainy',
+      snowy: 'Snowy',
+      'snowy-rainy': 'Wintry mix',
+      sunny: 'Sunny',
+      windy: 'Windy',
+      'windy-variant': 'Windy',
+      exceptional: 'Exceptional weather'
+    };
+    return labels[condition] || condition.replace(/[-_]+/g, ' ').replace(/^./, character => character.toUpperCase());
   }
 
   _renderZone(zone, item, emptyLabel, animate = true) {
@@ -2928,6 +3006,8 @@ const CSS = `
 .hero-zone-item.has-hero-media { display:grid; grid-template-columns:minmax(0,45%) minmax(0,1fr); gap:16px; align-items:center; width:100%; height:140px; overflow:hidden; } .hero-zone-item.has-hero-media .hero-media-wrap { position:relative; inset:auto; width:100%; height:100%; min-height:0; border-radius:14px; } .hero-zone-item.has-hero-media .hero-media-overlay { display:none; } .hero-zone-item.has-hero-media .hero-content { padding:0; min-width:0; } .primary-zone:has(.has-hero-media) { height:140px; }
  .icon-tone-critical { color:#ef5350; } .icon-tone-attention { color:#ff9800; } .icon-tone-success { color:#66bb6a; } .icon-tone-information { color:#42a5f5; } .icon-tone-media { color:#ab47bc; } .icon-tone-neutral { color:rgba(255,255,255,.72); }
  .zone-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; cursor:pointer; opacity:1; transition:opacity 180ms ease, transform 180ms ease; } .zone-changing .zone-item { opacity:0; transform:translateY(4px); } .zone-title { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; font-weight:650; line-height:1.2; white-space:nowrap; } .zone-title span { overflow:hidden; text-overflow:ellipsis; } .zone-title ha-icon { flex:0 0 auto; width:22px; height:22px; } .zone-summary { display:-webkit-box; margin-top:7px; overflow:hidden; color:rgba(255,255,255,.76); line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; } .zone-empty { color:var(--secondary-text-color); font-size:13px; }
+.secondary-zone .zone-item.is-brief .zone-title { font-size:28px !important; } .secondary-zone .zone-item.is-brief .zone-summary { font-size:18px !important; } .secondary-zone .zone-item.is-brief .zone-title ha-icon { width:30px !important; height:30px !important; }
+.secondary-zone .zone-item.is-current-weather .zone-title { font-size:52px !important; font-weight:740; line-height:1.05; } .secondary-zone .zone-item.is-current-weather .zone-summary { margin-top:6px; font-size:25px !important; line-height:1.2; color:rgba(255,255,255,.84); } .secondary-zone .zone-item.is-current-weather .zone-title ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px; }
 .ticker-zone { display:flex; align-items:center; min-width:0; height:104px; }
 .secondary-zone { padding-left:24px; border-left:1px solid rgba(255,255,255,.1); }
 .secondary-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; height:104px; }
@@ -2938,6 +3018,7 @@ const CSS = `
  .primary-zone { padding-right:4px; } .primary-zone .zone-title { font-size:25px; } .primary-zone .zone-summary { font-size:15px; } .secondary-zone .zone-title { font-size:18px; } .secondary-zone .zone-summary { font-size:13px; } .bottom-stream { flex:1 1 auto; min-width:0; overflow:hidden; } .footer-marquee { width:100%; overflow:hidden; } .footer-marquee-track { display:flex; width:max-content; animation:footer-marquee var(--marquee-duration,30s) linear infinite; will-change:transform; } .footer-sequence { display:flex; flex:0 0 auto; align-items:center; } .footer-marquee-item { display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:13px; text-transform:uppercase; letter-spacing:.2px; } .footer-marquee-item ha-icon { width:17px; height:17px; } .footer-marquee-item small { margin-left:2px; color:var(--secondary-text-color); font-size:11px; text-transform:none; letter-spacing:0; } .footer-marquee-separator { margin:0 16px; color:var(--secondary-text-color); font-size:12px; } @keyframes footer-marquee { from { transform:translate3d(0,0,0); } to { transform:translate3d(calc(-1 * var(--marquee-distance)),0,0); } }
 .ticker-primary { overflow:hidden; font-size:25px; font-weight:650; line-height:30px; text-overflow:ellipsis; white-space:nowrap; } .ticker-detail { display:block; max-width:100%; margin-top:8px; overflow:hidden; color:rgba(255,255,255,.82); font-size:15px; line-height:20px; text-overflow:ellipsis; white-space:nowrap; } .ticker-secondary { overflow:hidden; margin-top:7px; color:var(--secondary-text-color); font-size:13px; line-height:17px; text-overflow:ellipsis; white-space:nowrap; }
  .ticker-footer { min-height:68px; box-sizing:border-box; } .footer-marquee { height:68px; } .footer-marquee-track { height:100%; align-items:stretch; } .footer-sequence { height:100%; } .footer-marquee-item { position:relative; display:inline-flex; align-items:center; min-width:max-content; height:100%; padding:0 28px; margin-right:0; box-sizing:border-box; font-size:inherit; text-transform:none; letter-spacing:0; } .footer-marquee-item + .footer-marquee-item::before,.footer-sequence + .footer-sequence .footer-marquee-item:first-child::before { content:""; position:absolute; left:0; width:1px; height:38px; background:rgba(255,255,255,.25); } .footer-marquee-item > [data-stream-id] { display:flex; align-items:center; gap:10px; min-width:0; } .footer-marquee-item ha-icon { flex:0 0 auto; width:27px; height:27px; } .footer-marquee-copy { display:flex; flex-direction:column; justify-content:center; min-width:0; line-height:1.15; white-space:nowrap; } .footer-marquee-copy strong { color:rgba(255,255,255,.94); font-size:16px; font-weight:600; } .footer-marquee-copy small { display:block; margin-top:3px; color:var(--secondary-text-color); font-size:13px; opacity:.7; text-transform:none; letter-spacing:0; }
+.footer-marquee-item.is-current-weather ha-icon { width:34px; height:34px; --mdc-icon-size:34px; } .footer-marquee-item.is-current-weather .footer-marquee-copy strong { font-size:25px; font-weight:720; line-height:1; } .footer-marquee-item.is-current-weather .footer-marquee-copy small { margin-top:4px; font-size:17px; line-height:1; opacity:.82; }
 .footer-marquee.group-details-open .footer-marquee-track { animation-play-state:paused; } [data-footer-group-labels] { cursor:pointer; } [data-footer-group-labels].footer-group-expanded .footer-marquee-copy strong { color:#90caf9; }
 .drawer { margin-top:0; max-height:min(58vh,560px); overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 24px 24px; background:linear-gradient(145deg,rgba(31,37,44,.94),rgba(14,18,23,.94)); }
 .drawer-host { overflow:hidden; }
