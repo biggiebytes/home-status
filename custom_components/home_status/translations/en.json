@@ -50,8 +50,8 @@
         "title": "Home Status settings",
         "description": "Choose what Home Status monitors and how it appears.",
         "menu_options": {
-          "general": "General",
-          "information_sources": "Stable Providers",
+          "general": "Updates & History",
+          "information_sources": "Information Sources",
           "news_sources": "News Sources",
           "experimental_sensors": "Experimental Sensor Providers",
           "navigation": "Open Pages When Tapped",
@@ -62,33 +62,33 @@
         }
       },
       "general": {
-        "title": "General",
-        "description": "Control timing, history, and item limits.",
+        "title": "Updates & History",
+        "description": "Choose how often Home Status checks for updates and how much information it keeps available.",
         "data": {
-          "refresh_interval": "Update Frequency",
-          "history_retention_days": "History Length",
-          "max_recent_items": "Recent Events",
-          "max_upcoming_items": "Upcoming Events",
-          "max_insight_items": "Smart Insights"
+          "refresh_interval": "Check Every (seconds)",
+          "history_retention_days": "Keep Completed Events (days)",
+          "max_recent_items": "Recent Events to Keep",
+          "max_upcoming_items": "Upcoming Items to Show",
+          "max_insight_items": "Insights to Keep"
         },
         "data_description": {
-          "refresh_interval": "How often Home Status checks for new information.",
-          "history_retention_days": "How many days completed events are kept.",
-          "max_recent_items": "Maximum number of recent notifications to remember.",
-          "max_upcoming_items": "Maximum number of upcoming reminders to display.",
-          "max_insight_items": "Maximum number of insights Home Status keeps available."
+          "refresh_interval": "Time between update checks. Recommended: 60 seconds.",
+          "history_retention_days": "How long resolved alerts and completed events remain in recent history.",
+          "max_recent_items": "Maximum completed events available to the card and timeline.",
+          "max_upcoming_items": "Maximum upcoming schedules and reminders available to the card.",
+          "max_insight_items": "Maximum patterns and helpful observations Home Status keeps available."
         }
       },
       "information_sources": {
-        "title": "Stable Providers",
-        "description": "Choose stable information providers. Detected now: {detected}. Discovery suggests what is available but does not select or monitor entities for you.",
+        "title": "Information Sources",
+        "description": "Choose what Home Status may show. Checked sources are enabled. Ready means compatible information was found. Enabled sources without Ready stay quiet until configured. Ready now: {detected}.",
         "data": {
-          "enabled_providers": "Information Sources",
-          "history_entities": "Safety Event History"
+          "enabled_providers": "Sources to Enable",
+          "history_entities": "Events to Remember"
         },
         "data_description": {
-          "enabled_providers": "Choose the kinds of information Home Status should keep track of.",
-          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+          "enabled_providers": "Turn each type of household information on or off. Home Status does not monitor every discovered entity automatically.",
+          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should appear in recent history."
         }
       },
       "news_sources": {

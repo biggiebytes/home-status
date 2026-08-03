@@ -41,19 +41,23 @@ ESSENTIAL_PROVIDERS = {
 }
 CAPABILITY_LABELS = {
     "weather": "Weather",
-    "calendar": "Calendar",
+    "calendar": "Calendars & Schedules",
+    "schedule": "Calendars & Schedules",
     "laundry": "Laundry",
-    "waste": "Waste",
-    "security": "Security",
+    "waste": "Trash & Recycling",
+    "security": "Security & Safety",
     "sprinklers": "Sprinklers",
     "maintenance": "Maintenance",
-    "climate": "Climate",
-    "cameras": "Cameras",
-    "family": "Family",
+    "climate": "Climate & Comfort",
+    "cameras": "Camera Activity",
+    "family": "Family Presence",
     "lighting": "Lighting",
     "news": "News",
 }
-CAPABILITY_ORDER = tuple(CAPABILITY_LABELS)
+CAPABILITY_ORDER = tuple(
+    capability for capability in CAPABILITY_LABELS
+    if capability != "schedule"
+)
 
 
 class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -623,7 +627,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         provider_choices = [
             {
                 "value": provider,
-                "label": f"{CAPABILITY_LABELS.get(provider, provider.title())}{' — Detected' if provider in detected else ''}",
+                "label": f"{CAPABILITY_LABELS.get(provider, provider.title())}{' — Ready' if provider in detected else ''}",
             }
             for provider in self.PROVIDERS
         ]

@@ -12,6 +12,11 @@ class NumericThresholdProvider(CapabilityProvider):
     """Interpret low/high thresholds in the entity's native unit."""
 
     @staticmethod
+    def _display_number(value: float) -> str:
+        """Format household readings without sensor-level noise."""
+        return f"{value:.1f}".rstrip("0").rstrip(".")
+
+    @staticmethod
     def _threshold(config: dict[str, Any], key: str) -> float | None:
         value = config.get(key)
         if value in (None, ""):
@@ -42,7 +47,9 @@ class NumericThresholdProvider(CapabilityProvider):
             return None, reason
         entity_id = normalized["entity_id"]
         unit = normalized["unit"]
-        name = normalized["name"]
+        reading = self._display_number(value)
+        limit = self._display_number(threshold)
+        relation = "Above" if direction == "high" else "Below"
         now = datetime.now(timezone.utc)
         return {
             "id": f"capability:{self.capability}:{entity_id}:{direction}",
@@ -51,7 +58,7 @@ class NumericThresholdProvider(CapabilityProvider):
             "provider": self.provider,
             "category": self.provider,
             "message": f"{direction.title()} {self.capability.title()}",
-            "detail": f"{name} is {value:g}{unit}; configured {direction} threshold is {threshold:g}{unit}",
+            "detail": f"{reading}{unit} — {relation} {limit}{unit}",
             "icon": self.icon,
             "priority": str(config.get("priority") or "attention"),
             "active": True,

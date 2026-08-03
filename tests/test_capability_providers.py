@@ -77,6 +77,42 @@ async def test_threshold_normalization_stable_ids_and_clearing(hass):
     ) == []
 
 
+async def test_threshold_alerts_use_homeowner_friendly_names_and_values(hass):
+    entity_id = "sensor.outdoor_temperature"
+    hass.states.async_set(entity_id, "85.226", {
+        "device_class": "temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "°F",
+        "friendly_name": "Outdoor Temperature",
+    })
+
+    item = CapabilityProviderRegistry().active_items(
+        hass.states.get(entity_id),
+        configured(entity_id, high_threshold=85),
+    )[0]
+
+    assert item["message"] == "High Temperature"
+    assert item["detail"] == "85.2°F — Above 85°F"
+
+
+async def test_low_humidity_alert_uses_natural_language(hass):
+    entity_id = "sensor.bedroom_humidity"
+    hass.states.async_set(entity_id, "29.94", {
+        "device_class": "humidity",
+        "state_class": "measurement",
+        "unit_of_measurement": "%",
+        "friendly_name": "Bedroom Humidity",
+    })
+
+    item = CapabilityProviderRegistry().active_items(
+        hass.states.get(entity_id),
+        configured(entity_id, "humidity", low_threshold=30),
+    )[0]
+
+    assert item["message"] == "Low Humidity"
+    assert item["detail"] == "29.9% — Below 30%"
+
+
 async def test_unknown_unavailable_malformed_and_missing_units_are_explicit(hass):
     entity_id = "sensor.attic_humidity"
     registry = CapabilityProviderRegistry()
