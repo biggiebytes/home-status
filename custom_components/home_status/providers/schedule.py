@@ -168,10 +168,10 @@ class ScheduleProviderMixin:
             return str(value)
 
 
-    @staticmethod
-    def _waste_collection_is_due(state: State) -> bool:
+    @classmethod
+    def _waste_collection_is_due(cls, state: State) -> bool:
         """Return true only for a collection due today or tomorrow."""
-        collection_date = HomeStatusCoordinator._waste_collection_date(state)
+        collection_date = cls._waste_collection_date(state)
         if collection_date is None:
             return False
         today = datetime.now().astimezone().date()

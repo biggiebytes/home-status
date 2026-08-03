@@ -344,6 +344,63 @@ try {
   assert.equal(desktop.phone, 'none');
   assert.notEqual(desktop.ticker, 'none');
 
+  await page.setViewportSize({ width: 1024, height: 520 });
+  const drawerLayoutStability = await page.evaluate(async () => {
+    const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      profile: 'desktop',
+      utility_header: {
+        enabled: true,
+        music_entity: 'media_player.living_room'
+      },
+      context_actions: {
+        calendar: { type: 'navigate', path: '/calendar' }
+      },
+      home_status_visibility: { drawer: true }
+    });
+    card.hass = window.testHass;
+    document.querySelector('#card-host').replaceChildren(card);
+    await nextFrame();
+
+    const measure = () => {
+      const header = card.shadowRoot.querySelector('.utility-header');
+      const music = card.shadowRoot.querySelector('.utility-music');
+      const controls = card.shadowRoot.querySelector('.music-control-row');
+      const slider = card.shadowRoot.querySelector('.music-volume');
+      const roundedWidth = element => Math.round(element.getBoundingClientRect().width * 100) / 100;
+      return {
+        cardWidth: roundedWidth(card),
+        headerWidth: roundedWidth(header),
+        headerColumns: getComputedStyle(header).gridTemplateColumns,
+        headerRows: getComputedStyle(header).gridTemplateRows,
+        musicColumns: getComputedStyle(music).gridTemplateColumns,
+        controlsColumns: getComputedStyle(controls).gridTemplateColumns,
+        sliderWidth: roundedWidth(slider)
+      };
+    };
+
+    const closed = measure();
+    card.shadowRoot.querySelector('.ticker').click();
+    await nextFrame();
+    await nextFrame();
+    const open = measure();
+    return {
+      closed,
+      open,
+      locked: card.hasAttribute('data-drawer-open'),
+      lockedWidth: card.style.getPropertyValue('--home-status-drawer-inline-size')
+    };
+  });
+  assert.deepEqual(drawerLayoutStability.open, drawerLayoutStability.closed);
+  assert.equal(drawerLayoutStability.locked, true);
+  assert.equal(
+    drawerLayoutStability.lockedWidth,
+    `${drawerLayoutStability.closed.cardWidth}px`
+  );
+
   const drawerRegressionCoverage = await page.evaluate(async () => {
     const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
     const mount = config => {

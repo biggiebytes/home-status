@@ -146,6 +146,23 @@ def test_sprinkler_output_contract():
     }
 
 
+def test_waste_collection_due_dates_stay_with_schedule_provider():
+    subject = coordinator()
+
+    assert subject._waste_collection_is_due(
+        fake_state("sensor.garbage_pickup", "Today")
+    ) is True
+    assert subject._waste_collection_is_due(
+        fake_state("sensor.recycling_pickup", "Tomorrow")
+    ) is True
+    assert subject._waste_collection_is_due(
+        fake_state("sensor.yard_waste_pickup", "In 2 days")
+    ) is False
+    assert subject._waste_collection_is_due(
+        fake_state("sensor.unknown_pickup", "unknown")
+    ) is False
+
+
 def test_provider_methods_are_split_from_coordinator():
     expected_modules = {
         "_build_weather_item": "providers.weather",
