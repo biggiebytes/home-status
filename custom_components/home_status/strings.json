@@ -52,6 +52,7 @@
         "menu_options": {
           "general": "General",
           "information_sources": "Stable Providers",
+          "news_sources": "News Sources",
           "experimental_sensors": "Experimental Sensor Providers",
           "navigation": "Open Pages When Tapped",
           "appearance": "Appearance",
@@ -88,6 +89,38 @@
         "data_description": {
           "enabled_providers": "Choose the kinds of information Home Status should keep track of.",
           "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+        }
+      },
+      "news_sources": {
+        "title": "News Sources",
+        "description": "Choose the RSS or Atom feeds Home Status uses for news. {summary}.",
+        "data": {
+          "news_source": "Source to manage"
+        },
+        "data_description": {
+          "news_source": "Select an existing source to edit it, or add a favorite feed."
+        }
+      },
+      "news_source": {
+        "title": "Configure a News Source",
+        "description": "{mode}. Home Status reads the feed directly and displays its newest items in the Notification Center.",
+        "data": {
+          "enabled": "Enabled",
+          "name": "Display name",
+          "url": "RSS or Atom feed URL",
+          "icon": "Icon",
+          "refresh_minutes": "Check for news every",
+          "max_items": "Items from this source",
+          "remove_source": "Remove this source"
+        },
+        "data_description": {
+          "enabled": "Turn this source on or off without losing its settings.",
+          "name": "A friendly name such as Local News or Space.",
+          "url": "Use the publisher's direct RSS or Atom feed address beginning with http:// or https://.",
+          "icon": "Optional Material Design icon, for example mdi:newspaper.",
+          "refresh_minutes": "How often Home Status checks this source. Five minutes is the minimum.",
+          "max_items": "How many recent headlines this source may contribute.",
+          "remove_source": "Permanently remove this source from Home Status."
         }
       },
       "review": {
@@ -289,6 +322,8 @@
     },
     "error": {
       "custom_page_must_start_with_slash": "Custom pages must begin with /.",
+      "duplicate_news_feed_url": "That feed is already configured.",
+      "invalid_news_feed_url": "Enter a complete http:// or https:// RSS or Atom feed URL without embedded credentials.",
       "low_threshold_must_be_less_than_high": "The low threshold must be less than the high threshold."
     }
   },

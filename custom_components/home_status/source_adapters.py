@@ -15,6 +15,76 @@ import xml.etree.ElementTree as ET
 _LOGGER = logging.getLogger(__name__)
 _MAX_FEED_BYTES = 2 * 1024 * 1024
 _IMAGE_EXTENSIONS = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
+CONF_NEWS_FEEDS = "news_feeds"
+DEFAULT_NEWS_FEEDS = (
+    {
+        "key": "nasa",
+        "name": "NASA",
+        "url": "https://www.nasa.gov/feed/",
+        "icon": "mdi:rocket-launch-outline",
+        "enabled": True,
+        "refresh_minutes": 15,
+        "max_items": 1,
+    },
+)
+DEFAULT_NEWS_ICON = "mdi:newspaper-variant-outline"
+
+
+def is_valid_feed_url(value: str | None) -> bool:
+    """Return whether a feed URL is safe to store and fetch."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    parsed = urlparse(value.strip())
+    return bool(
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname
+        and parsed.username is None
+        and parsed.password is None
+    )
+
+
+def news_feed_key(url: str) -> str:
+    """Create a stable, non-identifying key from a feed URL."""
+    return f"feed-{sha256(url.strip().encode('utf-8')).hexdigest()[:12]}"
+
+
+def normalize_news_feeds(value: Any = None) -> list[dict[str, Any]]:
+    """Normalize configured feeds while preserving the legacy NASA default."""
+    raw_feeds = DEFAULT_NEWS_FEEDS if value is None else value
+    if not isinstance(raw_feeds, (list, tuple)):
+        raw_feeds = DEFAULT_NEWS_FEEDS
+    normalized: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for raw in raw_feeds:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or "").strip()
+        if not is_valid_feed_url(url):
+            continue
+        canonical_url = url.casefold()
+        if canonical_url in seen_urls:
+            continue
+        seen_urls.add(canonical_url)
+        name = str(raw.get("name") or urlparse(url).hostname or "News").strip()
+        icon = str(raw.get("icon") or DEFAULT_NEWS_ICON).strip()
+        try:
+            refresh_minutes = int(raw.get("refresh_minutes", 15))
+        except (TypeError, ValueError):
+            refresh_minutes = 15
+        try:
+            max_items = int(raw.get("max_items", 1))
+        except (TypeError, ValueError):
+            max_items = 1
+        normalized.append({
+            "key": str(raw.get("key") or news_feed_key(url)).strip(),
+            "name": name[:80] or "News",
+            "url": url,
+            "icon": icon[:80] or DEFAULT_NEWS_ICON,
+            "enabled": bool(raw.get("enabled", True)),
+            "refresh_minutes": min(120, max(5, refresh_minutes)),
+            "max_items": min(5, max(1, max_items)),
+        })
+    return normalized
 
 
 @dataclass(frozen=True)

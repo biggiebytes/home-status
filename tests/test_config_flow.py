@@ -137,6 +137,7 @@ async def test_custom_onboarding_and_permanent_settings_menu(hass):
     assert options["menu_options"] == [
         "general",
         "information_sources",
+        "news_sources",
         "experimental_sensors",
         "weather",
         "appearance",
@@ -228,7 +229,7 @@ async def test_stable_provider_changes_are_discovered_reviewed_and_reversible(ha
         result["flow_id"], {"next_step_id": "information_sources"}
     )
     assert result["step_id"] == "information_sources"
-    assert result["description_placeholders"]["detected"] == "Security, Weather"
+    assert result["description_placeholders"]["detected"] == "Security, Weather, News"
     schema = result["data_schema"].schema
     history_field = next(key for key in schema if key.schema == "history_entities")
     assert history_field.default() == []
@@ -278,3 +279,121 @@ async def test_options_warn_without_blocking_when_all_providers_are_disabled(has
     )
     assert result["type"] is FlowResultType.MENU
     assert entry.options["enabled_providers"] == []
+
+
+async def test_news_sources_can_be_added_and_reviewed(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "news_sources"}
+    )
+    assert result["step_id"] == "news_sources"
+    assert result["description_placeholders"]["summary"] == (
+        "1 active of 1 configured"
+    )
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"news_source": "__add__"}
+    )
+    assert result["step_id"] == "news_source"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "enabled": True,
+            "name": "Favorite Local News",
+            "url": "https://example.com/local-news.xml",
+            "icon": "mdi:newspaper",
+            "refresh_minutes": 30,
+            "max_items": 3,
+            "remove_source": False,
+        },
+    )
+    assert result["step_id"] == "review"
+    assert entry.options == {}
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert [feed["name"] for feed in entry.options["news_feeds"]] == [
+        "NASA", "Favorite Local News"
+    ]
+    assert entry.options["news_feeds"][1]["max_items"] == 3
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "news_sources"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"news_source": "nasa"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "enabled": True,
+            "name": "NASA",
+            "url": "https://www.nasa.gov/feed/",
+            "icon": "mdi:rocket-launch-outline",
+            "refresh_minutes": 15,
+            "max_items": 1,
+            "remove_source": True,
+        },
+    )
+    assert result["step_id"] == "review"
+    await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert [feed["name"] for feed in entry.options["news_feeds"]] == [
+        "Favorite Local News"
+    ]
+
+
+async def test_news_source_rejects_invalid_or_duplicate_urls(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "news_sources"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"news_source": "__add__"}
+    )
+    invalid = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "enabled": True,
+            "name": "Bad Feed",
+            "url": "javascript:alert(1)",
+            "icon": "mdi:newspaper",
+            "refresh_minutes": 15,
+            "max_items": 1,
+            "remove_source": False,
+        },
+    )
+    assert invalid["step_id"] == "news_source"
+    assert invalid["errors"] == {"url": "invalid_news_feed_url"}
+
+    duplicate = await hass.config_entries.options.async_configure(
+        invalid["flow_id"],
+        {
+            "enabled": True,
+            "name": "NASA Again",
+            "url": "https://www.nasa.gov/feed/",
+            "icon": "mdi:rocket",
+            "refresh_minutes": 15,
+            "max_items": 1,
+            "remove_source": False,
+        },
+    )
+    assert duplicate["errors"] == {"url": "duplicate_news_feed_url"}

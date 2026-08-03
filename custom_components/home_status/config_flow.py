@@ -22,6 +22,13 @@ from .const import (
     plain_entity_name,
 )
 from .providers import CapabilityProviderRegistry
+from .source_adapters import (
+    CONF_NEWS_FEEDS,
+    DEFAULT_NEWS_ICON,
+    is_valid_feed_url,
+    news_feed_key,
+    normalize_news_feeds,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -322,6 +329,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
     MENU_OPTIONS = [
         "general",
         "information_sources",
+        "news_sources",
         "experimental_sensors",
         "weather",
         "appearance",
@@ -334,6 +342,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         self._pending_options: dict | None = None
         self._pending_summary = ""
         self._pending_warnings = ""
+        self._selected_news_source: str | None = None
 
     @staticmethod
     def _entity_selection(value):
@@ -382,9 +391,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             menu_options=self.MENU_OPTIONS,
         )
 
-    def _detected_stable_providers(self) -> set[str]:
+    def _detected_stable_providers(self, options: dict | None = None) -> set[str]:
         """Return provider capabilities found without selecting any entity."""
         detected: set[str] = set()
+        effective = self._current() if options is None else options
+        if any(
+            feed["enabled"]
+            for feed in normalize_news_feeds(effective.get(CONF_NEWS_FEEDS))
+        ):
+            detected.add("news")
         for state in self.hass.states.async_all():
             entity_id = state.entity_id
             domain = entity_id.split(".", 1)[0]
@@ -469,9 +484,9 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         changed = sorted(user_input)
         self._pending_options = options
         self._pending_summary = "\n".join(
-            f"â€¢ {key.replace('_', ' ').title()}"
+            f"• {key.replace('_', ' ').title()}"
             for key in changed
-        ) or "â€¢ No setting changes"
+        ) or "• No setting changes"
         warnings = []
         effective = normalize_provider_options({
             **self.config_entry.data,
@@ -482,7 +497,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             warnings.append(
                 "No informational providers are enabled. Direct household state can still work, but the Notification Center may be empty."
             )
-        detected = self._detected_stable_providers()
+        detected = self._detected_stable_providers(effective)
         missing = [
             CAPABILITY_LABELS.get(provider, provider.title())
             for provider in enabled
@@ -492,7 +507,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             warnings.append(
                 "No compatible entities are currently detected for: " + ", ".join(missing) + ". These providers will remain enabled but may not publish items until configured."
             )
-        self._pending_warnings = "\n".join(f"â€¢ {warning}" for warning in warnings) or "â€¢ No problems found"
+        self._pending_warnings = "\n".join(f"• {warning}" for warning in warnings) or "• No problems found"
         return await self.async_step_review()
 
     async def async_step_init(self, user_input=None):
@@ -608,7 +623,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         provider_choices = [
             {
                 "value": provider,
-                "label": f"{CAPABILITY_LABELS.get(provider, provider.title())}{' â€” Detected' if provider in detected else ''}",
+                "label": f"{CAPABILITY_LABELS.get(provider, provider.title())}{' — Detected' if provider in detected else ''}",
             }
             for provider in self.PROVIDERS
         ]
@@ -626,6 +641,124 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 if provider in detected
             ) or "None yet",
         })
+
+    async def async_step_news_sources(self, user_input=None):
+        """Choose a favorite news feed to add or edit."""
+        feeds = normalize_news_feeds(self._current().get(CONF_NEWS_FEEDS))
+        if user_input is not None:
+            selected = user_input.get("news_source")
+            self._selected_news_source = (
+                None if selected == "__add__" else str(selected or "")
+            )
+            return await self.async_step_news_source()
+        choices = [
+            {
+                "value": feed["key"],
+                "label": f"{feed['name']}{'' if feed['enabled'] else ' — Off'}",
+            }
+            for feed in feeds
+        ]
+        choices.append({"value": "__add__", "label": "Add a news source"})
+        enabled_count = sum(1 for feed in feeds if feed["enabled"])
+        return self.async_show_form(
+            step_id="news_sources",
+            data_schema=vol.Schema({
+                vol.Required("news_source", default="__add__"):
+                    selector.SelectSelector(selector.SelectSelectorConfig(
+                        options=choices,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )),
+            }),
+            description_placeholders={
+                "summary": (
+                    f"{enabled_count} active of {len(feeds)} configured"
+                    if feeds else "No sources configured"
+                ),
+            },
+        )
+
+    async def async_step_news_source(self, user_input=None):
+        """Add, edit, disable, or remove one RSS/Atom news source."""
+        feeds = normalize_news_feeds(self._current().get(CONF_NEWS_FEEDS))
+        selected_key = self._selected_news_source
+        existing = next(
+            (feed for feed in feeds if feed["key"] == selected_key), None
+        )
+        errors = {}
+        values = existing or {
+            "enabled": True,
+            "name": "",
+            "url": "",
+            "icon": DEFAULT_NEWS_ICON,
+            "refresh_minutes": 15,
+            "max_items": 1,
+        }
+        if user_input is not None:
+            values = user_input
+            if user_input.get("remove_source") and existing:
+                updated = [
+                    feed for feed in feeds if feed["key"] != selected_key
+                ]
+                return await self._save_step({CONF_NEWS_FEEDS: updated})
+            url = str(user_input.get("url") or "").strip()
+            if not is_valid_feed_url(url):
+                errors["url"] = "invalid_news_feed_url"
+            elif any(
+                feed["url"].casefold() == url.casefold()
+                and feed["key"] != selected_key
+                for feed in feeds
+            ):
+                errors["url"] = "duplicate_news_feed_url"
+            else:
+                candidate = {
+                    "key": existing["key"] if existing else news_feed_key(url),
+                    "name": str(user_input.get("name") or "").strip(),
+                    "url": url,
+                    "icon": str(
+                        user_input.get("icon") or DEFAULT_NEWS_ICON
+                    ).strip(),
+                    "enabled": bool(user_input.get("enabled", True)),
+                    "refresh_minutes": user_input.get("refresh_minutes", 15),
+                    "max_items": user_input.get("max_items", 1),
+                }
+                updated = [
+                    feed for feed in feeds if feed["key"] != selected_key
+                ]
+                updated.append(candidate)
+                return await self._save_step({
+                    CONF_NEWS_FEEDS: normalize_news_feeds(updated),
+                })
+        schema = vol.Schema({
+            vol.Optional("enabled", default=values.get("enabled", True)):
+                selector.BooleanSelector(),
+            vol.Optional("name", default=values.get("name", "")):
+                selector.TextSelector(),
+            vol.Required("url", default=values.get("url", "")):
+                selector.TextSelector(),
+            vol.Optional("icon", default=values.get("icon", DEFAULT_NEWS_ICON)):
+                selector.TextSelector(),
+            vol.Optional(
+                "refresh_minutes", default=values.get("refresh_minutes", 15)
+            ): selector.NumberSelector(selector.NumberSelectorConfig(
+                min=5, max=120, step=5,
+                mode=selector.NumberSelectorMode.BOX,
+            )),
+            vol.Optional("max_items", default=values.get("max_items", 1)):
+                selector.NumberSelector(selector.NumberSelectorConfig(
+                    min=1, max=5, step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                )),
+            vol.Optional("remove_source", default=False):
+                selector.BooleanSelector(),
+        })
+        return self.async_show_form(
+            step_id="news_source",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "mode": "Edit this source" if existing else "Add a source",
+            },
+        )
 
     def _capability_candidates(self):
         registry = CapabilityProviderRegistry()

@@ -28,6 +28,8 @@ Example options-flow setup:
 
 The configuration is stored in the Home Assistant config entry. No YAML or
 `.storage` editing is required or recommended.
-The bundled NASA RSS adapter is optional and can be disabled with the News
-provider. Regional news sources are intentionally not built into the public
-package.
+The bundled NASA RSS adapter remains enabled by default for backward
+compatibility. From **Configure → News Sources**, users can add favorite RSS or
+Atom feeds, edit their names and icons, control refresh timing and item limits,
+or disable and remove sources. Regional sources are selected by the homeowner;
+none are assumed by the public package.

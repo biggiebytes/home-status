@@ -304,6 +304,45 @@ try {
   assert.equal(preset.home_status_visibility.hero, false);
   assert.deepEqual(preset.mystery_option, { nested: 'keep me' });
 
+  const presetPreviews = await page.evaluate(async () => {
+    const results = {};
+    const expectedProfiles = ['auto', 'phone', 'tablet', 'desktop'];
+    for (const profile of expectedProfiles) {
+      const editor = document.createElement('home-status-card-editor');
+      editor.hass = window.testHass;
+      editor.setConfig(customElements.get('home-status-card').getStubConfig());
+      document.querySelector('#editor-host').replaceChildren(editor);
+      const changed = new Promise(resolve => editor.addEventListener(
+        'config-changed', event => resolve(event.detail.config), { once: true }
+      ));
+      editor.shadowRoot.querySelector('[data-profile-picker]').value = profile;
+      editor.shadowRoot.querySelector('[data-apply-profile]').click();
+      const config = await changed;
+      const card = document.createElement('home-status-card');
+      card.setConfig(config);
+      card.hass = window.testHass;
+      document.querySelector('#card-host').replaceChildren(card);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      results[profile] = {
+        profile: card.getAttribute('data-profile'),
+        layout: card.getAttribute('data-layout'),
+        phone: getComputedStyle(card.shadowRoot.querySelector('.phone-status-host')).display,
+        ticker: getComputedStyle(card.shadowRoot.querySelector('.ticker')).display
+      };
+    }
+    return results;
+  });
+  assert.equal(presetPreviews.auto.layout, 'responsive');
+  assert.equal(presetPreviews.phone.layout, 'compact');
+  assert.notEqual(presetPreviews.phone.phone, 'none');
+  assert.equal(presetPreviews.phone.ticker, 'none');
+  assert.equal(presetPreviews.tablet.layout, 'tablet-default');
+  assert.equal(presetPreviews.tablet.phone, 'none');
+  assert.notEqual(presetPreviews.tablet.ticker, 'none');
+  assert.equal(presetPreviews.desktop.layout, 'desktop-wide');
+  assert.equal(presetPreviews.desktop.phone, 'none');
+  assert.notEqual(presetPreviews.desktop.ticker, 'none');
+
   const missingWarning = await page.evaluate(() => {
     const editor = document.querySelector('home-status-card-editor');
     editor.setConfig({ type: 'custom:home-status-card', entity: 'sensor.missing' });

@@ -3030,6 +3030,10 @@ const CSS = `
   .phone-status-ticker-copy small { display:block; max-width:220px; margin-top:3px; overflow:hidden; color:var(--secondary-text-color); font-size:10px; opacity:.78; text-overflow:ellipsis; white-space:nowrap; }
   @keyframes phone-status-marquee { to { transform:translateX(-50%); } }
 }
+:host([data-profile="phone"]) .utility-header,
+:host([data-profile="phone"]) .ticker,
+:host([data-profile="phone"]) .drawer-host { display:none !important; }
+:host([data-profile="phone"]) .phone-status-host { display:block; }
 :host([data-profile="tablet"]) .phone-status-host,
 :host([data-profile="desktop"]) .phone-status-host { display:none !important; }
 :host([data-profile="tablet"]) .utility-header,

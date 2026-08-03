@@ -109,6 +109,13 @@ Home Status gives every part of your home a voice—without letting any one thin
 
 ![Home Status Phone Layout](docs/screenshots/phone-layout.png)
 
+> **About this screenshot:** The compact Home Status panel is bundled with this
+> integration. The full phone composition shown above also uses the separate
+> [Mini Media Player](https://github.com/kalkih/mini-media-player) and
+> [Button Card](https://github.com/custom-cards/button-card) custom cards for
+> music controls and quick navigation. Those optional cards must be installed
+> and configured separately; Home Status does not add or alter dashboards.
+
 ## Media Hero
 
 ![Home Status Media Hero](docs/screenshots/media-hero.png)
@@ -141,6 +148,10 @@ Features include:
 - One-handed operation
 
 **Less information. Just as powerful.**
+
+The Home Status card automatically provides its compact status and ticker at
+phone width. Music controls and quick-navigation buttons in the example phone
+dashboard are optional companion cards, not part of the Home Status card.
 
 ---
 
@@ -310,6 +321,11 @@ layout: tablet-default
 
 The visual editor configures most options without requiring YAML.
 
+The bundled card is all that is required for Home Status itself. To reproduce
+the complete phone dashboard shown in the screenshots, also install Mini Media
+Player and Button Card through HACS and place those cards above Home Status with
+a phone-width visibility condition.
+
 See `custom_components/home_status/frontend/example.yaml` for a complete
 configuration example.
 
@@ -330,12 +346,21 @@ Available sections include:
 - General
 - Weather
 - Information Sources
+- News Sources
 - Appearance
 - Navigation
 - Notification Settings
 - Advanced
 
 The visual card editor makes common customization available without editing YAML while preserving advanced options for experienced users.
+
+## Favorite news sources
+
+Open **Configure → News Sources** to add any publisher that provides an RSS or
+Atom feed. Each source can have its own display name, icon, refresh timing, and
+headline limit. Sources can be turned off without losing their settings or
+removed completely. NASA remains the default source for existing installations;
+Home Status does not assume a regional news provider.
 
 ---
 
@@ -368,7 +393,8 @@ The public repository intentionally excludes:
 - Tokens
 - Household-specific configuration
 
-Optional RSS providers make outbound requests only when explicitly enabled.
+Enabled RSS sources make outbound requests to the feed addresses configured in
+Home Status. Feed addresses are redacted from downloaded diagnostics.
 
 ---
 

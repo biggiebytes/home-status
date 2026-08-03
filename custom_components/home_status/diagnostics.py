@@ -14,6 +14,7 @@ TO_REDACT = {
     "access_token", "address", "api_key", "client_id", "client_secret",
     "code", "coordinates", "host", "latitude", "longitude", "password",
     "precise_location", "token", "unique_id",
+    "url",
 }
 
 

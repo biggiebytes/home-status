@@ -59,7 +59,12 @@ from .providers import (
     FamilyProviderMixin,
 )
 from .source_registry import SourceRegistry
-from .source_adapters import RSSSourceAdapter, RSSSourceDefinition
+from .source_adapters import (
+    CONF_NEWS_FEEDS,
+    RSSSourceAdapter,
+    RSSSourceDefinition,
+    normalize_news_feeds,
+)
 from .conversation_ledger import (
     LEDGER_STORAGE_KEY,
     LEDGER_STORAGE_VERSION,
@@ -127,16 +132,9 @@ class HomeStatusCoordinator(
         self._forecast = []
         self._forecast_warning = None
         self._condition_since: dict[str, datetime] = {}
-        self._source_adapters = (
-            RSSSourceAdapter(RSSSourceDefinition(
-                key="nasa",
-                name="NASA",
-                url="https://www.nasa.gov/feed/",
-                provider=PROVIDER_NEWS,
-                icon="mdi:rocket-launch-outline",
-            )),
-        )
         self._source_items: list[dict] = []
+        self._source_adapters: tuple[RSSSourceAdapter, ...] = ()
+        self._configure_source_adapters()
 
     async def async_setup(self) -> None:
         updated_options = normalize_provider_options(dict(self.entry.options))
@@ -207,11 +205,41 @@ class HomeStatusCoordinator(
         seconds = max(15, int(self.options.get("refresh_interval", 60)))
         self._ticker_timer = async_track_time_interval(self.hass, self._ticker_tick, timedelta(seconds=seconds))
 
+    def _configure_source_adapters(self) -> bool:
+        """Apply configured news feeds and report whether they changed."""
+        definitions = tuple(
+            RSSSourceDefinition(
+                key=feed["key"],
+                name=feed["name"],
+                url=feed["url"],
+                provider=PROVIDER_NEWS,
+                icon=feed["icon"],
+                refresh_minutes=feed["refresh_minutes"],
+                max_items=feed["max_items"],
+            )
+            for feed in normalize_news_feeds(
+                self.options.get(CONF_NEWS_FEEDS)
+            )
+            if feed["enabled"]
+        )
+        if definitions == tuple(
+            adapter.definition for adapter in self._source_adapters
+        ):
+            return False
+        for adapter in self._source_adapters:
+            adapter.destroy()
+        self._source_adapters = tuple(
+            RSSSourceAdapter(definition) for definition in definitions
+        )
+        self._source_items = []
+        return True
+
     @callback
     def async_update_entities(self, entity_ids: list[str]) -> None:
         self.options = normalize_provider_options({**self.entry.data, **self.entry.options})
         self.options["enabled_providers"] = normalize_providers(self.options.get("enabled_providers"))
         self.registry = SourceRegistry.from_config(self.options.get("source_entities", entity_ids))
+        self._configure_source_adapters()
         self._configure_timer()
         new_ids = list(dict.fromkeys(entity_ids))
         removed = set(self.entity_ids) - set(new_ids)
