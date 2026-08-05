@@ -10,7 +10,7 @@ async def test_recommended_onboarding(hass):
     hass.states.async_set("calendar.family", "off")
     hass.states.async_set("sensor.washer_machine_state", "idle")
     hass.states.async_set("sensor.waste_collection_schedule_garbage", "2026-08-03")
-    hass.states.async_set("alarm_control_panel.home", "disarmed")
+    hass.states.async_set("alarm_control_panel.alarmo", "disarmed")
     hass.states.async_set("update.home_assistant_core_update", "off")
     result = await hass.config_entries.flow.async_init(
         DOMAIN,

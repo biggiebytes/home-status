@@ -1021,6 +1021,8 @@ class HomeStatusCard extends HTMLElement {
 
 
   _label(item) {
+    const customLabel = String(item?.display_name || '').trim();
+    if (customLabel) return customLabel;
     const labels = {
       'Dryer Finished': 'Dryer Complete',
       'Washer Finished': 'Washer Complete',
@@ -1029,7 +1031,18 @@ class HomeStatusCard extends HTMLElement {
       'Everything Looks Good': 'Home Normal'
     };
     const value = item?.message || item?.title || 'Home notification';
-    return labels[value] || value;
+    return labels[value] || this._humanizeStatusText(value);
+  }
+
+  _humanizeStatusText(value) {
+    return String(value || '')
+      .replace(
+        /^(?:alarm|alarmo|security)\s+(?:(?:door|window|contact|lock|leak|water|moisture|smoke|carbon monoxide|co)\s+)?sensors?\s+/i,
+        ''
+      )
+      .replace(/\b(dishwasher|washer|dryer)\s+current\s+status\s+/i, '$1 ')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Home notification';
   }
 
   _isNormalSecurityItem(item) {
@@ -1120,7 +1133,7 @@ class HomeStatusCard extends HTMLElement {
       title = title.replace(/\s+Active$/i, ' Open');
     }
     if (/sprinklers rain delay active/i.test(title)) title = 'Rain Delay Active';
-    let summary = item.body || item.summary || item.detail || item.secondary || 'Tap for its actions';
+    let summary = this._humanizeStatusText(item.body || item.summary || item.detail || item.secondary || 'Tap for its actions');
     if (item.expires_at) summary = `${summary} • Until ${this._formatDateTime(item.expires_at)}`;
     return {
       id: item.id,
@@ -1396,7 +1409,7 @@ class HomeStatusCard extends HTMLElement {
     const provider = item._provider || this._providerFor(item);
     const id = String(item.id || '');
     let title = this._label(item);
-    let summary = item.summary || item.secondary || '';
+    let summary = this._humanizeStatusText(item.summary || item.secondary || '');
     let icon = item.icon || 'mdi:information-outline';
     const currentWeather = provider === 'weather' && id.startsWith('current:weather:');
     const indoorTemperature = provider === 'climate'
@@ -1412,10 +1425,7 @@ class HomeStatusCard extends HTMLElement {
       summary = 'Indoors';
       icon = item.icon || 'mdi:home-thermometer-outline';
     }
-    const relativeStamp = item.source === 'direct_history'
-      || item.source === 'recent'
-      || String(item.source || '').endsWith('_cleared')
-      || (item.active === false && String(item.source || '').startsWith('capability:'))
+    const relativeStamp = !currentWeather && !indoorTemperature
       ? item.resolved_at || item.created_at || item.timestamp || ''
       : '';
     if (provider === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
@@ -1541,7 +1551,7 @@ class HomeStatusCard extends HTMLElement {
   _zoneMarkup(item, emptyLabel) {
     if (!item) return `<span class="zone-item zone-empty">${this._escape(emptyLabel)}</span>`;
     let title = this._label(item);
-    let summary = item.summary || item.secondary || item.detail || '';
+    let summary = this._humanizeStatusText(item.summary || item.secondary || item.detail || '');
     const provider = this._providerFor(item);
     const currentWeather = provider === 'weather'
       && (/^current:weather:/i.test(String(item.id || '')) || /^weather$/i.test(title));
@@ -1554,6 +1564,12 @@ class HomeStatusCard extends HTMLElement {
     } else if (indoorTemperature) {
       title = this._glanceableTemperature(summary);
       summary = 'Indoors';
+    }
+    const relative = !currentWeather && !indoorTemperature
+      ? this._relative(this._timestamp(item, item?.active !== false))
+      : '';
+    if (relative) {
+      summary = [summary, relative].filter(Boolean).join(' — ');
     }
     const brief = `${title} ${summary}`.trim().length <= 42;
     const media = this._heroMedia(item);

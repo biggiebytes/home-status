@@ -288,7 +288,7 @@ class HomeStatusCoordinator(
         # Home Assistant accepts subscriptions for entity IDs that do not yet
         # exist, allowing late-loaded integrations to update this coordinator
         # immediately when their entities first appear.
-        return self._resolved_source_ids()
+        return list(dict.fromkeys([ALARM_ENTITY, *self._resolved_source_ids()]))
 
     def _discover_direct_history_entities(self) -> tuple[str, ...]:
         discovered = []
@@ -300,7 +300,7 @@ class HomeStatusCoordinator(
         for state in self.hass.states.async_all():
             domain = state.entity_id.split(".", 1)[0]
             device_class = str(state.attributes.get("device_class") or "").lower()
-            if domain == "alarm_control_panel":
+            if state.entity_id == ALARM_ENTITY:
                 discovered.append(state.entity_id)
             elif domain == "binary_sensor" and device_class in supported_binary_classes:
                 discovered.append(state.entity_id)

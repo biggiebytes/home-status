@@ -10,6 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    ALARM_ENTITY,
     CONF_CONTACT_FOOTER_PILOT,
     CONF_CAPABILITY_SENSORS,
     CONF_ENTITIES,
@@ -68,6 +69,7 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._setup_options: dict = {}
         self._detected_capabilities: set[str] = set()
         self._weather_entities: list[str] = []
+        self._onboarding_categories: set[str] = set()
 
     @staticmethod
     def _matches(text: str, *terms: str) -> bool:
@@ -105,7 +107,8 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     add("family_calendar", entity_id)
 
             if (
-                domain in {"alarm_control_panel", "lock"}
+                (domain == "alarm_control_panel" and entity_id == ALARM_ENTITY)
+                or domain == "lock"
                 or (domain == "binary_sensor" and device_class in {
                     "door", "window", "opening", "garage_door", "moisture",
                     "smoke", "gas", "carbon_monoxide",
@@ -219,7 +222,15 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._discover_environment()
                 return await self.async_step_sources()
             self._apply_automatic_discovery()
-            return await self._continue_automatic_setup()
+            # A capable setup should never quietly leave a new installation
+            # with zero monitored entities.  Build safe recommendations from
+            # Home Assistant metadata, then let the owner review them first.
+            self._onboarding_categories = (
+                {"entry", "safety"}
+                if profile == "essentials"
+                else {"entry", "safety", "connectivity", "appliances"}
+            )
+            return await self.async_step_onboarding_preview()
 
         await self.async_set_unique_id("home_status")
         self._abort_if_unique_id_configured()
@@ -257,6 +268,107 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 ),
             }),
+        )
+
+    def _onboarding_candidates(self):
+        """Return conservative, metadata-derived initial recommendations."""
+        candidates = {}
+        for item in CapabilityProviderRegistry().discover(self.hass):
+            candidates.setdefault(item.entity_id, item)
+
+        selected = []
+        for entity_id, item in candidates.items():
+            domain = entity_id.split(".", 1)[0]
+            device_class = item.device_class
+            capability = item.capability
+            discovery_text = f"{entity_id} {item.name}".replace("_", " ").lower()
+            category = None
+            if capability == "availability" and device_class in {
+                "door", "window", "opening", "garage_door",
+            }:
+                category = "entry"
+            elif capability in {
+                "smoke", "carbon_monoxide", "device_problem",
+            }:
+                category = "safety"
+            elif capability == "availability" and device_class == "moisture":
+                category = "safety"
+            elif capability == "connectivity":
+                category = "connectivity"
+            elif capability in {"appliance_cycle", "maintenance_alert"}:
+                category = "appliances"
+            if entity_id.startswith("binary_sensor.any_"):
+                # Roll-up helpers repeat the individual doors and windows;
+                # keep them available for manual add but never preselect them.
+                continue
+            if capability == "connectivity" and self._matches(
+                discovery_text, "cloud connection", "android auto", "remote ui"
+            ):
+                # Per-device cloud links create a very noisy default.  A
+                # panel, hub, proxy, or similar infrastructure connection is
+                # still offered when it is genuinely useful to monitor.
+                continue
+            if capability == "appliance_cycle" and not self._matches(
+                discovery_text,
+                "washer", "dryer", "machine state", "current status",
+                "cycle state", "time remaining", "remaining time",
+            ):
+                # Many integrations expose unrelated enum sensors as a
+                # generic cycle.  Only preselect recognisable appliance work.
+                continue
+            # Cameras, motion, normal temperature readings, and generic
+            # state sensors remain opt-in: they are much more likely to be
+            # duplicates or personal preferences than entry and safety data.
+            if category not in self._onboarding_categories:
+                continue
+            if capability not in {"availability", "connectivity", "smoke", "carbon_monoxide", "device_problem", "appliance_cycle", "maintenance_alert"}:
+                continue
+            if capability not in {"availability", "state_trigger"} and not domain in {"sensor", "binary_sensor"}:
+                continue
+            selected.append({
+                "value": entity_id,
+                "label": f"{item.name} — {capability.replace('_', ' ').title()}",
+                "item": item,
+            })
+        return sorted(selected, key=lambda choice: choice["label"].casefold())
+
+    async def async_step_onboarding_preview(self, user_input=None):
+        """Review the monitored entities before creating the entry."""
+        choices = self._onboarding_candidates()
+        by_id = {choice["value"]: choice["item"] for choice in choices}
+        if user_input is not None:
+            configured = {}
+            selected = user_input.get(
+                "starter_entities",
+                getattr(self, "_onboarding_preview_defaults", []),
+            )
+            if isinstance(selected, str):
+                selected = [selected]
+            for entity_id in selected:
+                item = by_id.get(entity_id)
+                if item:
+                    configured[entity_id] = HomeStatusOptionsFlow._starter_config(item)
+            self._setup_options[CONF_CAPABILITY_SENSORS] = configured
+            return await self._continue_automatic_setup()
+        self._onboarding_preview_defaults = [choice["value"] for choice in choices]
+        return self.async_show_form(
+            step_id="onboarding_preview",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "starter_entities",
+                    default=self._onboarding_preview_defaults,
+                ): selector.SelectSelector(selector.SelectSelectorConfig(
+                    options=[
+                        {"value": choice["value"], "label": choice["label"]}
+                        for choice in choices
+                    ],
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                ))
+            }),
+            description_placeholders={
+                "count": str(len(choices)),
+            },
         )
 
     async def async_step_weather(self, user_input=None):
@@ -318,6 +430,8 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
     PROVIDERS = list(SUPPORTED_PROVIDERS)
     NAVIGATION_TARGETS = list(NAVIGATION_TARGETS)
     MENU_OPTIONS = [
+        "setup_summary",
+        "smart_setup",
         "general",
         "information_sources",
         "news_sources",
@@ -358,7 +472,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             domain = state.entity_id.split(".", 1)[0]
             device_class = str(state.attributes.get("device_class") or "").lower()
             supported = (
-                domain == "alarm_control_panel"
+                (domain == "alarm_control_panel" and state.entity_id == ALARM_ENTITY)
                 or domain == "lock"
                 or (domain == "binary_sensor" and device_class in supported_binary_classes)
                 or (domain == "cover" and device_class in supported_cover_classes)
@@ -382,6 +496,73 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             menu_options=self.MENU_OPTIONS,
         )
 
+    async def async_step_setup_summary(self, user_input=None):
+        """Show the effective configuration without changing it."""
+        if user_input is not None:
+            return self._settings_menu()
+        current = self._current()
+        alarm_state = self.hass.states.get(ALARM_ENTITY)
+        alarm = (
+            f"Ready ({alarm_state.state.replace('_', ' ')})"
+            if alarm_state and alarm_state.state not in {"unknown", "unavailable"}
+            else "Not found or unavailable"
+        )
+        providers = current.get("enabled_providers", self.PROVIDERS)
+        provider_summary = ", ".join(
+            str(provider).replace("_", " ").title() for provider in providers
+        ) or "None"
+        configured_sensors = current.get(CONF_CAPABILITY_SENSORS, {})
+        sensor_summary = (
+            f"{len(configured_sensors)} configured"
+            if isinstance(configured_sensors, dict) else "None configured"
+        )
+        forecast = current.get("forecast_entity") or "Automatic / not selected"
+        return self.async_show_form(
+            step_id="setup_summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "alarm": alarm,
+                "providers": provider_summary,
+                "sensors": sensor_summary,
+                "forecast": forecast,
+            },
+        )
+
+    async def async_step_smart_setup(self, user_input=None):
+        """Offer a reviewed whole-home setup from the main settings menu."""
+        if user_input is not None:
+            self._starter_profile = user_input.get("starter_profile", "recommended")
+            self._starter_categories = list(
+                user_input.get("recommended_categories") or []
+            )
+            return await self.async_step_starter_preview()
+        return self.async_show_form(
+            step_id="smart_setup",
+            data_schema=vol.Schema({
+                vol.Required("starter_profile", default="recommended"):
+                    selector.SelectSelector(selector.SelectSelectorConfig(
+                        options=[
+                            {"value": "quick", "label": "Essentials"},
+                            {"value": "recommended", "label": "Whole home"},
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )),
+                vol.Optional(
+                    "recommended_categories",
+                    default=["entry", "safety", "connectivity", "appliances"],
+                ): selector.SelectSelector(selector.SelectSelectorConfig(
+                    options=[
+                        {"value": "entry", "label": "Doors & windows"},
+                        {"value": "safety", "label": "Safety & faults"},
+                        {"value": "connectivity", "label": "Connectivity"},
+                        {"value": "appliances", "label": "Appliances & maintenance"},
+                    ],
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )),
+            }),
+        )
+
     def _detected_stable_providers(self, options: dict | None = None) -> set[str]:
         """Return provider capabilities found without selecting any entity."""
         detected: set[str] = set()
@@ -402,7 +583,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 detected.add("weather")
             if domain == "calendar":
                 detected.add("schedule")
-            if domain in {"alarm_control_panel", "lock"} or (
+            if (domain == "alarm_control_panel" and entity_id == ALARM_ENTITY) or domain == "lock" or (
                 domain == "binary_sensor"
                 and device_class in {
                     "door", "window", "opening", "garage_door", "moisture",
@@ -823,9 +1004,22 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             if entity_id in current or not item:
                 continue
             category = self._recommended_category(item)
+            discovery_text = f"{entity_id} {item.name}".replace("_", " ").lower()
+            if entity_id.startswith("binary_sensor.any_"):
+                continue
+            if item.capability == "connectivity" and HomeStatusConfigFlow._matches(
+                discovery_text, "cloud connection", "android auto", "remote ui"
+            ):
+                continue
+            if item.capability == "appliance_cycle" and not HomeStatusConfigFlow._matches(
+                discovery_text,
+                "washer", "dryer", "machine state", "current status",
+                "cycle state", "time remaining", "remaining time",
+            ):
+                continue
             quick_security = category in {"entry", "safety"}
             selected_categories = set(
-                {"entry", "motion", "safety", "camera_health", "connectivity"}
+                {"entry", "safety", "connectivity", "appliances"}
                 if categories is None else categories
             )
             include = quick_security if profile == "quick" else (
@@ -922,7 +1116,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         )
         schema[vol.Optional(
             "recommended_categories",
-            default=["entry", "motion", "safety", "camera_health", "connectivity"],
+            default=["entry", "safety", "connectivity", "appliances"],
         )] = selector.SelectSelector(selector.SelectSelectorConfig(
             options=[
                 {"value": "entry", "label": "Doors & windows"},
@@ -991,9 +1185,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             profile, getattr(self, "_starter_categories", None)
         )
         if user_input is not None:
+            submitted = user_input.get(
+                "starter_entities",
+                getattr(self, "_starter_preview_defaults", []),
+            )
+            if isinstance(submitted, str):
+                submitted = [submitted]
             selected = [
                 self._entity_selection(entity_id)
-                for entity_id in user_input.get("starter_entities", [])
+                for entity_id in submitted
             ]
             selected = [
                 entity_id for entity_id in selected
@@ -1013,12 +1213,13 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             self._starter_profile = None
             self._starter_categories = None
             return await self.async_step_experimental_sensors()
+        self._starter_preview_defaults = [choice["value"] for choice in choices]
         return self.async_show_form(
             step_id="starter_preview",
             data_schema=vol.Schema({
                 vol.Optional(
                     "starter_entities",
-                    default=[choice["value"] for choice in choices],
+                    default=self._starter_preview_defaults,
                 ): selector.SelectSelector(selector.SelectSelectorConfig(
                     options=choices,
                     multiple=True,

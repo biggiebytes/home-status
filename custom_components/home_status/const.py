@@ -17,9 +17,9 @@ STORAGE_KEY = "home_status_history"
 # Home Assistant entities commonly report unavailable while integrations are
 # restoring. Recovery from that startup transition is not a household event.
 STARTUP_AVAILABILITY_RECOVERY_SUPPRESSION_SECONDS = 60
-# The dashboard header selects its alarm entity explicitly. The backend does
-# not assume an Alarmo entity for ticker publication.
-ALARM_ENTITY = ""
+# Alarmo is the standard Home Assistant alarm integration. Home Status uses
+# its panel when present and deliberately ignores other alarm-panel entities.
+ALARM_ENTITY = "alarm_control_panel.alarmo"
 LEAK_SOURCE_NAMES = {
     "binary_sensor.kitchen_sink_moisture": "Kitchen Sink",
     "binary_sensor.bathroom_sink_moisture": "Bathroom Sink",

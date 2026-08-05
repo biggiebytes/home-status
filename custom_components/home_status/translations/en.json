@@ -3,12 +3,22 @@
     "step": {
       "user": {
         "title": "Welcome to Home Status",
-        "description": "Choose a starting point. Recommended works for most homes and every setting can be changed later.",
+        "description": "Choose a starting point. Smart Setup finds the useful parts of your home, then lets you review them before anything is monitored.",
         "data": {
           "setup_profile": "How would you like to begin?"
         },
         "data_description": {
-          "setup_profile": "Recommended enables the complete experience. Essentials starts with the most common household information. Custom lets you choose each information source now."
+          "setup_profile": "Smart Setup preselects compatible entry, safety, connectivity, and appliance entities for review. Essentials starts with entry and safety. Custom lets you choose each information source now."
+        }
+      },
+      "onboarding_preview": {
+        "title": "Review your Smart Setup",
+        "description": "Home Status found {count} useful entities. The checked items will be monitored after setup. Uncheck duplicates or anything you do not want; nothing else is added automatically.",
+        "data": {
+          "starter_entities": "Entities to monitor"
+        },
+        "data_description": {
+          "starter_entities": "Every item is safe to deselect and can be added later from Add & Configure Entities."
         }
       },
       "sources": {
@@ -48,6 +58,8 @@
         "title": "Home Status settings",
         "description": "Choose what Home Status monitors and how it appears.",
         "menu_options": {
+          "setup_summary": "Current Setup",
+          "smart_setup": "Smart Setup",
           "general": "Updates & History",
           "information_sources": "Information Sources",
           "news_sources": "News Sources",
@@ -57,6 +69,23 @@
           "weather": "Weather & Schedules",
           "customize": "Customize Notifications",
           "advanced": "Advanced Settings"
+        }
+      },
+      "setup_summary": {
+        "title": "Current Setup",
+        "description": "This is the configuration Home Status is using right now.\n\nAlarm panel: Alarmo (`alarm_control_panel.alarmo`) — {alarm}\nEnabled categories: {providers}\nConfigured entity monitors: {sensors}\nWeather source: {forecast}\n\nUse the other settings pages to make changes.",
+        "data": {}
+      },
+      "smart_setup": {
+        "title": "Smart Setup",
+        "description": "Rebuild a useful whole-home setup without configuring every entity one at a time. Home Status will show a checked review list before it saves anything.",
+        "data": {
+          "starter_profile": "Setup size",
+          "recommended_categories": "Include in the review"
+        },
+        "data_description": {
+          "starter_profile": "Essentials focuses on doors, windows, and safety. Whole home also includes useful connectivity and appliance alerts.",
+          "recommended_categories": "Choose the kinds of entities to preselect. You can uncheck individual entities on the next screen."
         }
       },
       "general": {
@@ -125,7 +154,7 @@
       },
       "experimental_sensors": {
         "title": "Add & Configure Entities",
-        "description": "Start with a small reviewed setup, use the broader recommended setup, or configure an entity yourself. Home Status monitors nothing until you apply a selection.",
+        "description": "Use Smart Setup for a reviewed whole-home configuration, or configure one entity yourself. Home Status monitors nothing until you apply a selection.",
         "data": {
           "remove_entity": "Remove a configured entity",
           "starter_profile": "How would you like to start?",
@@ -135,8 +164,8 @@
         },
         "data_description": {
           "remove_entity": "Search the entities currently monitored by Home Status, then choose one to stop monitoring.",
-          "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes motion and connectivity. Custom Setup lets you choose any entity.",
-          "recommended_categories": "Choose only the categories you want to review. Camera health and motion are separate choices. Nothing is monitored until you submit the review.",
+          "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes connectivity and appliances. Custom Setup lets you choose any entity.",
+          "recommended_categories": "Choose only the categories you want to review. Nothing is monitored until you submit the review.",
           "capability_mode": "Recommended configuration uses the entity's Home Assistant metadata. The simple trigger creates an event when the entity exactly matches a state you choose.",
           "capability_entity": "Search by the entity's name or ID. Nothing is monitored until you configure it."
         }
@@ -377,7 +406,7 @@
   "selector": {
     "setup_profile": {
       "options": {
-        "recommended": "Recommended setup",
+        "recommended": "Smart Setup (recommended)",
         "essentials": "Essentials only",
         "custom": "Choose everything myself"
       }
