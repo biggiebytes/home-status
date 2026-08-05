@@ -40,6 +40,7 @@ from .const import (
     PROVIDER_WEATHER,
     STORAGE_KEY,
     STORAGE_VERSION,
+    STARTUP_AVAILABILITY_RECOVERY_SUPPRESSION_SECONDS,
     SUPPORTED_PROVIDERS,
     SYSTEM_UPDATES,
     normalize_provider,
@@ -134,6 +135,12 @@ class HomeStatusCoordinator(
         self._condition_since: dict[str, datetime] = {}
         self._source_items: list[dict] = []
         self._source_adapters: tuple[RSSSourceAdapter, ...] = ()
+        self._suppress_availability_recoveries_until = (
+            datetime.now(timezone.utc)
+            + timedelta(
+                seconds=STARTUP_AVAILABILITY_RECOVERY_SUPPRESSION_SECONDS
+            )
+        )
         self._configure_source_adapters()
 
     async def async_setup(self) -> None:
@@ -607,6 +614,16 @@ class HomeStatusCoordinator(
         resolved = []
         for item_id, old in previous.items():
             if item_id in rebuilt:
+                continue
+            if (
+                old.get("event_type") == "availability_unavailable"
+                and datetime.now(timezone.utc)
+                < self._suppress_availability_recoveries_until
+            ):
+                # Integrations commonly report unavailable while Home
+                # Assistant is restoring. Do not turn that expected startup
+                # transition into a misleading "Device Back Online" event.
+                self.ticker.pop(item_id, None)
                 continue
             if (
                 old.get("entity_id") in LIVE_ONLY_NOTIFICATION_SOURCES

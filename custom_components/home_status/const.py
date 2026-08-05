@@ -1,7 +1,7 @@
 import re
 
 DOMAIN = "home_status"
-INTEGRATION_VERSION = "0.3.1"
+INTEGRATION_VERSION = "0.3.2"
 FRONTEND_URL_BASE = "/home_status"
 FRONTEND_MODULE_URL = (
     f"{FRONTEND_URL_BASE}/home-status-card.js?v={INTEGRATION_VERSION}"
@@ -14,6 +14,9 @@ CONF_CONTACT_FOOTER_PILOT = "contact_footer_pilot_enabled"
 CONF_CAPABILITY_SENSORS = "capability_sensors"
 STORAGE_VERSION = 1
 STORAGE_KEY = "home_status_history"
+# Home Assistant entities commonly report unavailable while integrations are
+# restoring. Recovery from that startup transition is not a household event.
+STARTUP_AVAILABILITY_RECOVERY_SUPPRESSION_SECONDS = 60
 # The dashboard header selects its alarm entity explicitly. The backend does
 # not assume an Alarmo entity for ticker publication.
 ALARM_ENTITY = ""
