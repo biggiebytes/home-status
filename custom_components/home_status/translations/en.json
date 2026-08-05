@@ -129,12 +129,14 @@
         "data": {
           "remove_entity": "Remove a configured entity",
           "starter_profile": "How would you like to start?",
+          "recommended_categories": "What types should Recommended Setup include?",
           "capability_mode": "What should Home Status watch for?",
           "capability_entity": "Choose an entity"
         },
         "data_description": {
-          "remove_entity": "Search by name or entity ID, then choose an existing Home Status item to stop monitoring.",
+          "remove_entity": "Search the entities currently monitored by Home Status, then choose one to stop monitoring.",
           "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes motion and connectivity. Custom Setup lets you choose any entity.",
+          "recommended_categories": "Choose only the categories you want to review. Camera health and motion are separate choices. Nothing is monitored until you submit the review.",
           "capability_mode": "Recommended configuration uses the entity's Home Assistant metadata. The simple trigger creates an event when the entity exactly matches a state you choose.",
           "capability_entity": "Search by the entity's name or ID. Nothing is monitored until you configure it."
         }

@@ -131,6 +131,9 @@ class CapabilityProvider(ABC):
         if not math.isfinite(value):
             return ProviderEvaluation(entity_id, self.capability, raw_state, None, None, False, "malformed_number")
         normalized = self.normalize(state, value, unit)
+        normalized["name"] = str(
+            config.get("display_name") or normalized["name"]
+        )
         item, reason = self.interpret(normalized, config)
         return ProviderEvaluation(entity_id, self.capability, raw_state, normalized, item, True, reason)
 

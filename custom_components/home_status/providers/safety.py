@@ -37,7 +37,7 @@ class BinaryAlertProvider(CapabilityProvider):
             "entity_id": state.entity_id,
             "capability": self.capability,
             "provider": self.provider,
-            "name": str(state.attributes.get("friendly_name") or state.entity_id.rsplit(".", 1)[-1].replace("_", " ").title()),
+            "name": str(config.get("display_name") or state.attributes.get("friendly_name") or state.entity_id.rsplit(".", 1)[-1].replace("_", " ").title()),
             "state": raw_state,
             "created_at": state.last_changed.isoformat(),
             "metadata": {"device_class": device_class},
@@ -191,7 +191,8 @@ class AvailabilityProvider(CapabilityProvider):
         normalized = {
             "entity_id": state.entity_id,
             "name": str(
-                state.attributes.get("friendly_name")
+                config.get("display_name")
+                or state.attributes.get("friendly_name")
                 or state.entity_id.rsplit(".", 1)[-1].replace("_", " ").title()
             ),
             "state": raw_state,
@@ -227,7 +228,7 @@ class AvailabilityProvider(CapabilityProvider):
                 "Window Open" if device_class == "window" else "Door Open"
             )
             detail = (
-                f"Motion detected by {normalized['name']}"
+                normalized["name"]
                 if device_class == "motion"
                 else f"{normalized['name']} is open"
             )
@@ -237,7 +238,7 @@ class AvailabilityProvider(CapabilityProvider):
                 "Door Closed"
             )
             resolved_detail = (
-                f"Motion was recently detected by {normalized['name']}"
+                normalized["name"]
                 if device_class == "motion"
                 else f"{normalized['name']} is closed"
             )

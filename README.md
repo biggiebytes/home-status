@@ -416,6 +416,7 @@ Home Status. Feed addresses are redacted from downloaded diagnostics.
 - Expanded presentation profiles
 - Capability-based providers ([staged provider roadmap](docs/provider-roadmap.md))
   - Experimental configurable environmental and immediate-safety signals
+- [Current review checklist](docs/current-review-checklist.md)
 - Timeline enhancements
 - Richer media experiences
 - Expanded notification routing

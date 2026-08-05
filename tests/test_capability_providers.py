@@ -563,9 +563,9 @@ async def test_selected_contact_can_also_alert_while_open(hass):
     assert item["message"] == "Bathroom Door"
     assert item["capability_message"] == "Door Open"
     assert item["display_name"] == "Bathroom Door"
-    assert item["detail"] == "Back Door is open"
+    assert item["detail"] == "Bathroom Door is open"
     assert item["resolved_message"] == "Door Closed"
-    assert item["resolved_detail"] == "Back Door is closed"
+    assert item["resolved_detail"] == "Bathroom Door is closed"
     assert item["id"] == "capability:availability:binary_sensor.back_door:active"
     assert item["retention_minutes"] == 120
     assert item["display_route"] == "main_then_footer"
@@ -593,7 +593,7 @@ async def test_selected_motion_can_alert_while_active(hass):
     item = registry.active_items(hass.states.get(entity_id), options)[0]
 
     assert item["message"] == "Motion Detected"
-    assert item["detail"] == "Motion detected by Living Room Motion"
+    assert item["detail"] == "Living Room Motion"
     assert item["resolved_message"] == "Motion Detected"
     assert item["id"] == "capability:availability:binary_sensor.living_room_motion:active"
     assert item["retention_minutes"] == 5

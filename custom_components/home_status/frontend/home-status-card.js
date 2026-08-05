@@ -1415,6 +1415,7 @@ class HomeStatusCard extends HTMLElement {
     const relativeStamp = item.source === 'direct_history'
       || item.source === 'recent'
       || String(item.source || '').endsWith('_cleared')
+      || (item.active === false && String(item.source || '').startsWith('capability:'))
       ? item.resolved_at || item.created_at || item.timestamp || ''
       : '';
     if (provider === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {

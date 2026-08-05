@@ -6,6 +6,7 @@ from homeassistant import config_entries
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
@@ -776,7 +777,43 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             })
         return choices, candidates, current
 
-    def _starter_candidates(self, profile="recommended"):
+    def _is_camera_motion(self, item) -> bool:
+        """Identify motion sensors attached to a device that has a camera."""
+        if item.device_class != "motion":
+            return False
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(item.entity_id)
+        if not entry or not entry.device_id:
+            return False
+        return any(
+            candidate.device_id == entry.device_id
+            and candidate.entity_id.startswith("camera.")
+            for candidate in registry.entities.values()
+        )
+
+    def _recommended_category(self, item):
+        """Return the single, metadata-derived setup category for an item."""
+        device_class = item.device_class
+        domain = item.entity_id.split(".", 1)[0]
+        if item.capability == "availability" and device_class in {
+            "door", "window", "opening", "garage_door",
+        }:
+            return "entry"
+        if item.capability == "availability" and device_class == "motion":
+            return "camera_motion" if self._is_camera_motion(item) else "motion"
+        if item.capability in {"smoke", "carbon_monoxide", "device_problem"}:
+            return "safety"
+        if item.capability == "availability" and domain == "camera":
+            return "camera_health"
+        if item.capability == "connectivity":
+            return "connectivity"
+        if item.capability in {"temperature", "humidity"}:
+            return "environment"
+        if item.capability in {"appliance_cycle", "maintenance_alert"}:
+            return "appliances"
+        return None
+
+    def _starter_candidates(self, profile="recommended", categories=None):
         """Return metadata-based recommendations for explicit first setup."""
         choices, candidates, current = self._capability_candidates()
         recommended = []
@@ -785,20 +822,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             item = candidates.get(entity_id)
             if entity_id in current or not item:
                 continue
-            quick_security = (
-                item.capability in {"smoke", "carbon_monoxide"}
-                or (
-                    item.capability == "availability"
-                    and item.device_class in {
-                        "door", "window", "opening", "garage_door",
-                    }
-                )
+            category = self._recommended_category(item)
+            quick_security = category in {"entry", "safety"}
+            selected_categories = set(
+                {"entry", "motion", "safety", "camera_health", "connectivity"}
+                if categories is None else categories
             )
-            recommended_setup = quick_security or (
-                item.capability == "availability"
-                and item.device_class == "motion"
-            ) or item.capability == "connectivity"
-            include = quick_security if profile == "quick" else recommended_setup
+            include = quick_security if profile == "quick" else (
+                category in selected_categories
+            )
             if include:
                 recommended.append(choice)
         return recommended, candidates, current
@@ -866,13 +898,18 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             profile = user_input.get("starter_profile", "recommended")
             if profile in {"quick", "recommended"}:
                 self._starter_profile = profile
+                self._starter_categories = list(
+                    user_input.get("recommended_categories") or []
+                )
                 return await self.async_step_starter_preview()
             return self._settings_menu()
         schema = {}
         if configured_choices:
-            # Use the native picker here too: it lets large installations
-            # search by a configured entity's name or entity ID.
-            schema[vol.Optional("remove_entity")] = selector.EntitySelector()
+            schema[vol.Optional("remove_entity")] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    include_entities=list(current),
+                )
+            )
         schema[vol.Optional("starter_profile", default="recommended")] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=[
@@ -883,6 +920,23 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 ))
         )
+        schema[vol.Optional(
+            "recommended_categories",
+            default=["entry", "motion", "safety", "camera_health", "connectivity"],
+        )] = selector.SelectSelector(selector.SelectSelectorConfig(
+            options=[
+                {"value": "entry", "label": "Doors & windows"},
+                {"value": "motion", "label": "Motion"},
+                {"value": "camera_motion", "label": "Camera motion"},
+                {"value": "safety", "label": "Safety"},
+                {"value": "camera_health", "label": "Camera health"},
+                {"value": "connectivity", "label": "Connectivity"},
+                {"value": "environment", "label": "Temperature & humidity"},
+                {"value": "appliances", "label": "Appliances & maintenance"},
+            ],
+            multiple=True,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        ))
         schema[vol.Optional("capability_mode", default="recommended")] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=[
@@ -933,7 +987,9 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_starter_preview(self, user_input=None):
         profile = getattr(self, "_starter_profile", "recommended")
-        choices, candidates, current = self._starter_candidates(profile)
+        choices, candidates, current = self._starter_candidates(
+            profile, getattr(self, "_starter_categories", None)
+        )
         if user_input is not None:
             selected = [
                 self._entity_selection(entity_id)
@@ -950,10 +1006,12 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         candidates[entity_id]
                     )
                 self._starter_profile = None
+                self._starter_categories = None
                 return await self._save_step({
                     CONF_CAPABILITY_SENSORS: configured,
                 })
             self._starter_profile = None
+            self._starter_categories = None
             return await self.async_step_experimental_sensors()
         return self.async_show_form(
             step_id="starter_preview",
@@ -1275,7 +1333,10 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
-                "entity": entity_id,
+                "entity": (
+                    existing.get("display_name")
+                    or (candidate.name if candidate else plain_entity_name(entity_id))
+                ),
                 "capability": str(capability).title(),
                 "unit": candidate.unit if candidate and candidate.unit else "the entity's native unit",
             },
