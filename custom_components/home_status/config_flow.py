@@ -844,7 +844,16 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_experimental_sensors(self, user_input=None):
         choices, _, current = self._capability_candidates()
+        configured_choices = [
+            choice for choice in choices if choice["value"] in current
+        ]
         if user_input is not None:
+            remove_entity = self._entity_selection(
+                user_input.get("remove_entity")
+            )
+            if remove_entity in current:
+                self._selected_remove_entity = remove_entity
+                return await self.async_step_remove_entity()
             selected = self._entity_selection(
                 user_input.get("capability_entity")
             )
@@ -859,8 +868,15 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 self._starter_profile = profile
                 return await self.async_step_starter_preview()
             return self._settings_menu()
-        schema = {
-            vol.Optional("starter_profile", default="recommended"):
+        schema = {}
+        if configured_choices:
+            schema[vol.Optional("remove_entity")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=configured_choices,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        schema[vol.Optional("starter_profile", default="recommended")] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=[
                         {"value": "quick", "label": "Quick Start"},
@@ -868,8 +884,9 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         {"value": "custom", "label": "Custom Setup"},
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )),
-            vol.Optional("capability_mode", default="recommended"):
+                ))
+        )
+        schema[vol.Optional("capability_mode", default="recommended")] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=[
                         {
@@ -883,7 +900,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 ))
-        }
+        )
         schema[vol.Optional("capability_entity")] = selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=choices,
@@ -893,6 +910,30 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="experimental_sensors",
             data_schema=vol.Schema(schema),
+        )
+
+    async def async_step_remove_entity(self, user_input=None):
+        entity_id = getattr(self, "_selected_remove_entity", None)
+        current = CapabilityProviderRegistry().configs(self._current())
+        if not entity_id or entity_id not in current:
+            return await self.async_step_experimental_sensors()
+        if user_input is not None:
+            self._selected_remove_entity = None
+            if not user_input.get("confirm_remove"):
+                return await self.async_step_experimental_sensors()
+            configured = dict(current)
+            configured.pop(entity_id, None)
+            return await self._save_step({
+                CONF_CAPABILITY_SENSORS: configured,
+            })
+        return self.async_show_form(
+            step_id="remove_entity",
+            data_schema=vol.Schema({
+                vol.Required("confirm_remove", default=False): (
+                    selector.BooleanSelector()
+                )
+            }),
+            description_placeholders={"entity": plain_entity_name(entity_id)},
         )
 
     async def async_step_starter_preview(self, user_input=None):
@@ -978,6 +1019,14 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             "activity" if capability == "appliance_cycle" else "attention"
         )
         if user_input is not None:
+            if user_input.get("remove_sensor"):
+                configured = dict(current)
+                configured.pop(entity_id, None)
+                self._selected_capability_entity = None
+                self._selected_capability_mode = None
+                return await self._save_step({
+                    CONF_CAPABILITY_SENSORS: configured,
+                })
             low = user_input.get("low_threshold")
             high = user_input.get("high_threshold")
             numeric = capability in {"temperature", "humidity"}
@@ -988,77 +1037,66 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "low_threshold_must_be_less_than_high"
             else:
                 configured = dict(current)
-                if user_input.get("remove_sensor"):
-                    configured.pop(entity_id, None)
-                else:
-                    sensor_config = {
-                        "capability": capability,
-                        "priority": user_input.get(
-                            "priority", priority_default
-                        ),
-                        "publish_current": user_input.get(
-                            "publish_current", False
-                        ),
-                    }
-                    if numeric and low is not None:
-                        sensor_config["low_threshold"] = low
-                    if numeric and high is not None:
-                        sensor_config["high_threshold"] = high
-                    if not numeric:
-                        sensor_config.pop("publish_current", None)
-                    if active_state_supported:
-                        sensor_config["alert_when_active"] = user_input.get(
-                            "alert_when_active", False
-                        )
-                    if appliance:
-                        sensor_config["appliance_type"] = user_input.get(
-                            "appliance_type", "appliance"
-                        )
-                        sensor_config["complete_states"] = list(
-                            user_input.get("complete_states") or []
-                        )
-                        sensor_config["idle_states"] = list(
-                            user_input.get("idle_states") or []
-                        )
-                        remaining_entity = self._entity_selection(
-                            user_input.get("remaining_entity")
-                        )
-                        if remaining_entity:
-                            sensor_config["remaining_entity"] = (
-                                remaining_entity
-                            )
-                    if maintenance_alert or state_trigger:
-                        for key in (
-                            "active_message", "resolved_message", "icon",
-                        ):
-                            value = str(user_input.get(key) or "").strip()
-                            if value:
-                                sensor_config[key] = value[:80]
-                    if state_trigger:
-                        sensor_config["trigger_state"] = str(
-                            user_input.get("trigger_state") or "on"
-                        ).strip().casefold()
-                    sensor_config["retention_minutes"] = int(
-                        user_input.get(
-                            "retention_minutes", retention_default
-                        )
+                sensor_config = {
+                    "capability": capability,
+                    "priority": user_input.get(
+                        "priority", priority_default
+                    ),
+                    "publish_current": user_input.get(
+                        "publish_current", False
+                    ),
+                }
+                if numeric and low is not None:
+                    sensor_config["low_threshold"] = low
+                if numeric and high is not None:
+                    sensor_config["high_threshold"] = high
+                if not numeric:
+                    sensor_config.pop("publish_current", None)
+                if active_state_supported:
+                    sensor_config["alert_when_active"] = user_input.get(
+                        "alert_when_active", False
                     )
-                    sensor_config["alert_behavior"] = user_input.get(
-                        "alert_behavior", behavior_default
+                if appliance:
+                    sensor_config["appliance_type"] = user_input.get(
+                        "appliance_type", "appliance"
                     )
-                    sensor_config["display_route"] = user_input.get(
-                        "display_route", "main_then_footer"
+                    sensor_config["complete_states"] = list(
+                        user_input.get("complete_states") or []
                     )
-                    sensor_config["trigger_delay_seconds"] = int(
-                        user_input.get(
-                            "trigger_delay_seconds", trigger_delay_default
-                        )
+                    sensor_config["idle_states"] = list(
+                        user_input.get("idle_states") or []
                     )
-                    display_name = str(
-                        user_input.get("display_name") or ""
-                    ).strip()
-                    if display_name:
-                        sensor_config["display_name"] = display_name[:60]
+                    remaining_entity = self._entity_selection(
+                        user_input.get("remaining_entity")
+                    )
+                    if remaining_entity:
+                        sensor_config["remaining_entity"] = remaining_entity
+                if maintenance_alert or state_trigger:
+                    for key in ("active_message", "resolved_message", "icon"):
+                        value = str(user_input.get(key) or "").strip()
+                        if value:
+                            sensor_config[key] = value[:80]
+                if state_trigger:
+                    sensor_config["trigger_state"] = str(
+                        user_input.get("trigger_state") or "on"
+                    ).strip().casefold()
+                sensor_config["retention_minutes"] = int(
+                    user_input.get("retention_minutes", retention_default)
+                )
+                sensor_config["alert_behavior"] = user_input.get(
+                    "alert_behavior", behavior_default
+                )
+                sensor_config["display_route"] = user_input.get(
+                    "display_route", "main_then_footer"
+                )
+                sensor_config["trigger_delay_seconds"] = int(
+                    user_input.get(
+                        "trigger_delay_seconds", trigger_delay_default
+                    )
+                )
+                display_name = str(user_input.get("display_name") or "").strip()
+                if display_name:
+                    sensor_config["display_name"] = display_name[:60]
                 configured[entity_id] = sensor_config
                 self._selected_capability_entity = None
                 self._selected_capability_mode = None
