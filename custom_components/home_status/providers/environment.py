@@ -50,6 +50,12 @@ class NumericThresholdProvider(CapabilityProvider):
         reading = self._display_number(value)
         limit = self._display_number(threshold)
         relation = "Above" if direction == "high" else "Below"
+        resolved_label = f"{self.capability.title()} Normal"
+        resolved_icon = (
+            "mdi:thermometer-check"
+            if self.capability == "temperature"
+            else "mdi:water-percent-check"
+        )
         now = datetime.now(timezone.utc)
         return {
             "id": f"capability:{self.capability}:{entity_id}:{direction}",
@@ -58,6 +64,12 @@ class NumericThresholdProvider(CapabilityProvider):
             "provider": self.provider,
             "category": self.provider,
             "message": f"{direction.title()} {self.capability.title()}",
+            "resolved_message": resolved_label,
+            "resolved_detail": (
+                f"{normalized['name']} returned to its configured range"
+            ),
+            "resolved_icon": resolved_icon,
+            "resolved_priority": "normal",
             "detail": f"{reading}{unit} — {relation} {limit}{unit}",
             "icon": self.icon,
             "priority": str(config.get("priority") or "attention"),

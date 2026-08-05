@@ -354,6 +354,18 @@ Available sections include:
 
 The visual card editor makes common customization available without editing YAML while preserving advanced options for experienced users.
 
+## Breaking change in 0.3.0
+
+Home Status 0.3.0 replaces legacy automatic entity-name mappings with explicit
+entity configuration. It no longer loads old `source_entities`, `entities`, or
+`entity_ids` defaults. Existing selections made in **Add & Configure Entities**
+remain in place.
+
+After upgrading, restart Home Assistant and review **Settings → Devices &
+Services → Home Status → Configure → Add & Configure Entities**. Use Quick
+Start or Recommended Setup to review a metadata-based checklist, or Custom
+Setup to configure any entity. Nothing is monitored until you confirm it.
+
 ## Favorite news sources
 
 Open **Configure → News Sources** to add any publisher that provides an RSS or
@@ -403,6 +415,7 @@ Home Status. Feed addresses are redacted from downloaded diagnostics.
 - HACS catalog publication
 - Expanded presentation profiles
 - Capability-based providers ([staged provider roadmap](docs/provider-roadmap.md))
+  - Experimental configurable environmental and immediate-safety signals
 - Timeline enhancements
 - Richer media experiences
 - Expanded notification routing

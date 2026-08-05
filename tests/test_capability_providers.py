@@ -38,6 +38,8 @@ async def test_discovery_uses_standard_device_class_and_does_not_select(hass):
 
     assert [(item.entity_id, item.capability) for item in discovered] == [
         ("sensor.living_room_humidity", "humidity"),
+        ("sensor.living_room_humidity", "state_trigger"),
+        ("sensor.living_room_temperature", "state_trigger"),
         ("sensor.living_room_temperature", "temperature"),
     ]
     assert registry.selected_entity_ids({}) == ()
@@ -209,6 +211,11 @@ async def test_one_provider_failure_does_not_break_another(hass):
 
 def test_capability_options_are_safely_normalized():
     normalized = normalize_provider_options({
+        "source_entities": {
+            "system_updates": ["update.home_assistant_core_update"],
+        },
+        "entities": ["sensor.legacy_default"],
+        "entity_ids": ["sensor.older_legacy_default"],
         "capability_sensors": {
             "sensor.room_temperature": {
                 "capability": "TEMPERATURE",
@@ -219,8 +226,37 @@ def test_capability_options_are_safely_normalized():
             },
             "light.invalid": {"capability": "temperature"},
             "sensor.unsupported": {"capability": "pressure"},
+            "binary_sensor.smoke_alarm": {
+                "capability": "smoke", "priority": "critical",
+                "publish_current": True,
+            },
+            "binary_sensor.internet": {"capability": "connectivity"},
+            "sensor.washer_state": {
+                "capability": "appliance_cycle",
+                "appliance_type": "washer",
+                "complete_states": ["DONE"],
+                "idle_states": ["IDLE"],
+                "remaining_entity": "sensor.washer_remaining",
+            },
+            "binary_sensor.dishwasher_clean": {
+                "capability": "maintenance_alert",
+                "active_message": "Clean Dishwasher",
+                "resolved_message": "Dishwasher Cleaning Complete",
+                "icon": "mdi:dishwasher-alert",
+            },
+            "camera.driveway": {"capability": "availability"},
+            "light.porch": {
+                "capability": "state_trigger",
+                "trigger_state": "ON",
+                "active_message": "Porch Light Left On",
+                "resolved_message": "Porch Light Off",
+            },
         }
     })
+
+    assert "source_entities" not in normalized
+    assert "entities" not in normalized
+    assert "entity_ids" not in normalized
 
     assert normalized["capability_sensors"] == {
         "sensor.room_temperature": {
@@ -229,5 +265,338 @@ def test_capability_options_are_safely_normalized():
             "high_threshold": 80.0,
             "priority": "attention",
             "publish_current": True,
-        }
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+        },
+        "binary_sensor.smoke_alarm": {
+            "capability": "smoke",
+            "priority": "critical",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+        },
+        "binary_sensor.internet": {
+            "capability": "connectivity",
+            "priority": "attention",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 30,
+        },
+        "sensor.washer_state": {
+            "capability": "appliance_cycle",
+            "priority": "activity",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+            "appliance_type": "washer",
+            "complete_states": ["done"],
+            "idle_states": ["idle"],
+            "remaining_entity": "sensor.washer_remaining",
+        },
+        "binary_sensor.dishwasher_clean": {
+            "capability": "maintenance_alert",
+            "priority": "attention",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+            "active_message": "Clean Dishwasher",
+            "resolved_message": "Dishwasher Cleaning Complete",
+            "icon": "mdi:dishwasher-alert",
+        },
+        "camera.driveway": {
+            "capability": "availability",
+            "priority": "attention",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+            "alert_when_active": False,
+        },
+        "light.porch": {
+            "capability": "state_trigger",
+            "priority": "attention",
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
+            "trigger_state": "on",
+            "active_message": "Porch Light Left On",
+            "resolved_message": "Porch Light Off",
+        },
     }
+
+
+async def test_selected_safety_capabilities_publish_only_when_active(hass):
+    smoke = "binary_sensor.hallway_smoke"
+    internet = "binary_sensor.internet_connection"
+    hass.states.async_set(smoke, "off", {
+        "device_class": "smoke", "friendly_name": "Hallway Smoke Alarm",
+    })
+    hass.states.async_set(internet, "on", {
+        "device_class": "connectivity", "friendly_name": "Internet",
+    })
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["security"],
+        "capability_sensors": {
+            smoke: {"capability": "smoke", "priority": "critical"},
+            internet: {
+                "capability": "connectivity", "priority": "attention",
+                "trigger_delay_seconds": 0,
+            },
+        },
+    }
+
+    assert registry.active_items(hass.states.get(smoke), options) == []
+    assert registry.active_items(hass.states.get(internet), options) == []
+
+    hass.states.async_set(smoke, "on", {
+        "device_class": "smoke", "friendly_name": "Hallway Smoke Alarm",
+    })
+    hass.states.async_set(internet, "off", {
+        "device_class": "connectivity", "friendly_name": "Internet",
+    })
+    smoke_item = registry.active_items(hass.states.get(smoke), options)[0]
+    connection_item = registry.active_items(hass.states.get(internet), options)[0]
+
+    assert smoke_item["message"] == "Smoke Detected"
+    assert smoke_item["priority"] == "critical"
+    assert connection_item["message"] == "Connection Lost"
+    assert connection_item["detail"] == "Internet is offline"
+
+
+async def test_connectivity_startup_flicker_waits_for_configured_delay(hass):
+    entity_id = "binary_sensor.internet_connection"
+    hass.states.async_set(entity_id, "off", {
+        "device_class": "connectivity", "friendly_name": "Internet",
+    })
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["security"],
+        "capability_sensors": {
+            entity_id: {"capability": "connectivity"},
+        },
+    }
+
+    assert registry.active_items(hass.states.get(entity_id), options) == []
+
+
+async def test_appliance_cycle_is_discovered_configured_and_resolved(hass):
+    machine = "sensor.utility_room_washer_state"
+    remaining = "sensor.utility_room_washer_remaining"
+    attributes = {
+        "device_class": "enum",
+        "friendly_name": "Utility Room Washer",
+        "options": ["idle", "run", "complete"],
+    }
+    hass.states.async_set(machine, "run", attributes)
+    hass.states.async_set(
+        remaining, "00:12:00", {"unit_of_measurement": "min"}
+    )
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["laundry"],
+        "capability_sensors": {
+            machine: {
+                "capability": "appliance_cycle",
+                "appliance_type": "washer",
+                "complete_states": ["complete"],
+                "idle_states": ["idle"],
+                "remaining_entity": remaining,
+                "priority": "activity",
+            },
+        },
+    }
+
+    assert (machine, "appliance_cycle") in {
+        (item.entity_id, item.capability) for item in registry.discover(hass)
+    }
+    item = registry.active_items(
+        hass.states.get(machine), options, hass
+    )[0]
+    assert item["message"] == "Utility Room Washer Running"
+    assert item["detail"] == "Run · About 12 minutes remaining"
+    assert item["icon"] == "mdi:washing-machine"
+
+    hass.states.async_set(machine, "complete", attributes)
+    resolved = registry.resolution_fields(
+        hass.states.get(machine), options, item
+    )
+    assert resolved["message"] == "Utility Room Washer Cycle Complete"
+    assert resolved["detail"] == "Utility Room Washer is ready"
+
+
+async def test_maintenance_alert_is_selected_configured_and_resolved(hass):
+    entity_id = "binary_sensor.dishwasher_cleaning_required"
+    attributes = {
+        "device_class": "problem",
+        "friendly_name": "Dishwasher Cleaning",
+    }
+    hass.states.async_set(entity_id, "on", attributes)
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["maintenance"],
+        "capability_sensors": {
+            entity_id: {
+                "capability": "maintenance_alert",
+                "active_message": "Clean Dishwasher",
+                "resolved_message": "Dishwasher Cleaning Complete",
+                "icon": "mdi:dishwasher-alert",
+            },
+        },
+    }
+
+    assert (entity_id, "maintenance_alert") in {
+        (item.entity_id, item.capability) for item in registry.discover(hass)
+    }
+    item = registry.active_items(hass.states.get(entity_id), options)[0]
+    assert item["message"] == "Clean Dishwasher"
+    assert item["icon"] == "mdi:dishwasher-alert"
+
+    hass.states.async_set(entity_id, "off", attributes)
+    resolved = registry.resolution_fields(
+        hass.states.get(entity_id), options, item
+    )
+    assert resolved["message"] == "Dishwasher Cleaning Complete"
+    assert resolved["priority"] == "normal"
+
+
+async def test_any_entity_can_use_an_exact_state_trigger(hass):
+    entity_id = "light.porch"
+    hass.states.async_set(
+        entity_id, "on", {"friendly_name": "Porch Light"}
+    )
+    registry = CapabilityProviderRegistry()
+    options = {
+        "capability_sensors": {
+            entity_id: {
+                "capability": "state_trigger",
+                "trigger_state": "on",
+                "display_name": "Outside Light",
+                "active_message": "Outside Light Left On",
+                "resolved_message": "Outside Light Turned Off",
+                "display_route": "main_then_footer",
+            },
+        },
+    }
+
+    assert (entity_id, "state_trigger") in {
+        (item.entity_id, item.capability) for item in registry.discover(hass)
+    }
+    item = registry.active_items(hass.states.get(entity_id), options)[0]
+    assert item["message"] == "Outside Light Left On"
+    assert item["display_name"] == "Outside Light"
+
+    hass.states.async_set(entity_id, "off", {"friendly_name": "Porch Light"})
+    assert registry.active_items(hass.states.get(entity_id), options) == []
+    resolved = registry.resolution_fields(
+        hass.states.get(entity_id), options, item
+    )
+    assert resolved["message"] == "Outside Light Turned Off"
+    assert resolved["detail"] == "Outside Light is now off"
+
+
+async def test_safety_capabilities_are_discovered_but_respect_provider_toggle(hass):
+    entity_id = "binary_sensor.utility_co"
+    hass.states.async_set(entity_id, "on", {
+        "device_class": "carbon_monoxide", "friendly_name": "Utility CO",
+    })
+    registry = CapabilityProviderRegistry()
+
+    discovered = registry.discover(hass)
+    assert (entity_id, "carbon_monoxide") in {
+        (item.entity_id, item.capability) for item in discovered
+    }
+    options = {
+        "enabled_providers": ["climate"],
+        "capability_sensors": {entity_id: {"capability": "carbon_monoxide"}},
+    }
+    assert registry.active_items(hass.states.get(entity_id), options) == []
+
+
+async def test_availability_monitor_is_explicit_and_alerts_only_when_unavailable(hass):
+    entity_id = "camera.driveway"
+    hass.states.async_set("sensor.home_status", "Ready")
+    hass.states.async_set(entity_id, "idle", {"friendly_name": "Driveway"})
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["security"],
+        "capability_sensors": {entity_id: {"capability": "availability"}},
+    }
+
+    assert (entity_id, "availability") in {
+        (item.entity_id, item.capability) for item in registry.discover(hass)
+    }
+    assert "sensor.home_status" not in {
+        item.entity_id for item in registry.discover(hass)
+    }
+    assert registry.active_items(hass.states.get(entity_id), options) == []
+
+    hass.states.async_set(
+        entity_id, "unavailable", {"friendly_name": "Driveway"}
+    )
+    item = registry.active_items(hass.states.get(entity_id), options)[0]
+
+    assert item["message"] == "Device Offline"
+    assert item["detail"] == "Driveway is unavailable"
+    assert item["id"] == "capability:availability:camera.driveway:unavailable"
+    assert item["retention_minutes"] == 10
+
+
+async def test_selected_contact_can_also_alert_while_open(hass):
+    entity_id = "binary_sensor.back_door"
+    hass.states.async_set(entity_id, "on", {
+        "device_class": "door", "friendly_name": "Back Door",
+    })
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["security"],
+        "capability_sensors": {
+            entity_id: {
+                "capability": "availability", "alert_when_active": True,
+                "display_name": "Bathroom Door",
+            },
+        },
+    }
+
+    item = registry.active_items(hass.states.get(entity_id), options)[0]
+
+    assert item["message"] == "Bathroom Door"
+    assert item["capability_message"] == "Door Open"
+    assert item["display_name"] == "Bathroom Door"
+    assert item["detail"] == "Back Door is open"
+    assert item["resolved_message"] == "Door Closed"
+    assert item["resolved_detail"] == "Back Door is closed"
+    assert item["id"] == "capability:availability:binary_sensor.back_door:active"
+    assert item["retention_minutes"] == 120
+    assert item["display_route"] == "main_then_footer"
+    assert item["main_until"] is not None
+    assert item["footer_eligible"] is True
+
+
+async def test_selected_motion_can_alert_while_active(hass):
+    entity_id = "binary_sensor.living_room_motion"
+    hass.states.async_set(entity_id, "on", {
+        "device_class": "motion", "friendly_name": "Living Room Motion",
+    })
+    registry = CapabilityProviderRegistry()
+    options = {
+        "enabled_providers": ["security"],
+        "capability_sensors": {
+            entity_id: {
+                "capability": "availability", "alert_when_active": True,
+                "retention_minutes": 5,
+                "display_route": "footer_only",
+            },
+        },
+    }
+
+    item = registry.active_items(hass.states.get(entity_id), options)[0]
+
+    assert item["message"] == "Motion Detected"
+    assert item["detail"] == "Motion detected by Living Room Motion"
+    assert item["resolved_message"] == "Motion Detected"
+    assert item["id"] == "capability:availability:binary_sensor.living_room_motion:active"
+    assert item["retention_minutes"] == 5
+    assert item["display_route"] == "footer_only"
+    assert item["main_until"] is None
+    assert item["footer_eligible"] is True

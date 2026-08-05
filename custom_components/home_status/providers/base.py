@@ -57,6 +57,7 @@ class CapabilityProvider(ABC):
     provider = "climate"
     status = ProviderStatus.EXPERIMENTAL
     device_classes: frozenset[str] = frozenset()
+    entity_domains: frozenset[str] = frozenset({"sensor"})
     icon = "mdi:gauge"
 
     @staticmethod
@@ -71,7 +72,9 @@ class CapabilityProvider(ABC):
         device_registry = dr.async_get(hass)
         area_registry = ar.async_get(hass)
         discovered: list[DiscoveredEntity] = []
-        for state in hass.states.async_all("sensor"):
+        for state in hass.states.async_all():
+            if state.entity_id.split(".", 1)[0] not in self.entity_domains:
+                continue
             registry_entry = entity_registry.async_get(state.entity_id)
             device_class = self._metadata_value(
                 state.attributes.get("device_class")
@@ -113,7 +116,7 @@ class CapabilityProvider(ABC):
         raw_state = str(state.state)
         if raw_state in {"unknown", "unavailable", ""}:
             return ProviderEvaluation(entity_id, self.capability, raw_state, None, None, False, f"state_{raw_state or 'empty'}")
-        if state.entity_id.split(".", 1)[0] != "sensor":
+        if state.entity_id.split(".", 1)[0] not in self.entity_domains:
             return ProviderEvaluation(entity_id, self.capability, raw_state, None, None, False, "unsupported_domain")
         device_class = self._metadata_value(state.attributes.get("device_class"))
         if device_class and device_class not in self.device_classes:
@@ -176,4 +179,21 @@ class CapabilityProvider(ABC):
             "active": False,
             "created_at": normalized["created_at"],
             "source": f"capability:{self.capability}",
+        }
+
+    def enrich_item(
+        self, hass: HomeAssistant, item: dict[str, Any], config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Add optional context from related configured entities."""
+        return item
+
+    def resolution_fields(
+        self, state: State | None, config: dict[str, Any], old: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Return presentation fields when an active event resolves."""
+        return {
+            "message": old.get("resolved_message", old.get("message")),
+            "detail": old.get("resolved_detail", old.get("detail")),
+            "icon": old.get("resolved_icon", old.get("icon")),
+            "priority": old.get("resolved_priority", "activity"),
         }

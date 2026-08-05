@@ -72,6 +72,27 @@ try {
   assert.deepEqual(registration.stub.grid_options, { columns: 36, rows: 7 });
   assert.equal(registration.editorTag, 'HOME-STATUS-CARD-EDITOR');
 
+  const resolvedIconColors = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    return {
+      closedDoor: card._iconSemanticClass({
+        provider: 'security', message: 'Door Closed', state: 'resolved',
+        active: false, resolved_at: '2026-08-05T06:00:00-04:00'
+      }),
+      clearedSmoke: card._iconSemanticClass({
+        provider: 'security', message: 'Smoke Cleared', state: 'resolved',
+        active: false, resolved_at: '2026-08-05T06:00:00-04:00'
+      }),
+      openDoor: card._iconSemanticClass({
+        provider: 'security', message: 'Door Open', state: 'active',
+        active: true, priority: 'attention'
+      })
+    };
+  });
+  assert.equal(resolvedIconColors.closedDoor, 'semantic-green');
+  assert.equal(resolvedIconColors.clearedSmoke, 'semantic-green');
+  assert.equal(resolvedIconColors.openDoor, 'semantic-orange');
+
   const cleanDefaults = await page.evaluate(() => {
     const editor = document.createElement('home-status-card-editor');
     editor.hass = window.testHass;
@@ -250,6 +271,31 @@ try {
   assert.equal(footerWeather.display.currentWeather, true);
   assert.match(footerWeather.markup, /footer-marquee-item is-current-weather/);
   assert.doesNotMatch(footerWeather.markup, />Weather<\/strong>/);
+
+  const glanceableIndoorTemperature = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    const item = {
+      id: 'current:climate:sensor.indoor_temperature',
+      title: 'Indoor Temperature',
+      summary: '78.0°F',
+      provider: 'climate',
+      icon: 'mdi:home-thermometer-outline'
+    };
+    const display = card._formatFooterItem(item);
+    const markup = card._zoneMarkup(item, '');
+    card.shadowRoot.innerHTML = '<div class="bottom-stream"></div>';
+    card._renderFooterStream([item]);
+    return { display, markup, footerMarkup: card.shadowRoot.innerHTML };
+  });
+  assert.equal(glanceableIndoorTemperature.display.title, '78°');
+  assert.equal(glanceableIndoorTemperature.display.summary, 'Indoors');
+  assert.equal(glanceableIndoorTemperature.display.indoorTemperature, true);
+  assert.match(glanceableIndoorTemperature.markup, /is-indoor-temperature/);
+  assert.match(glanceableIndoorTemperature.markup, />78°<\/span>/);
+  assert.match(glanceableIndoorTemperature.markup, />Indoors<\/span>/);
+  assert.doesNotMatch(glanceableIndoorTemperature.markup, />Indoor Temperature<\/span>/);
+  assert.match(glanceableIndoorTemperature.footerMarkup, /footer-marquee-item is-indoor-temperature/);
 
   const weatherIconSizing = await page.evaluate(() => {
     const card = document.createElement('home-status-card');

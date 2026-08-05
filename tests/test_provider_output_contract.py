@@ -74,27 +74,12 @@ def test_weather_alert_output_contract():
     }
 
 
-def test_laundry_cycle_output_contract():
+def test_legacy_hardcoded_laundry_cycle_is_retired():
     remaining = fake_state("sensor.washer_time_remaining", "00:12:00")
     machine = fake_state("sensor.washer_machine_state", "run")
     subject = coordinator({remaining.entity_id: remaining})
 
-    assert compact(subject._build_appliance_cycle_item(machine.entity_id, machine)) == {
-        "id": "home_status:appliance_cycle:sensor.washer_machine_state",
-        "entity_id": "sensor.washer_machine_state",
-        "event_type": "appliance_cycle",
-        "behavior": "activity",
-        "message": "Washer Running",
-        "detail": "Run · About 12 minutes remaining",
-        "category": "laundry",
-        "provider": "laundry",
-        "priority": "activity",
-        "icon": "mdi:washing-machine",
-        "active": True,
-        "persistent": True,
-        "hero_eligible": False,
-        "state": "run",
-    }
+    assert subject._build_appliance_cycle_item(machine.entity_id, machine) is None
 
 
 def test_filter_maintenance_output_contract():
@@ -124,26 +109,11 @@ def test_filter_maintenance_output_contract():
     }
 
 
-def test_sprinkler_output_contract():
+def test_legacy_hardcoded_sprinkler_output_is_retired():
     zone = fake_state("valve.sprinklers_zone1", "open")
     subject = coordinator({zone.entity_id: zone})
 
-    assert compact(subject._build_sprinkler_watering_item(zone.entity_id)) == {
-        "id": "home_status:sprinkler_watering",
-        "entity_id": "valve.sprinklers_zone1",
-        "event_type": "sprinkler_watering",
-        "behavior": "activity",
-        "message": "Watering Zone 1",
-        "detail": "Zone 1",
-        "category": "schedule",
-        "provider": "schedule",
-        "priority": "activity",
-        "icon": "mdi:sprinkler-variant",
-        "active": True,
-        "persistent": True,
-        "hero_eligible": False,
-        "state": "open",
-    }
+    assert subject._build_sprinkler_watering_item(zone.entity_id) is None
 
 
 def test_waste_collection_due_dates_stay_with_schedule_provider():

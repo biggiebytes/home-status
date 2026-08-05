@@ -1,7 +1,7 @@
 import re
 
 DOMAIN = "home_status"
-INTEGRATION_VERSION = "0.2.7"
+INTEGRATION_VERSION = "0.3.0"
 FRONTEND_URL_BASE = "/home_status"
 FRONTEND_MODULE_URL = (
     f"{FRONTEND_URL_BASE}/home-status-card.js?v={INTEGRATION_VERSION}"
@@ -14,43 +14,18 @@ CONF_CONTACT_FOOTER_PILOT = "contact_footer_pilot_enabled"
 CONF_CAPABILITY_SENSORS = "capability_sensors"
 STORAGE_VERSION = 1
 STORAGE_KEY = "home_status_history"
-ALARM_ENTITY = "alarm_control_panel.alarmo"
+# The dashboard header selects its alarm entity explicitly. The backend does
+# not assume an Alarmo entity for ticker publication.
+ALARM_ENTITY = ""
 LEAK_SOURCE_NAMES = {
     "binary_sensor.kitchen_sink_moisture": "Kitchen Sink",
     "binary_sensor.bathroom_sink_moisture": "Bathroom Sink",
     "binary_sensor.laundry_room_moisture": "Laundry Room",
 }
-APPLIANCE_CYCLES = {
-    "sensor.washer_machine_state": {
-        "name": "Washer",
-        "remaining": "sensor.washer_time_remaining",
-        "icon": "mdi:washing-machine",
-    },
-    "sensor.dryer_machine_state": {
-        "name": "Dryer",
-        "remaining": "sensor.dryer_time_remaining",
-        "icon": "mdi:tumble-dryer",
-    },
-    "sensor.dishwasher_current_status": {
-        "name": "Dishwasher",
-        "remaining": "sensor.dishwasher_remaining_time",
-        "icon": "mdi:dishwasher",
-    },
-}
-APPLIANCE_MAINTENANCE = {
-    "binary_sensor.dishwasher_rinse_refill_needed": {
-        "message": "Add Dishwasher Rinse Aid",
-        "detail": "Dishwasher rinse aid needs to be refilled",
-        "resolved_message": "Dishwasher Rinse Aid Refilled",
-        "icon": "mdi:cup-water",
-    },
-    "binary_sensor.dishwasher_machine_clean_reminder": {
-        "message": "Clean Dishwasher",
-        "detail": "The dishwasher cleaning cycle is due",
-        "resolved_message": "Dishwasher Cleaning Complete",
-        "icon": "mdi:dishwasher-alert",
-    },
-}
+# Appliance-cycle entities are selected through capability discovery.  Keep
+# the retired mapping empty while legacy source-role readers are phased out.
+APPLIANCE_CYCLES: dict[str, dict[str, str]] = {}
+APPLIANCE_MAINTENANCE: dict[str, dict[str, str]] = {}
 SYSTEM_UPDATES = {
     "update.home_assistant_core_update": "Home Assistant Core",
     "update.home_assistant_operating_system_update": "Home Assistant OS",
@@ -100,42 +75,27 @@ PROVIDER_ALIASES = {
 }
 
 DEFAULT_SOURCE_GROUPS = {
-    "maintenance_sensors": [
-        "binary_sensor.sprinklers_fault",
-        "binary_sensor.dryer_blocked_vent_fault",
-    ],
-    "leak_sensors": list(LEAK_SOURCE_NAMES),
-    "filter_status": ["binary_sensor.refrigerator_filter_status"],
-    "filter_usage": ["sensor.refrigerator_water_filter_usage"],
-    "refrigerator_doors": [
-        "binary_sensor.refrigerator_fridge_door",
-        "binary_sensor.refrigerator_freezer_door",
-    ],
-    "refrigerator_temperatures": [
-        "sensor.refrigerator_fridge_temperature",
-        "sensor.refrigerator_freezer_temperature",
-    ],
-    "weather_alert": ["sensor.nws_alerts_alerts"],
-    "family_calendar": ["calendar.family", "calendar.school"],
-    "sprinkler_schedule": ["sensor.sprinklers_next_watering", "switch.sprinklers_rain_delay"],
-    "sprinkler_valves": [
-        f"valve.sprinklers_zone{zone}" for zone in range(1, 7)
-    ],
-    "waste_schedule": [
-        "sensor.waste_collection_schedule_garbage",
-        "sensor.waste_collection_schedule_recycling",
-        "sensor.waste_collection_schedule_yard_waste",
-    ],
+    "maintenance_sensors": [],
+    "leak_sensors": [],
+    "filter_status": [],
+    "filter_usage": [],
+    "refrigerator_doors": [],
+    "refrigerator_temperatures": [],
+    "weather_alert": [],
+    "family_calendar": [],
+    "sprinkler_schedule": [],
+    "sprinkler_valves": [],
+    "waste_schedule": [],
     "laundry_state": list(APPLIANCE_CYCLES),
     "laundry_remaining": [
         config["remaining"] for config in APPLIANCE_CYCLES.values()
     ],
     "appliance_maintenance": list(APPLIANCE_MAINTENANCE),
-    "climate_temperature": ["sensor.thermostat_temperature"],
-    "hvac_diagnostics": ["sensor.micro_air_status"],
-    "hvac_diagnostic_details": list(EASYSTART_DIAGNOSTIC_DETAILS),
-    "hvac_fault_counter": [EASYSTART_FAULT_COUNTER],
-    "system_updates": list(SYSTEM_UPDATES),
+    "climate_temperature": [],
+    "hvac_diagnostics": [],
+    "hvac_diagnostic_details": [],
+    "hvac_fault_counter": [],
+    "system_updates": [],
     # Entity-backed adapters can still add news sources explicitly, but the
     # built-in RSS adapters do not require a synthetic sensor.news entity.
     "news_sources": [],
@@ -238,41 +198,153 @@ def normalize_providers(values) -> list[str]:
 def normalize_provider_options(options: dict) -> dict:
     """Migrate provider-bearing option values to the canonical contract."""
     normalized = dict(options)
+    # The legacy setup wizard stored automatically guessed entity names in
+    # these fields. All entity monitoring now starts only from an explicit
+    # Add & Configure Entities selection.
+    normalized.pop("source_entities", None)
+    normalized.pop(CONF_ENTITIES, None)
+    normalized.pop(CONF_ENTITY_IDS, None)
     # Exterior lights are intentional live controls, not unattended-state
     # alerts. Remove the retired elapsed-time warning option.
     normalized.pop("exterior_light_delay_minutes", None)
-    normalized.setdefault(CONF_CONTACT_FOOTER_PILOT, False)
+    # Entity events now use the explicit capability pipeline.  Retire the
+    # legacy automatic contact-history selection instead of running both.
+    normalized.pop("history_entities", None)
+    normalized.pop(CONF_CONTACT_FOOTER_PILOT, None)
     raw_capability_sensors = normalized.get(CONF_CAPABILITY_SENSORS)
     capability_sensors = {}
     if isinstance(raw_capability_sensors, dict):
         for entity_id, raw_config in raw_capability_sensors.items():
-            if (
-                not isinstance(entity_id, str)
-                or not entity_id.startswith("sensor.")
-                or not isinstance(raw_config, dict)
-            ):
+            if not isinstance(entity_id, str) or not isinstance(raw_config, dict):
                 continue
             capability = str(raw_config.get("capability") or "").casefold()
-            if capability not in {"temperature", "humidity"}:
+            if capability not in {
+                "temperature", "humidity", "smoke", "carbon_monoxide",
+                "connectivity", "device_problem", "availability",
+                "appliance_cycle",
+                "maintenance_alert",
+                "state_trigger",
+            }:
+                continue
+            if capability not in {"availability", "state_trigger"} and not entity_id.startswith(
+                ("sensor.", "binary_sensor.")
+            ):
+                continue
+            if capability == "appliance_cycle" and not entity_id.startswith(
+                "sensor."
+            ):
                 continue
             config = {"capability": capability}
-            for key in ("low_threshold", "high_threshold"):
-                value = raw_config.get(key)
-                if value in (None, ""):
-                    continue
-                try:
-                    config[key] = float(value)
-                except (TypeError, ValueError):
-                    continue
-            priority = str(raw_config.get("priority") or "attention")
+            if capability in {"temperature", "humidity"}:
+                for key in ("low_threshold", "high_threshold"):
+                    value = raw_config.get(key)
+                    if value in (None, ""):
+                        continue
+                    try:
+                        config[key] = float(value)
+                    except (TypeError, ValueError):
+                        continue
+            default_priority = (
+                "activity" if capability == "appliance_cycle" else "attention"
+            )
+            priority = str(raw_config.get("priority") or default_priority)
             config["priority"] = (
                 priority
                 if priority in {"normal", "activity", "attention", "critical"}
-                else "attention"
+                else default_priority
             )
-            config["publish_current"] = bool(
-                raw_config.get("publish_current", False)
+            alert_behavior = str(
+                raw_config.get("alert_behavior") or "one_time"
             )
+            config["alert_behavior"] = (
+                alert_behavior
+                if alert_behavior in {
+                    "one_time", "sustained", "critical", "reminder",
+                }
+                else "one_time"
+            )
+            display_route = str(
+                raw_config.get("display_route") or "main_then_footer"
+            )
+            config["display_route"] = (
+                display_route
+                if display_route in {
+                    "main_then_footer", "main_only", "footer_only",
+                }
+                else "main_then_footer"
+            )
+            display_name = str(raw_config.get("display_name") or "").strip()
+            if display_name:
+                config["display_name"] = display_name[:60]
+            default_trigger_delay = 30 if capability == "connectivity" else 0
+            try:
+                trigger_delay_seconds = int(
+                    raw_config.get(
+                        "trigger_delay_seconds", default_trigger_delay
+                    )
+                )
+            except (TypeError, ValueError):
+                trigger_delay_seconds = default_trigger_delay
+            config["trigger_delay_seconds"] = max(
+                0, min(3600, trigger_delay_seconds)
+            )
+            if capability in {"temperature", "humidity"}:
+                config["publish_current"] = bool(
+                    raw_config.get("publish_current", False)
+                )
+            if capability == "availability":
+                config["alert_when_active"] = bool(
+                    raw_config.get("alert_when_active", False)
+                )
+            if capability == "appliance_cycle":
+                appliance_type = str(
+                    raw_config.get("appliance_type") or "appliance"
+                )
+                config["appliance_type"] = (
+                    appliance_type
+                    if appliance_type in {
+                        "washer", "dryer", "dishwasher", "appliance",
+                    }
+                    else "appliance"
+                )
+                for key, defaults in (
+                    (
+                        "complete_states",
+                        ["complete", "completed", "finished", "done", "end"],
+                    ),
+                    ("idle_states", ["off", "idle", "ready", "power_off"]),
+                ):
+                    values = raw_config.get(key, defaults)
+                    if isinstance(values, (list, tuple, set)):
+                        normalized_states = list(dict.fromkeys(
+                            str(value).strip().casefold()
+                            for value in values if str(value).strip()
+                        ))
+                        config[key] = normalized_states or defaults
+                remaining_entity = str(
+                    raw_config.get("remaining_entity") or ""
+                ).strip()
+                if remaining_entity.startswith("sensor."):
+                    config["remaining_entity"] = remaining_entity
+            if capability in {"maintenance_alert", "state_trigger"}:
+                for key in ("active_message", "resolved_message", "icon"):
+                    value = str(raw_config.get(key) or "").strip()
+                    if value:
+                        config[key] = value[:80]
+            if capability == "state_trigger":
+                trigger_state = str(
+                    raw_config.get("trigger_state") or "on"
+                ).strip().casefold()
+                config["trigger_state"] = trigger_state or "on"
+            if raw_config.get("retention_minutes") not in (None, ""):
+                try:
+                    retention_minutes = int(raw_config["retention_minutes"])
+                except (TypeError, ValueError):
+                    retention_minutes = None
+                if retention_minutes is not None:
+                    config["retention_minutes"] = max(
+                        1, min(1440, retention_minutes)
+                    )
             capability_sensors[entity_id] = config
     normalized[CONF_CAPABILITY_SENSORS] = capability_sensors
     try:

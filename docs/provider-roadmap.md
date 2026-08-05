@@ -25,10 +25,19 @@ Experimental.
 
 ## Stage 2 — immediate safety and availability
 
-- Smoke
-- Carbon monoxide
-- Internet/WAN connectivity
-- Device unavailable/offline monitoring
+The first Stage 2 providers are **Experimental** and use only explicitly
+selected standard `binary_sensor` entities. They publish sustained alerts only
+while the selected entity indicates an active condition; discovery never
+enables monitoring by itself.
+
+- Smoke (`device_class: smoke`)
+- Carbon monoxide (`device_class: carbon_monoxide`)
+- Internet/WAN connectivity (`device_class: connectivity`; alerts when off)
+- Device problem signals (`device_class: problem`)
+
+Generic unavailable-state monitoring remains a later addition: Home Status
+will require an explicit, bounded opt-in model before treating an unavailable
+entity as a household alert.
 
 ## Stage 3 — utilities, infrastructure, and equipment
 

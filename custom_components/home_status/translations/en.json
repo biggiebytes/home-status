@@ -15,12 +15,10 @@
         "title": "Choose your information",
         "description": "Select the kinds of household information Home Status should organize. You can change these later.",
         "data": {
-          "enabled_providers": "Information sources",
-          "history_entities": "Safety event history"
+          "enabled_providers": "Information sources"
         },
         "data_description": {
-          "enabled_providers": "Choose the providers that should contribute notifications and awareness.",
-          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should be remembered."
+          "enabled_providers": "Choose the providers that should contribute notifications and awareness."
         }
       },
       "weather": {
@@ -53,7 +51,7 @@
           "general": "Updates & History",
           "information_sources": "Information Sources",
           "news_sources": "News Sources",
-          "experimental_sensors": "Experimental Sensor Providers",
+          "experimental_sensors": "Add & Configure Entities",
           "navigation": "Open Pages When Tapped",
           "appearance": "Appearance",
           "weather": "Weather & Schedules",
@@ -83,12 +81,10 @@
         "title": "Information Sources",
         "description": "Choose what Home Status may show. Checked sources are enabled. Ready means compatible information was found. Enabled sources without Ready stay quiet until configured. Ready now: {detected}.",
         "data": {
-          "enabled_providers": "Sources to Enable",
-          "history_entities": "Events to Remember"
+          "enabled_providers": "Sources to Enable"
         },
         "data_description": {
-          "enabled_providers": "Turn each type of household information on or off. Home Status does not monitor every discovered entity automatically.",
-          "history_entities": "Choose alarms, doors, windows, locks, and safety sensors whose changes should appear in recent history."
+          "enabled_providers": "Turn each type of household information on or off. Home Status does not monitor every discovered entity automatically."
         }
       },
       "news_sources": {
@@ -128,30 +124,72 @@
         "description": "Nothing has been saved yet.\n\nSettings changing:\n{changes}\n\nChecks:\n{warnings}\n\nSubmit to apply these changes, or go back to revise them."
       },
       "experimental_sensors": {
-        "title": "Experimental Sensor Providers",
-        "description": "Choose a Temperature or Humidity sensor to configure. Discovery only creates this list; Home Status never monitors every matching sensor automatically.",
+        "title": "Add & Configure Entities",
+        "description": "Start with a small reviewed setup, use the broader recommended setup, or configure an entity yourself. Home Status monitors nothing until you apply a selection.",
         "data": {
-          "capability_entity": "Sensor"
+          "starter_profile": "How would you like to start?",
+          "capability_mode": "What should Home Status watch for?",
+          "capability_entity": "Choose an entity"
         },
         "data_description": {
-          "capability_entity": "Only sensors using standard Home Assistant Temperature or Humidity metadata appear here."
+          "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes motion and connectivity. Custom Setup lets you choose any entity.",
+          "capability_mode": "Recommended configuration uses the entity's Home Assistant metadata. The simple trigger creates an event when the entity exactly matches a state you choose.",
+          "capability_entity": "Every available Home Assistant entity appears here. Nothing is monitored until you configure it."
+        }
+      },
+      "starter_preview": {
+        "title": "Review {profile}",
+        "description": "These recommendations use Home Assistant metadata, not entity names. Review the checked entities, then submit to start monitoring only those entities.",
+        "data": {
+          "starter_entities": "Entities to monitor"
+        },
+        "data_description": {
+          "starter_entities": "Uncheck anything you do not want. You can edit every setting later."
         }
       },
       "experimental_sensor": {
-        "title": "Configure {capability}",
-        "description": "Configure {entity}. Thresholds use {unit}. Leave a threshold empty to disable that direction.",
+        "title": "Set Up {entity}",
+        "description": "Choose what Home Status watches for and how it presents alerts from this sensor. Temperature and humidity use thresholds in {unit}.",
         "data": {
           "low_threshold": "Low threshold",
           "high_threshold": "High threshold",
-          "priority": "Alert importance",
+          "priority": "How important is this?",
+          "display_name": "Name shown by Home Status (optional)",
+          "trigger_state": "Create an event when the state equals",
+          "appliance_type": "Appliance type",
+          "complete_states": "States that mean the cycle completed",
+          "idle_states": "States that mean the appliance is idle",
+          "remaining_entity": "Remaining-time sensor (optional)",
+          "active_message": "Message while maintenance is needed (optional)",
+          "resolved_message": "Message after maintenance is cleared (optional)",
+          "icon": "Icon shown by Home Status (optional)",
+          "alert_behavior": "When should it return to the main ticker?",
+          "display_route": "Where should alerts appear?",
+          "trigger_delay_seconds": "Alert only after the condition lasts (seconds)",
           "publish_current": "Also show the current value",
-          "remove_sensor": "Stop monitoring this sensor"
+          "alert_when_active": "Alert while open or active",
+          "retention_minutes": "Keep in the footer after it clears (minutes)",
+          "remove_sensor": "Remove this sensor from Home Status"
         },
         "data_description": {
           "low_threshold": "Create an event only when the value falls below this limit.",
           "high_threshold": "Create an event only when the value rises above this limit.",
+          "display_name": "Leave blank to use the automatic alert title. This does not rename the Home Assistant entity.",
+          "trigger_state": "Enter the exact Home Assistant state that represents the condition you want shown.",
+          "appliance_type": "Sets the appliance icon; it does not limit which entity may be selected.",
+          "complete_states": "These values produce a completed-cycle event when the appliance stops running.",
+          "idle_states": "These values end a cycle without reporting it as completed.",
+          "remaining_entity": "If available, Home Status adds its remaining time to the running-cycle details.",
+          "active_message": "Leave blank to use the selected sensor's visible name with a maintenance alert.",
+          "resolved_message": "Leave blank to use the selected sensor's visible name with a completion message.",
+          "icon": "Optional Material Design icon, for example mdi:dishwasher-alert.",
+          "alert_behavior": "One-time activity appears briefly once. Other choices return to the main ticker while the condition remains active.",
+          "display_route": "The recommended default shows new alerts in the main area briefly, then keeps them in the bottom ticker.",
+          "trigger_delay_seconds": "Prevents brief connection or startup flickers from becoming alerts. Use 0 for immediate alerts.",
           "publish_current": "Off by default. Turn on only if you want the normal reading published continuously.",
-          "remove_sensor": "Removes this sensor from Home Status without changing the Home Assistant entity."
+          "alert_when_active": "When enabled, an open door or window, or active motion sensor, also creates an alert.",
+          "retention_minutes": "How long completed events stay in the footer. This is saved separately for each sensor.",
+          "remove_sensor": "Stops Home Status from monitoring this sensor. It does not change the original Home Assistant entity."
         }
       },
       "navigation": {
@@ -244,7 +282,6 @@
         "description": "Tools for troubleshooting and advanced customization.",
         "data": {
           "debug_logging": "Debug Logging",
-          "contact_footer_pilot_enabled": "Completed Door & Window Timeline Pilot",
           "refrigerator_door_delay_minutes": "Alert When a Refrigerator Door Is Open For",
           "refrigerator_temperature_delay_minutes": "Alert When Temperature Is High For",
           "refrigerator_fridge_high_temperature": "Refrigerator High Temperature",
@@ -263,7 +300,6 @@
         },
         "data_description": {
           "debug_logging": "Enable detailed logs for troubleshooting.",
-          "contact_footer_pilot_enabled": "Show stable completed door and window events in the footer using the new timeline pipeline. Turn this off to restore the previous behavior.",
           "refrigerator_door_delay_minutes": "Minutes a refrigerator or freezer door may remain open before Home Status alerts you.",
           "refrigerator_temperature_delay_minutes": "Minutes a high temperature must continue before Home Status alerts you.",
           "refrigerator_fridge_high_temperature": "Alert when the refrigerator remains above this temperature.",

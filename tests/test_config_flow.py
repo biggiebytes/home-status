@@ -114,7 +114,6 @@ async def test_custom_onboarding_and_permanent_settings_menu(hass):
         result["flow_id"],
         {
             "enabled_providers": ["security", "weather"],
-            "history_entities": ["binary_sensor.front_door"],
         },
     )
     assert result["step_id"] == "weather"
@@ -128,7 +127,6 @@ async def test_custom_onboarding_and_permanent_settings_menu(hass):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["enabled_providers"] == ["security", "weather"]
-    assert result["data"]["history_entities"] == ["binary_sensor.front_door"]
     assert result["data"]["forecast_entity"] == "weather.home"
 
     entry = result["result"]
@@ -205,7 +203,56 @@ async def test_experimental_sensor_options_require_explicit_selection(hass):
             "high_threshold": 80.0,
             "priority": "attention",
             "publish_current": False,
+            "retention_minutes": 10,
+            "alert_behavior": "one_time",
+            "display_route": "main_then_footer",
+            "trigger_delay_seconds": 0,
         }
+    }
+
+
+async def test_quick_start_is_reviewed_before_entities_are_monitored(hass):
+    hass.states.async_set(
+        "binary_sensor.back_door",
+        "off",
+        {"device_class": "door", "friendly_name": "Back Door"},
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"enabled_providers": list(SUPPORTED_PROVIDERS)},
+        options={},
+        unique_id="home_status",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "experimental_sensors"}
+    )
+    assert result["step_id"] == "experimental_sensors"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"starter_profile": "quick"}
+    )
+    assert result["step_id"] == "starter_preview"
+    assert "capability_sensors" not in entry.options
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"starter_entities": ["binary_sensor.back_door"]}
+    )
+    assert result["step_id"] == "review"
+    assert "capability_sensors" not in entry.options
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options["capability_sensors"]["binary_sensor.back_door"] == {
+        "capability": "availability",
+        "priority": "attention",
+        "alert_behavior": "one_time",
+        "display_route": "main_then_footer",
+        "trigger_delay_seconds": 0,
+        "retention_minutes": 120,
+        "alert_when_active": True,
     }
 
 
@@ -230,15 +277,11 @@ async def test_stable_provider_changes_are_discovered_reviewed_and_reversible(ha
     )
     assert result["step_id"] == "information_sources"
     assert result["description_placeholders"]["detected"] == "Security, Weather, News"
-    schema = result["data_schema"].schema
-    history_field = next(key for key in schema if key.schema == "history_entities")
-    assert history_field.default() == []
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
             "enabled_providers": ["security", "weather"],
-            "history_entities": ["binary_sensor.front_door"],
         },
     )
     assert result["step_id"] == "review"
@@ -251,7 +294,6 @@ async def test_stable_provider_changes_are_discovered_reviewed_and_reversible(ha
     )
     assert result["type"] is FlowResultType.MENU
     assert entry.options["enabled_providers"] == ["security", "weather"]
-    assert entry.options["history_entities"] == ["binary_sensor.front_door"]
 
 
 async def test_options_warn_without_blocking_when_all_providers_are_disabled(hass):
@@ -268,7 +310,7 @@ async def test_options_warn_without_blocking_when_all_providers_are_disabled(has
         result["flow_id"], {"next_step_id": "information_sources"}
     )
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"enabled_providers": [], "history_entities": []}
+        result["flow_id"], {"enabled_providers": []}
     )
     assert result["step_id"] == "review"
     assert "Notification Center may be empty" in result["description_placeholders"]["warnings"]

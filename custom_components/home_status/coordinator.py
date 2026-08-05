@@ -304,22 +304,11 @@ class HomeStatusCoordinator(
         return tuple(dict.fromkeys(discovered))
 
     def _configured_direct_history_entities(self) -> tuple[str, ...]:
-        configured = self.options.get("history_entities")
-        if isinstance(configured, list):
-            entity_ids = [
-                str(entity_id) for entity_id in configured if entity_id
-            ]
-        else:
-            entity_ids = list(self._discover_direct_history_entities())
-        entity_ids.extend(self._presence_entity_ids())
-        backend_history_sources = {
-            *self._sources("leak_sensors"),
-            *self._sources("refrigerator_doors"),
-        }
-        return tuple(dict.fromkeys(
-            entity_id for entity_id in entity_ids
-            if entity_id not in backend_history_sources
-        ))
+        # Entity monitoring is explicit. Doors, windows, motion sensors, and
+        # availability checks are selected through capability discovery and
+        # use the shared lifecycle below; they are never auto-added by the
+        # retired direct-history path.
+        return self._presence_entity_ids()
 
     def _configure_direct_history_subscription(self) -> None:
         entity_ids = self._configured_direct_history_entities()
@@ -448,9 +437,14 @@ class HomeStatusCoordinator(
     def _resolved_source_ids(self) -> list[str]:
         return list(dict.fromkeys([
             *self.registry.all(),
+            # Capability sensors are explicitly selected by the user and are
+            # first-class event sources. Keeping them here ensures their
+            # transitions are subscribed and their resolved events may remain
+            # in the ticker and history.
+            *self.capability_registry.selected_entity_ids(self.options),
+            *self.capability_registry.related_entity_ids(self.options),
             *self._camera_health_entity_ids(),
             *self._presence_entity_ids(),
-            *self.capability_registry.selected_entity_ids(self.options),
         ]))
 
     def _sources(self, role: str) -> tuple[str, ...]:
@@ -515,6 +509,9 @@ class HomeStatusCoordinator(
         """Rebuild active state exclusively from the current HA state snapshot."""
         previous = dict(self.active)
         rebuilt: dict[str, dict] = {}
+        configured_capability_entities = set(
+            self.capability_registry.selected_entity_ids(self.options)
+        )
         for entity_id in self._observed_entity_ids():
             state = self.hass.states.get(entity_id)
             refrigerator_safety_sources = {
@@ -535,6 +532,7 @@ class HomeStatusCoordinator(
                 continue
             if (
                 state.state in ("unknown", "unavailable")
+                and entity_id not in configured_capability_entities
                 and entity_id not in self._sources("hvac_diagnostics")
             ):
                 if (
@@ -557,7 +555,7 @@ class HomeStatusCoordinator(
                         and old.get("state") != item.get("state")
                     )
                     if old and not easystart_status_changed:
-                        item.update({key: old.get(key) for key in ("created_at", "ticker_eligible", "ticker_until", "last_ticker_at", "next_reminder_at")})
+                        item.update({key: old.get(key) for key in ("created_at", "ticker_eligible", "ticker_until", "last_ticker_at", "next_reminder_at", "main_until")})
                     rebuilt[item["id"]] = item
 
         camera_item = self._build_camera_health_item()
@@ -621,7 +619,42 @@ class HomeStatusCoordinator(
                 continue
             resolved_item = dict(old)
             resolved_item.update({"active": False, "resolved_at": self._now(), "ticker_eligible": True})
-            if old.get("entity_id", "").startswith("binary_sensor.") and old.get("behavior") == "contact":
+            if str(old.get("source") or "").startswith("capability:"):
+                # Every configured capability event follows one lifecycle:
+                # it remains live while active, then becomes a recent ticker
+                # event for the retention duration saved with that sensor.
+                try:
+                    retention_minutes = max(
+                        1, min(1440, int(old.get("retention_minutes", 10)))
+                    )
+                except (TypeError, ValueError):
+                    retention_minutes = 10
+                presentation = self.capability_registry.resolution_fields(
+                    self.hass.states.get(str(old.get("entity_id") or "")),
+                    self.options,
+                    old,
+                )
+                resolved_item.update({
+                    "message": (
+                        presentation.get("message", old.get("message"))
+                        if old.get("prefer_resolved_message")
+                        else old.get("display_name") or presentation.get(
+                            "message", old.get("message")
+                        )
+                    ),
+                    "detail": presentation.get("detail", old.get("detail")),
+                    "icon": presentation.get("icon", old.get("icon")),
+                    "priority": presentation.get("priority", "activity"),
+                    "state": "resolved",
+                    "ticker_until": (
+                        datetime.now(timezone.utc)
+                        + timedelta(minutes=retention_minutes)
+                    ).isoformat(),
+                    "main_until": None,
+                    "next_reminder_at": None,
+                })
+                self.ticker[item_id] = resolved_item
+            elif old.get("entity_id", "").startswith("binary_sensor.") and old.get("behavior") == "contact":
                 state = self.hass.states.get(old["entity_id"])
                 name = self._plain_entity_name(
                     old["entity_id"],
@@ -842,7 +875,15 @@ class HomeStatusCoordinator(
         ])
 
     def _observe_state(self, entity_id: str, old_state: State | None, new_state: State | None, startup: bool = False) -> None:
-        if new_state is None or new_state.state in ("unknown", "unavailable"):
+        if new_state is None:
+            return
+        configured_capability_entities = set(
+            self.capability_registry.selected_entity_ids(self.options)
+        )
+        if (
+            new_state.state in ("unknown", "unavailable")
+            and entity_id not in configured_capability_entities
+        ):
             return
         items = self._build_items(entity_id, new_state)
         if not items:
@@ -880,12 +921,18 @@ class HomeStatusCoordinator(
 
     def _build_items(self, entity_id: str, state: State) -> list[dict]:
         capability_items = self.capability_registry.active_items(
-            state, self.options
+            state, self.options, self.hass
         )
         if entity_id in self.capability_registry.selected_entity_ids(
             self.options
         ):
             return capability_items
+        if entity_id in self.capability_registry.related_entity_ids(
+            self.options
+        ):
+            # Supporting entities enrich their configured parent event and do
+            # not publish an independent generic item.
+            return []
         alerts = state.attributes.get("Alerts") or state.attributes.get("alerts")
         if isinstance(alerts, list):
             return [self._build_weather_item(entity_id, state, alert) for alert in alerts if isinstance(alert, dict)]
@@ -1073,14 +1120,34 @@ class HomeStatusCoordinator(
                     eligible = eligible and datetime.fromisoformat(until).astimezone(timezone.utc) > now
                 except ValueError:
                     pass
+            if (
+                str(item.get("source") or "").startswith("capability:")
+                and item.get("footer_eligible")
+            ):
+                # A selected active condition remains available to the footer
+                # after its short main-ticker window has ended.
+                eligible = True
             reminder = item.get("next_reminder_at")
             if reminder:
                 try:
                     if datetime.fromisoformat(reminder).astimezone(timezone.utc) <= now:
                         eligible = True
-                        item["ticker_until"] = (now + timedelta(minutes=10)).isoformat()
+                        main_duration = max(
+                            1, int(item.get("main_duration_seconds", 60))
+                        )
+                        item["main_until"] = (
+                            now + timedelta(seconds=main_duration)
+                        ).isoformat()
+                        item["ticker_until"] = item["main_until"]
                         item["last_ticker_at"] = now.isoformat()
-                        item["next_reminder_at"] = (now + timedelta(minutes=45)).isoformat()
+                        interval = item.get("alert_behavior")
+                        reminder_minutes = {
+                            "sustained": 30, "critical": 10,
+                            "reminder": 60,
+                        }.get(interval)
+                        item["next_reminder_at"] = (
+                            now + timedelta(minutes=reminder_minutes)
+                        ).isoformat() if reminder_minutes else None
                 except ValueError:
                     pass
             item["ticker_eligible"] = eligible
@@ -1089,6 +1156,12 @@ class HomeStatusCoordinator(
             else:
                 self.ticker.pop(key, None)
         for key, item in list(self.ticker.items()):
+            if (
+                item.get("active")
+                and str(item.get("source") or "").startswith("capability:")
+                and item.get("footer_eligible")
+            ):
+                continue
             until = item.get("ticker_until")
             if not item.get("ticker_eligible", True) or not until:
                 self.ticker.pop(key, None)
@@ -1240,10 +1313,28 @@ class HomeStatusCoordinator(
         return result
 
     def _route_streams(self, ticker, current, upcoming, insights, status):
+        now = datetime.now(timezone.utc)
+
+        def main_visible(item):
+            until = item.get("main_until")
+            if not until:
+                return False
+            try:
+                return datetime.fromisoformat(
+                    str(until).replace("Z", "+00:00")
+                ).astimezone(timezone.utc) > now
+            except ValueError:
+                return False
+
         hero = []
         for item in ticker:
             exclusion_reason = None
-            if item.get("hero_eligible") is False:
+            capability_event = str(item.get("source") or "").startswith(
+                "capability:"
+            )
+            if capability_event and not main_visible(item):
+                exclusion_reason = "main_window_expired"
+            elif not capability_event and item.get("hero_eligible") is False:
                 exclusion_reason = "hero_eligible_false"
             elif item.get("priority") not in {"critical", "attention"}:
                 exclusion_reason = "priority_not_attention_worthy"
@@ -1335,6 +1426,12 @@ class HomeStatusCoordinator(
                 # Alarm state is a live status, never a historical ticker event.
                 continue
             footer.append(item)
+        footer.extend(
+            item for item in ticker
+            if str(item.get("source") or "").startswith("capability:")
+            and item.get("footer_eligible")
+            and not main_visible(item)
+        )
         alarm_entity_state = self.hass.states.get(ALARM_ENTITY)
         alarm_value = str(
             getattr(alarm_entity_state, "state", "")
@@ -1409,6 +1506,7 @@ class HomeStatusCoordinator(
                 "source", "event_type", "hero_eligible", "persistent",
                 "ticker_eligible", "created_at",
                 "resolved_at", "expires_at", "entity_id", "ticker_eligible",
+                "main_until", "footer_eligible", "retention_minutes",
                 "media_url", "media_type", "navigation",
                 "subtitle", "body", "visual_effect", "source", "action",
             )
@@ -1456,6 +1554,12 @@ class HomeStatusCoordinator(
         current.extend(
             self.capability_registry.current_items(self.hass, self.options)
         )
+        capability_entity_ids = set(
+            self.capability_registry.selected_entity_ids(self.options)
+        )
+        capability_related_ids = set(
+            self.capability_registry.related_entity_ids(self.options)
+        )
 
         for entity_id in self._resolved_source_ids():
             if entity_id not in self._resolved_source_ids():
@@ -1471,6 +1575,11 @@ class HomeStatusCoordinator(
             ):
                 # These sources have dedicated sustained-condition producers.
                 # The generic state path would bypass their safety delays.
+                continue
+            if entity_id in capability_entity_ids or entity_id in capability_related_ids:
+                # A configured capability owns this entity's publication. In
+                # particular, an on connectivity binary sensor is healthy and
+                # must not become a generic current-state ticker item.
                 continue
             state = self.hass.states.get(entity_id)
             if not state or state.state in ("unknown", "unavailable") or entity_id in represented:
