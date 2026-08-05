@@ -133,10 +133,10 @@
           "capability_entity": "Choose an entity"
         },
         "data_description": {
-          "remove_entity": "Choose an existing Home Status item to stop monitoring.",
+          "remove_entity": "Search by name or entity ID, then choose an existing Home Status item to stop monitoring.",
           "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes motion and connectivity. Custom Setup lets you choose any entity.",
           "capability_mode": "Recommended configuration uses the entity's Home Assistant metadata. The simple trigger creates an event when the entity exactly matches a state you choose.",
-          "capability_entity": "Every available Home Assistant entity appears here. Nothing is monitored until you configure it."
+          "capability_entity": "Search by the entity's name or ID. Nothing is monitored until you configure it."
         }
       },
       "starter_preview": {

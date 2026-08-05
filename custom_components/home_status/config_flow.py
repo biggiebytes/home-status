@@ -870,12 +870,9 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             return self._settings_menu()
         schema = {}
         if configured_choices:
-            schema[vol.Optional("remove_entity")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=configured_choices,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
+            # Use the native picker here too: it lets large installations
+            # search by a configured entity's name or entity ID.
+            schema[vol.Optional("remove_entity")] = selector.EntitySelector()
         schema[vol.Optional("starter_profile", default="recommended")] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=[
@@ -901,12 +898,10 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 ))
         )
-        schema[vol.Optional("capability_entity")] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=choices,
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
+        # The native entity picker is searchable and scales to large homes.
+        # Selected entities are still validated against Home Status discovery
+        # before their configuration screen is shown.
+        schema[vol.Optional("capability_entity")] = selector.EntitySelector()
         return self.async_show_form(
             step_id="experimental_sensors",
             data_schema=vol.Schema(schema),
