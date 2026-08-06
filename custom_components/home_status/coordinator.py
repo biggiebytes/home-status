@@ -132,6 +132,7 @@ class HomeStatusCoordinator(
         self._ticker_timer = None
         self._forecast = []
         self._forecast_warning = None
+        self._calendar_items: list[dict] = []
         self._condition_since: dict[str, datetime] = {}
         self._source_items: list[dict] = []
         self._source_adapters: tuple[RSSSourceAdapter, ...] = ()
@@ -185,6 +186,7 @@ class HomeStatusCoordinator(
         if invalidated:
             self._purge_entity_records(invalidated)
         await self._async_refresh_forecast()
+        await self._async_refresh_calendar_events()
         await self._async_refresh_source_adapters(force=True)
         self._publish()
         self._unsub = async_track_state_change_event(
@@ -473,6 +475,7 @@ class HomeStatusCoordinator(
         if self._reconcile_shadow_ledger(_now):
             self._save_shadow_ledger()
         await self._async_refresh_forecast()
+        await self._async_refresh_calendar_events()
         await self._async_refresh_source_adapters()
         self._publish()
 
@@ -1715,7 +1718,16 @@ class HomeStatusCoordinator(
                 entity_id=forecast_entity, source="weather", rich=visuals,
             ))
 
+        # The calendar service gives us all selected future events. Entity
+        # attributes remain a fallback for calendar integrations that do not
+        # support that service.
+        upcoming.extend(dict(item) for item in self._calendar_items)
+        refreshed_calendar_ids = {
+            item.get("entity_id") for item in self._calendar_items
+        }
         for entity_id in self._sources("family_calendar"):
+            if entity_id in refreshed_calendar_ids:
+                continue
             state = self.hass.states.get(entity_id)
             if not state or state.state in ("unknown", "unavailable", "none"):
                 continue

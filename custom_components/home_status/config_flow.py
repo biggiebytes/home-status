@@ -1563,6 +1563,17 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             vol.Optional("include_nws_alerts", default=current.get("include_nws_alerts", True)): selector.BooleanSelector(),
             vol.Optional("include_sprinkler_schedule", default=current.get("include_sprinkler_schedule", True)): selector.BooleanSelector(),
             vol.Optional("include_waste_collection", default=current.get("include_waste_collection", True)): selector.BooleanSelector(),
+            vol.Optional("calendar_entities", default=current.get("calendar_entities", [
+                state.entity_id for state in self.hass.states.async_all("calendar")
+            ])): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="calendar", multiple=True)
+            ),
+            vol.Optional("calendar_lookahead_days", default=current.get("calendar_lookahead_days", 14)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=90, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("waste_collection_window_days", default=current.get("waste_collection_window_days", 7)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
             vol.Optional("forecast_entity", default=current.get("forecast_entity", "")): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="weather")
             ),

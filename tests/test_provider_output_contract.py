@@ -116,7 +116,7 @@ def test_legacy_hardcoded_sprinkler_output_is_retired():
     assert subject._build_sprinkler_watering_item(zone.entity_id) is None
 
 
-def test_waste_collection_due_dates_stay_with_schedule_provider():
+def test_waste_collection_dates_within_the_default_window_stay_visible():
     subject = coordinator()
 
     assert subject._waste_collection_is_due(
@@ -127,7 +127,7 @@ def test_waste_collection_due_dates_stay_with_schedule_provider():
     ) is True
     assert subject._waste_collection_is_due(
         fake_state("sensor.yard_waste_pickup", "In 2 days")
-    ) is False
+    ) is True
     assert subject._waste_collection_is_due(
         fake_state("sensor.unknown_pickup", "unknown")
     ) is False

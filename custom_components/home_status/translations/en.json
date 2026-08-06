@@ -279,11 +279,14 @@
       },
       "weather": {
         "title": "Weather & Schedules",
-        "description": "Configure forecasts, alerts, sprinklers, and collection days.",
+        "description": "Configure forecasts, calendar events, sprinklers, and collection days.",
         "data": {
           "include_nws_alerts": "National Weather Alerts",
           "include_sprinkler_schedule": "Sprinkler Schedule",
           "include_waste_collection": "Trash & Recycling",
+          "calendar_entities": "Calendars",
+          "calendar_lookahead_days": "Calendar Look-Ahead (Days)",
+          "waste_collection_window_days": "Waste Collection Look-Ahead (Days)",
           "forecast_entity": "Weather Provider",
           "weather_preview_condition": "Weather Preview"
         },
@@ -291,6 +294,9 @@
           "include_nws_alerts": "Include official National Weather Service alerts.",
           "include_sprinkler_schedule": "Include the next scheduled sprinkler watering.",
           "include_waste_collection": "Include upcoming trash and recycling collection.",
+          "calendar_entities": "Choose the calendars whose upcoming events should appear.",
+          "calendar_lookahead_days": "Show events scheduled in this many upcoming days.",
+          "waste_collection_window_days": "Show waste pickups scheduled in this many upcoming days.",
           "forecast_entity": "Choose the weather service used for forecasts.",
           "weather_preview_condition": "Temporarily preview a weather visual. Leave blank to use live weather."
         }
