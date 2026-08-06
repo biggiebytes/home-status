@@ -50,7 +50,14 @@ class ScheduleProviderMixin:
                 and entity_id.startswith("calendar.")
                 and self.hass.states.get(entity_id) is not None
             )
-        return self._sources("family_calendar")
+        return tuple(
+            entity_id
+            for role in (
+                "family_calendar", "waste_schedule", "sprinkler_schedule"
+            )
+            for entity_id in self._sources(role)
+            if entity_id.startswith("calendar.")
+        )
 
     async def _async_refresh_calendar_events(self) -> None:
         """Read all future events in the user-selected calendar window."""
@@ -61,11 +68,18 @@ class ScheduleProviderMixin:
         ):
             return
         try:
-            lookahead_days = max(1, min(90, int(
+            calendar_days = max(1, min(90, int(
                 self.options.get("calendar_lookahead_days", 14)
             )))
         except (TypeError, ValueError):
-            lookahead_days = 14
+            calendar_days = 14
+        try:
+            waste_days = max(0, min(30, int(
+                self.options.get("waste_collection_window_days", 7)
+            )))
+        except (TypeError, ValueError):
+            waste_days = 7
+        lookahead_days = max(calendar_days, waste_days)
         now = dt_util.now()
         try:
             response = await self.hass.services.async_call(
@@ -94,18 +108,40 @@ class ScheduleProviderMixin:
                 title = str(event.get("summary") or "Calendar event").strip()
                 if not title:
                     continue
+                source, icon = self._calendar_event_source(entity_id, title)
+                if source == "waste_calendar":
+                    days_away = (starts_at.date() - now.date()).days
+                    if days_away < 0 or days_away > waste_days:
+                        continue
+                    if "pickup" not in title.casefold():
+                        title = f"{title} pickup"
+                elif source == "calendar" and starts_at > now + timedelta(days=calendar_days):
+                    continue
                 self._calendar_items.append(self._stream_item(
                     f"upcoming:calendar:{entity_id}:{starts_at.isoformat()}:{title}",
                     title,
                     self._format_calendar_event_time(starts_at, is_all_day),
                     PROVIDER_SCHEDULE,
-                    "mdi:calendar-clock",
+                    icon,
                     "normal",
                     starts_at.isoformat(),
                     entity_id=entity_id,
                     source="calendar",
                 ))
         self._calendar_items.sort(key=lambda item: item.get("timestamp") or "")
+
+    def _calendar_event_source(self, entity_id: str, title: str) -> tuple[str, str]:
+        """Preserve waste and irrigation meaning for calendar-backed sources."""
+        if entity_id in self._sources("waste_schedule"):
+            label = title.casefold()
+            if "recycl" in label:
+                return "waste_calendar", "mdi:recycle"
+            if "yard" in label or "garden" in label or "green" in label:
+                return "waste_calendar", "mdi:leaf"
+            return "waste_calendar", "mdi:trash-can"
+        if entity_id in self._sources("sprinkler_schedule"):
+            return "sprinkler_calendar", "mdi:sprinkler"
+        return "calendar", "mdi:calendar-clock"
 
     @staticmethod
     def _calendar_event_start(value) -> datetime | None:
