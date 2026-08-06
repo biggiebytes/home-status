@@ -64,6 +64,8 @@
           "information_sources": "Information Sources",
           "news_sources": "News Sources",
           "experimental_sensors": "Add & Configure Entities",
+          "ticker_filters": "Ticker Filters",
+          "ticker_timing": "Ticker Timing & Sources",
           "navigation": "Open Pages When Tapped",
           "appearance": "Appearance",
           "weather": "Weather & Schedules",
