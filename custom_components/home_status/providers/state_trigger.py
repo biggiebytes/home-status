@@ -91,6 +91,7 @@ class StateTriggerProvider(CapabilityProvider):
             or self.icon
         ).strip()
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(config.get("ticker_event_minutes", 10)))
         item = {
             "id": f"capability:state_trigger:{entity_id}:active",
             "entity_id": entity_id,
@@ -111,7 +112,7 @@ class StateTriggerProvider(CapabilityProvider):
             "source": "capability:state_trigger",
             "metadata": normalized["metadata"],
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "persistent": True,
             "hero_eligible": False,
             "prefer_active_message": bool(config.get("active_message")),

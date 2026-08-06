@@ -113,8 +113,12 @@ class CapabilityProviderRegistry:
                 "unsupported_capability",
             )
         try:
+            timing = {
+                "ticker_event_minutes": options.get("ticker_event_minutes", 10),
+                "ticker_reminder_minutes": options.get("ticker_reminder_minutes", 45),
+            }
             evaluation = provider.evaluate(
-                state, {**config, "entity_id": entity_id}
+                state, {**timing, **config, "entity_id": entity_id}
             )
         except Exception as err:  # One entity cannot break publication.
             self._record_error(capability, entity_id, err)
@@ -137,7 +141,11 @@ class CapabilityProviderRegistry:
         evaluation = self.evaluate(state, options)
         if not evaluation or not evaluation.item:
             return []
-        config = self.configs(options).get(evaluation.entity_id, {})
+        config = {
+            "ticker_event_minutes": options.get("ticker_event_minutes", 10),
+            "ticker_reminder_minutes": options.get("ticker_reminder_minutes", 45),
+            **self.configs(options).get(evaluation.entity_id, {}),
+        }
         capability = str(config.get("capability") or "")
         default_delay = 30 if capability == "connectivity" else 0
         try:
@@ -195,7 +203,15 @@ class CapabilityProviderRegistry:
             )
         except (TypeError, ValueError):
             retention_minutes = default_minutes
-        retention_minutes = max(1, min(1440, retention_minutes))
+        retention_minutes = max(1, retention_minutes)
+        try:
+            ticker_minutes = max(1, int(config.get("ticker_event_minutes", 10)))
+        except (TypeError, ValueError):
+            ticker_minutes = 10
+        try:
+            reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
+        except (TypeError, ValueError):
+            reminder_minutes = 45
         behavior = str(config.get("alert_behavior") or "one_time")
         display_route = str(
             config.get("display_route") or "main_then_footer"
@@ -204,7 +220,7 @@ class CapabilityProviderRegistry:
             "main_then_footer", "main_only", "footer_only",
         }:
             display_route = "main_then_footer"
-        main_duration_seconds, repeat_interval_minutes = ALERT_BEHAVIORS.get(
+        main_duration_seconds, _repeat_interval_minutes = ALERT_BEHAVIORS.get(
             behavior, ALERT_BEHAVIORS["one_time"]
         )
         now = datetime.now(timezone.utc)
@@ -231,11 +247,11 @@ class CapabilityProviderRegistry:
             "footer_eligible": footer_enabled,
             "ticker_eligible": True,
             "ticker_until": (
-                now + timedelta(seconds=main_duration_seconds)
+                now + timedelta(minutes=ticker_minutes)
             ).isoformat(),
             "next_reminder_at": (
-                now + timedelta(minutes=repeat_interval_minutes)
-            ).isoformat() if repeat_interval_minutes else None,
+                now + timedelta(minutes=reminder_minutes)
+            ).isoformat() if reminder_minutes and behavior != "one_time" else None,
         })
         return result
 

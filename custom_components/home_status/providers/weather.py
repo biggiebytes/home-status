@@ -179,6 +179,8 @@ class WeatherProviderMixin:
             except ValueError:
                 _LOGGER.warning("Invalid weather alert expiration for %s: %s", entity_id, expires)
         now = now_dt.isoformat()
+        ticker_minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
         return {
             "id": f"{entity_id}:{stable}", "entity_id": entity_id, "event_type": "weather_alert",
             "category": provider, "provider": provider, "message": event,
@@ -187,8 +189,9 @@ class WeatherProviderMixin:
             "instruction": alert.get("Instruction") or "", "source_severity": severity,
             "priority": priority, "created_at": now, "expires_at": expires,
             "active": active, "persistent": True, "ticker_eligible": active,
-            "ticker_until": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
-            "last_ticker_at": None, "next_reminder_at": (datetime.now(timezone.utc) + timedelta(minutes=45)).isoformat(),
+            "ticker_until": (now_dt + timedelta(minutes=ticker_minutes)).isoformat(),
+            "last_ticker_at": None,
+            "next_reminder_at": (now_dt + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
         }
 
 

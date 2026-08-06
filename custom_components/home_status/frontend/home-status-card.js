@@ -479,7 +479,7 @@ const HOME_STATUS_CARD_PROFILES = {
 
 const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
-  'show_active_count', 'show_normal_items', 'pause_on_hover',
+  'show_active_count', 'pause_on_hover',
   'utility_header', 'quick_status', 'hero', 'sidebar', 'footer',
   'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
   'weather_effect', 'time_entity', 'recent_ticker_limit',
@@ -600,7 +600,7 @@ class HomeStatusCard extends HTMLElement {
       sidebar: config.sidebar || null,
       footer: config.footer || null,
       footer_speed: Number.isFinite(requestedFooterSpeed)
-        ? Math.max(12, Math.min(80, requestedFooterSpeed))
+        ? Math.max(1, requestedFooterSpeed)
         : 35,
       display: config.display || {},
       utility_header: {
@@ -625,10 +625,9 @@ class HomeStatusCard extends HTMLElement {
         level: ['full', 'reduced', 'none'].includes(animation.level) ? animation.level : 'full'
       },
       weather_effect: String(config.weather_effect || 'auto').toLowerCase(),
-      show_normal_items: config.show_normal_items === true,
       pause_on_hover: config.pause_on_hover !== false,
       time_entity: config.time_entity || '',
-      recent_ticker_limit: Number.isFinite(Number(config.recent_ticker_limit)) ? Number(config.recent_ticker_limit) : 6,
+      recent_ticker_limit: Number.isFinite(Number(config.recent_ticker_limit)) ? Number(config.recent_ticker_limit) : 0,
       recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
       rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
     };
@@ -649,7 +648,7 @@ class HomeStatusCard extends HTMLElement {
     this.style.minHeight = this._config.sizing.min_height ? `${this._config.sizing.min_height}px` : '';
     this.style.setProperty(
       '--home-status-phone-ticker-seconds',
-      `${Math.max(8, Math.min(120, this._config.footer_speed))}s`
+      `${Math.max(1, this._config.footer_speed)}s`
     );
     this._stopZoneRotations();
     this._zoneSignatures = { left: '', right: '' };
@@ -1045,7 +1044,12 @@ class HomeStatusCard extends HTMLElement {
       .trim() || 'Home notification';
   }
 
-  _isNormalSecurityItem(item) {
+  _footerFilters(data) {
+    const filters = data?.display?.footer_filters;
+    return filters && typeof filters === 'object' ? filters : {};
+  }
+
+  _isNormalSecurityItem(item, filters = {}) {
     const provider = this._providerFor(item);
     const category = String(item?.category || '').toLowerCase();
     if (provider !== 'security' && !['security', 'contact'].includes(category)) return false;
@@ -1056,14 +1060,13 @@ class HomeStatusCard extends HTMLElement {
       && entity === String(this._config.utility_header.security_entity || '').toLowerCase()
       && /\b(?:disarmed|alarm off)\b/.test(text)
     ) {
-      // The persistent Security header is authoritative for the disarmed
-      // state, regardless of show_normal_items.
-      return true;
+      return filters.hide_disarmed_alarm === true;
     }
-    if (category === 'contact' && /\b(closed|clear)\b/i.test(text)) return true;
-    if (this._config.show_normal_items) return false;
-    return String(item?.priority || 'normal').toLowerCase() === 'normal'
-      || /\b(closed|clear|disarmed|alarm off|all monitored doors closed)\b/i.test(text);
+    if (category === 'contact' && /\b(closed|clear)\b/i.test(text)) {
+      return filters.hide_closed_contacts === true;
+    }
+    return filters.hide_normal_security === true
+      && String(item?.priority || 'normal').toLowerCase() === 'normal';
   }
 
   _escape(value) {
@@ -1175,10 +1178,11 @@ class HomeStatusCard extends HTMLElement {
     // sensor.home_status remains authoritative for which items are available.
     // The card chooses presentation slots so verbose or urgent content is not
     // trapped in the narrower right-hand panel by its provider category.
+    const filters = this._footerFilters(data);
     const sidebar = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
-      .filter(item => !this._isNormalSecurityItem(item));
+      .filter(item => !this._isNormalSecurityItem(item, filters));
     const hero = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
-      .filter(item => !this._isNormalSecurityItem(item));
+      .filter(item => !this._isNormalSecurityItem(item, filters));
     const seen = new Set();
     const items = [...sidebar, ...hero].filter(item => {
       const key = item?.id || item?.entity_id || `${this._label(item)}|${item?.summary || item?.secondary || ''}`;
@@ -1228,12 +1232,15 @@ class HomeStatusCard extends HTMLElement {
 
   _buildFooterStream(data) {
     if (!this._config.home_status_visibility.footer) return [];
+    const filters = this._footerFilters(data);
     const authoritativeFooter = Array.isArray(data.footer) ? data.footer : [];
     const items = authoritativeFooter
-      .filter(item => !this._isRoutineFooterStatus(item))
-      .filter(item => item?.source === 'direct_history' || !this._isNormalSecurityItem(item))
+      .filter(item => !this._isRoutineFooterStatus(item, filters))
+      .filter(item => item?.source === 'direct_history' || !this._isNormalSecurityItem(item, filters))
       .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _provider: this._providerFor(item) }));
-    return this._groupFooterContactClosures(items);
+    return filters.group_contact_closures === true
+      ? this._groupFooterContactClosures(items)
+      : items;
   }
 
   _phonePriorityRank(item) {
@@ -1270,7 +1277,9 @@ class HomeStatusCard extends HTMLElement {
     const summary = item.summary || item.secondary || item.detail || 'Tap for details';
     const navigation = String(item.navigation || item.action || '');
     const entity = String(item.entity_id || item.entity || '');
-    const footerItems = this._buildFooterStream(data).slice(0, 6);
+    const tickerLimit = Math.max(0, Number(this._config.recent_ticker_limit) || 0);
+    const footerStream = this._buildFooterStream(data);
+    const footerItems = tickerLimit ? footerStream.slice(0, tickerLimit) : footerStream;
     const phoneTickerItems = footerItems.length ? footerItems : [{
       id: 'phone-no-updates',
       message: 'No recent updates',
@@ -1310,7 +1319,8 @@ class HomeStatusCard extends HTMLElement {
     this._bindStreamItems();
   }
 
-  _isRoutineFooterStatus(item) {
+  _isRoutineFooterStatus(item, filters = {}) {
+    if (filters.hide_disarmed_alarm !== true) return false;
     if (item?.source !== 'status') return false;
     const entity = String(item.entity_id || '').toLowerCase();
     const text = `${item.title || ''} ${item.message || ''} ${item.summary || ''} ${item.state || ''}`.toLowerCase();
@@ -2608,7 +2618,6 @@ class HomeStatusCard extends HTMLElement {
       display: { media_enabled: true },
       weather_effect: 'auto',
       pause_on_hover: true,
-      show_normal_items: false,
       home_status_visibility: {
         hero: true,
         sidebar: true,
@@ -2837,7 +2846,6 @@ class HomeStatusCardEditor extends HTMLElement {
         ${this._toggle('home_status_visibility.footer', 'Footer ticker', true)}
         ${this._toggle('home_status_visibility.phone_ticker', 'Phone ticker', true)}
         ${this._toggle('home_status_visibility.drawer', 'Navigation drawer', false, 'Enable after adding destinations in Advanced. Opens configured navigation buttons when the main card is tapped.')}
-        ${this._toggle('show_normal_items', 'Include normal-status items', false)}
       </div></details>
       <details data-section="ticker"${sectionOpen('ticker', true) ? ' open' : ''}${levelHidden('customize')}><summary>Motion & timing</summary><div class="section">
         ${this._number('footer.speed', 'Ticker speed', 35, 8, 120, 'Lower values move faster.')}
@@ -2857,7 +2865,7 @@ class HomeStatusCardEditor extends HTMLElement {
         ${this._select('weather_effect', 'Weather effect', weatherEffects, 'auto')}
       </div></details>
       <details data-section="limits"${sectionOpen('limits') ? ' open' : ''}${levelHidden('advanced')}><summary>Item limits</summary><div class="section">
-        ${this._number('recent_ticker_limit', 'Ticker item limit', 6, 1, 30)}
+        ${this._number('recent_ticker_limit', 'Ticker item limit', 0, 0, 1000, 'Use 0 to rotate every eligible item.')}
         ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
       </div></details>
       <details data-section="entities"${sectionOpen('entities') ? ' open' : ''}${levelHidden('advanced')}><summary>Manual entities</summary><div class="section">

@@ -94,6 +94,7 @@
         "data": {
           "refresh_interval": "Check Every (seconds)",
           "history_retention_days": "Keep Completed Events (days)",
+          "history_max_events": "Maximum stored history events (0 = all)",
           "max_recent_items": "Recent Events to Keep",
           "max_upcoming_items": "Upcoming Items to Show",
           "max_insight_items": "Insights to Keep"
@@ -101,6 +102,7 @@
         "data_description": {
           "refresh_interval": "Time between update checks. Recommended: 60 seconds.",
           "history_retention_days": "How long resolved alerts and completed events remain in recent history.",
+          "history_max_events": "Set 0 to retain every event within the selected history period.",
           "max_recent_items": "Maximum completed events available to the card and timeline.",
           "max_upcoming_items": "Maximum upcoming schedules and reminders available to the card.",
           "max_insight_items": "Maximum patterns and helpful observations Home Status keeps available."
@@ -265,16 +267,51 @@
         "data": {
           "hero_rotation_seconds": "Rotate Main Information Every (seconds)",
           "media_enabled": "Show Media",
-          "collapse_repeated_events": "Combine Similar Notifications",
-          "deduplicate_by_entity": "Hide Duplicate Notifications",
           "enable_insights": "Show Helpful Insights"
         },
         "data_description": {
           "hero_rotation_seconds": "How many seconds each main item stays visible.",
           "media_enabled": "Show photos and other rich media when available.",
-          "collapse_repeated_events": "Combine similar notifications into one item.",
-          "deduplicate_by_entity": "Hide repeated notifications from the same source.",
           "enable_insights": "Show helpful suggestions based on recent activity."
+        }
+      },
+      "ticker_filters": {
+        "title": "Ticker Filters",
+        "description": "Choose what is reduced or kept in the bottom ticker. Leave filters off for a complete activity feed.",
+        "data": {
+          "deduplicate_by_entity": "Hide exact duplicate events",
+          "collapse_repeated_events": "Combine repeated history events",
+          "footer_include_activity_history": "Include activity history in the ticker",
+          "footer_activity_history_hours": "Activity history window (hours)",
+          "footer_include_persistent_conditions": "Keep active conditions in the ticker",
+          "footer_hide_normal_security": "Hide normal security messages",
+          "footer_hide_closed_contacts": "Hide closed and clear contact events",
+          "footer_hide_disarmed_alarm": "Hide disarmed alarm status",
+          "footer_hide_routine_climate": "Hide routine climate status",
+          "footer_hide_routine_weather": "Hide routine weather status",
+          "footer_group_contact_closures": "Combine contact-closure events"
+        },
+        "data_description": {
+          "deduplicate_by_entity": "Removes only duplicate records with the same event identity; distinct changes stay visible.",
+          "collapse_repeated_events": "Combines repeated entries from the same source in the recent-history stream.",
+          "footer_include_activity_history": "Adds resolved events such as door opened and door closed to the ticker.",
+          "footer_activity_history_hours": "How far back activity history may be included when that option is enabled.",
+          "footer_include_persistent_conditions": "Keep selected active conditions available after their initial alert window ends.",
+          "footer_hide_normal_security": "Suppresses normal-priority security and contact items.",
+          "footer_hide_closed_contacts": "Suppresses closed or clear door, window, and contact events.",
+          "footer_hide_disarmed_alarm": "Suppresses the normal disarmed alarm status.",
+          "footer_hide_routine_climate": "Suppresses normal climate readings from the ticker.",
+          "footer_hide_routine_weather": "Suppresses normal weather detail from the ticker.",
+          "footer_group_contact_closures": "Combines related door and window closure records into a compact ticker item."
+        }
+      },
+      "ticker_timing": {
+        "title": "Ticker Timing & Sources",
+        "description": "Choose which enabled sources may enter the bottom ticker and how often active conditions repeat.",
+        "data": {
+          "ticker_providers": "Sources allowed in the ticker",
+          "ticker_reminder_minutes": "Active-condition reminder interval (minutes; 0 = never)",
+          "ticker_event_minutes": "Resolved-event ticker duration (minutes)"
         }
       },
       "weather": {
@@ -287,6 +324,7 @@
           "calendar_entities": "Calendars",
           "calendar_lookahead_days": "Calendar Look-Ahead (Days)",
           "waste_collection_window_days": "Waste Collection Look-Ahead (Days)",
+          "forecast_days": "Forecast days (0 = all)",
           "forecast_entity": "Weather Provider",
           "weather_preview_condition": "Weather Preview"
         },
@@ -297,6 +335,7 @@
           "calendar_entities": "Choose the calendars whose upcoming events should appear.",
           "calendar_lookahead_days": "Show events scheduled in this many upcoming days.",
           "waste_collection_window_days": "Show waste pickups scheduled in this many upcoming days.",
+          "forecast_days": "Set 0 to include every forecast day returned by your weather service.",
           "forecast_entity": "Choose the weather service used for forecasts.",
           "weather_preview_condition": "Temporarily preview a weather visual. Leave blank to use live weather."
         }

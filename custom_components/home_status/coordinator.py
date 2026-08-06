@@ -459,6 +459,26 @@ class HomeStatusCoordinator(
     def _sources(self, role: str) -> tuple[str, ...]:
         return self.registry.get(role)
 
+    def _recent_ticker_until(self) -> str:
+        """Return the user-selected expiry for ordinary resolved events."""
+        try:
+            minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        except (TypeError, ValueError):
+            minutes = 10
+        return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+
+    def _ticker_reminder_at(self) -> str | None:
+        """Return the next shared reminder time, or disable reminders at zero."""
+        try:
+            minutes = max(
+                0, int(self.options.get("ticker_reminder_minutes", 45))
+            )
+        except (TypeError, ValueError):
+            minutes = 45
+        return (
+            datetime.now(timezone.utc) + timedelta(minutes=minutes)
+        ).isoformat() if minutes else None
+
 
     def _purge_entity_records(self, entity_ids: set[str]) -> None:
         def keep(item: dict) -> bool:
@@ -557,6 +577,10 @@ class HomeStatusCoordinator(
             for item in self._build_items(entity_id, state):
                 if item.get("active"):
                     old = previous.get(item["id"])
+                    if old is None and not str(item.get("source") or "").startswith("capability:"):
+                        # Provider defaults are only defaults; ordinary live
+                        # events use the owner's shared ticker duration.
+                        item["ticker_until"] = self._recent_ticker_until()
                     easystart_status_changed = (
                         old
                         and item.get("event_type") in {
@@ -693,9 +717,7 @@ class HomeStatusCoordinator(
                     "message": f"{location} Leak Cleared",
                     "detail": f"{location} is dry",
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                 })
                 self.ticker[item_id] = resolved_item
             elif old.get("event_type") == "hvac_diagnostic":
@@ -714,9 +736,7 @@ class HomeStatusCoordinator(
                     "message": "Water Filter Replaced",
                     "detail": "Refrigerator water filter usage returned to normal",
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                 })
                 self.ticker[item_id] = resolved_item
             elif old.get("event_type") == "refrigerator_door_alert":
@@ -743,9 +763,7 @@ class HomeStatusCoordinator(
                     "message": f"{location} Door Closed",
                     "detail": duration,
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                 })
                 self.ticker[item_id] = resolved_item
             elif old.get("event_type") == "refrigerator_temperature_alert":
@@ -756,9 +774,7 @@ class HomeStatusCoordinator(
                     "message": f"{location} Temperature Normal",
                     "detail": f"{location} returned to its normal range",
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                 })
                 self.ticker[item_id] = resolved_item
             elif old.get("event_type") == "appliance_cycle":
@@ -782,9 +798,7 @@ class HomeStatusCoordinator(
                         else f"{name} is no longer running"
                     ),
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                     "next_reminder_at": None,
                 })
                 self.ticker[item_id] = resolved_item
@@ -797,9 +811,7 @@ class HomeStatusCoordinator(
                     ),
                     "detail": "Maintenance reminder cleared",
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                     "next_reminder_at": None,
                 })
                 self.ticker[item_id] = resolved_item
@@ -827,9 +839,7 @@ class HomeStatusCoordinator(
                         value for value in (zones, duration) if value
                     ),
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                     "next_reminder_at": None,
                 })
                 self.ticker[item_id] = resolved_item
@@ -845,9 +855,7 @@ class HomeStatusCoordinator(
                     "message": message,
                     "detail": detail,
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                     "next_reminder_at": None,
                 })
                 self.ticker[item_id] = resolved_item
@@ -856,9 +864,7 @@ class HomeStatusCoordinator(
                     "message": "Home Assistant Updates Complete",
                     "detail": "Core system updates are installed",
                     "priority": "normal",
-                    "ticker_until": (
-                        datetime.now(timezone.utc) + timedelta(minutes=10)
-                    ).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                     "next_reminder_at": None,
                 })
                 self.ticker[item_id] = resolved_item
@@ -917,7 +923,7 @@ class HomeStatusCoordinator(
                     "active": False,
                     "resolved_at": self._now(),
                     "ticker_eligible": True,
-                    "ticker_until": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+                    "ticker_until": self._recent_ticker_until(),
                 })
                 self.history.insert(0, resolved)
                 self.active.pop(key, None)
@@ -928,6 +934,8 @@ class HomeStatusCoordinator(
             if not item["active"]:
                 continue
             old = self.active.get(item["id"])
+            if old is None and not str(item.get("source") or "").startswith("capability:"):
+                item["ticker_until"] = self._recent_ticker_until()
             if old and self._meaningfully_changed(old, item):
                 item.update({"created_at": old.get("created_at", item["created_at"]), "ticker_eligible": True})
             elif old:
@@ -1073,11 +1081,11 @@ class HomeStatusCoordinator(
             "media_type": "image" if entity_id == "binary_sensor.front_door_visitor" and active else None,
             "active": active,
             "ticker_eligible": active and entity_id != "switch.sprinklers_rain_delay",
-            "ticker_until": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            "ticker_until": self._recent_ticker_until(),
             "last_ticker_at": None,
             "next_reminder_at": (
-                datetime.now(timezone.utc) + timedelta(minutes=45)
-            ).isoformat() if is_leak and active else None,
+                self._ticker_reminder_at() if is_leak and active else None
+            ),
             "persistent": False if is_contact else entity_id != "switch.sprinklers_rain_delay",
             "hero_eligible": bool(is_contact and active) or bool(priority in {"critical", "attention"} and active and not entity_id == ALARM_ENTITY),
             "state": state.state,
@@ -1161,10 +1169,12 @@ class HomeStatusCoordinator(
                         item["ticker_until"] = item["main_until"]
                         item["last_ticker_at"] = now.isoformat()
                         interval = item.get("alert_behavior")
-                        reminder_minutes = {
-                            "sustained": 30, "critical": 10,
-                            "reminder": 60,
-                        }.get(interval)
+                        try:
+                            reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
+                        except (TypeError, ValueError):
+                            reminder_minutes = 45
+                        if interval == "one_time":
+                            reminder_minutes = 0
                         item["next_reminder_at"] = (
                             now + timedelta(minutes=reminder_minutes)
                         ).isoformat() if reminder_minutes else None
@@ -1227,7 +1237,9 @@ class HomeStatusCoordinator(
         priority_items = [*active, *current]
         priority = "critical" if any(item.get("priority") == "critical" for item in priority_items) else "attention" if any(item.get("priority") == "attention" for item in priority_items) else "activity" if any(item.get("priority") == "activity" for item in priority_items) else "normal"
         _LOGGER.debug("Home Status final overall priority: %s", priority)
-        upcoming = self._filter_collection(upcoming, enabled, dedup)[:int(self.options.get("max_upcoming_items", 10))]
+        upcoming = self._apply_item_limit(
+            self._filter_collection(upcoming, enabled, dedup), "max_upcoming_items", 10
+        )
         insights = self._filter_collection(insights, enabled, dedup)
         status = self._filter_collection(status, enabled, dedup)
         hero, sidebar, footer = self._route_streams(ticker, current, upcoming, insights, status)
@@ -1243,11 +1255,11 @@ class HomeStatusCoordinator(
         footer = ContactFooterPresentationAdapter.merge_footer(
             footer, pilot_footer
         )
-        recent = self._filter_collection(
+        recent = self._apply_item_limit(self._filter_collection(
             [self._compact_item(item) for item in self.history],
             enabled,
             dedup,
-        )[:int(self.options.get("max_recent_items", 10))]
+        ), "max_recent_items", 10)
         _LOGGER.debug("Home Status final hero items: %s", [
             {**item, "origin": "live_state"} for item in hero
         ])
@@ -1255,7 +1267,7 @@ class HomeStatusCoordinator(
             _LOGGER.debug("Home Status collections: raw current=%d upcoming=%d insights=%d status=%d; final current=%d upcoming=%d insights=%d status=%d", *raw_counts, len(current), len(upcoming), len(insights), len(status))
         try:
             hero_rotation_seconds = max(
-                1, min(120, int(self.options.get("hero_rotation_seconds", 4)))
+                1, int(self.options.get("hero_rotation_seconds", 4))
             )
         except (TypeError, ValueError):
             hero_rotation_seconds = 4
@@ -1277,7 +1289,7 @@ class HomeStatusCoordinator(
             "history_entities": list(self._direct_history_entities),
             "current": current,
             "upcoming": upcoming,
-            "insights": insights[:int(self.options.get("max_insight_items", 10))] if self.options.get("enable_insights", True) else [],
+            "insights": self._apply_item_limit(insights, "max_insight_items", 10) if self.options.get("enable_insights", True) else [],
             "status": status,
             "hero": hero,
             "sidebar": sidebar,
@@ -1285,6 +1297,12 @@ class HomeStatusCoordinator(
             "display": {
                 "hero_rotation_seconds": hero_rotation_seconds,
                 "media_enabled": self.options.get("media_enabled", True),
+                "footer_filters": {
+                    "hide_normal_security": self.options.get("footer_hide_normal_security", False),
+                    "hide_closed_contacts": self.options.get("footer_hide_closed_contacts", False),
+                    "hide_disarmed_alarm": self.options.get("footer_hide_disarmed_alarm", False),
+                    "group_contact_closures": self.options.get("footer_group_contact_closures", False),
+                },
             },
             "provider_contract": list(SUPPORTED_PROVIDERS),
         })
@@ -1302,7 +1320,15 @@ class HomeStatusCoordinator(
             except ValueError:
                 pass
             retained.append(event)
-        return retained[:200]
+        return self._apply_item_limit(retained, "history_max_events", 0)
+
+    def _apply_item_limit(self, items: list[dict], key: str, default: int) -> list[dict]:
+        """Apply a user-selected limit; zero means keep every item."""
+        try:
+            limit = max(0, int(self.options.get(key, default)))
+        except (TypeError, ValueError):
+            limit = default
+        return items[:limit] if limit else items
 
     @staticmethod
     def _filter_collection(items: list[dict], enabled: set[str], dedup: bool = True) -> list[dict]:
@@ -1334,6 +1360,18 @@ class HomeStatusCoordinator(
 
     def _route_streams(self, ticker, current, upcoming, insights, status):
         now = datetime.now(timezone.utc)
+        filters = {
+            "include_activity_history": self.options.get("footer_include_activity_history", True),
+            "include_persistent_conditions": self.options.get("footer_include_persistent_conditions", True),
+            "hide_normal_security": self.options.get("footer_hide_normal_security", False),
+            "hide_closed_contacts": self.options.get("footer_hide_closed_contacts", False),
+            "hide_disarmed_alarm": self.options.get("footer_hide_disarmed_alarm", False),
+            "hide_routine_climate": self.options.get("footer_hide_routine_climate", False),
+            "hide_routine_weather": self.options.get("footer_hide_routine_weather", False),
+        }
+        ticker_providers = set(normalize_providers(
+            self.options.get("ticker_providers", self.options.get("enabled_providers"))
+        ))
 
         def main_visible(item):
             until = item.get("main_until")
@@ -1408,10 +1446,17 @@ class HomeStatusCoordinator(
             provider = normalize_provider(
                 item.get("provider") or item.get("category") or item.get("source")
             )
-            if provider == PROVIDER_CLIMATE and item.get("priority") == "normal":
-                # Routine climate conditions belong in the sidebar.
+            if provider not in ticker_providers:
                 continue
             if (
+                filters["hide_routine_climate"]
+                and provider == PROVIDER_CLIMATE
+                and item.get("priority") == "normal"
+            ):
+                continue
+            if (
+                filters["hide_routine_weather"]
+                and
                 provider == PROVIDER_WEATHER
                 and item.get("priority") == "normal"
                 and not str(item.get("id") or "").startswith(
@@ -1421,29 +1466,31 @@ class HomeStatusCoordinator(
                 # Current weather is useful compact footer context, while
                 # forecast details remain sidebar-only.
                 continue
-            if item.get("category") == "contact":
-                continue
-            if item.get("source") == "water_leak":
-                continue
-            if item.get("source") in {
-                "refrigerator_door_alert",
-                "refrigerator_temperature_alert",
-                "appliance_cycle",
-                "sprinkler_watering",
-                "camera_offline",
-                "family_presence",
-                "system_updates",
-                "hvac_diagnostic_recovery",
-            }:
+            if (
+                not filters["include_activity_history"]
+                and item.get("source") == "direct_history"
+            ):
                 continue
             if (
-                item.get("source") == "recent"
+                filters["hide_closed_contacts"]
+                and (
+                    item.get("category") == "contact"
+                    or item.get("source") == "direct_history"
+                )
+                and "closed" in f"{item.get('title', '')} {item.get('summary', '')}".lower()
+            ):
+                continue
+            if (
+                filters["hide_normal_security"]
                 and item.get("category") in {"contact", "security"}
                 and item.get("priority") == "normal"
             ):
                 continue
-            if item.get("entity_id") == ALARM_ENTITY:
-                # Alarm state is a live status, never a historical ticker event.
+            if (
+                filters["hide_disarmed_alarm"]
+                and item.get("entity_id") == ALARM_ENTITY
+                and "disarmed" in f"{item.get('title', '')} {item.get('summary', '')}".lower()
+            ):
                 continue
             footer.append(item)
         footer.extend(
@@ -1451,6 +1498,8 @@ class HomeStatusCoordinator(
             if str(item.get("source") or "").startswith("capability:")
             and item.get("footer_eligible")
             and not main_visible(item)
+            and filters["include_persistent_conditions"]
+            and normalize_provider(item.get("provider") or item.get("category") or item.get("source")) in ticker_providers
         )
         alarm_entity_state = self.hass.states.get(ALARM_ENTITY)
         alarm_value = str(
@@ -1459,7 +1508,7 @@ class HomeStatusCoordinator(
         if (
             alarm_status is not None
             and alarm_status.get("id") not in hero_ids
-            and alarm_value != "disarmed"
+            and (alarm_value != "disarmed" or not filters["hide_disarmed_alarm"])
         ):
             footer.append(alarm_status)
         hero = self._deduplicate_stream(hero)
@@ -1699,7 +1748,8 @@ class HomeStatusCoordinator(
                 "weather", "mdi:weather-partly-cloudy", "normal",
                 weather.last_changed.isoformat(), entity_id=forecast_entity, source="weather", rich=visuals,
             ))
-        for index, day in enumerate(self._forecast[:1]):
+        forecast_limit = self._apply_item_limit(self._forecast, "forecast_days", 1)
+        for index, day in enumerate(forecast_limit):
             if not isinstance(day, dict):
                 continue
             period = day.get("datetime") or day.get("date")
@@ -1862,13 +1912,11 @@ class HomeStatusCoordinator(
                         ).astimezone(timezone.utc)
                     except (TypeError, ValueError):
                         continue
-                    if datetime.now(timezone.utc) - event_time > timedelta(hours=1):
+                    history_hours = max(1, int(self.options.get("footer_activity_history_hours", 1)))
+                    if datetime.now(timezone.utc) - event_time > timedelta(hours=history_hours):
                         continue
                 source_id = item.get("entity_id") or item.get("id", "event")
-                collapse_item = (
-                    item.get("source") == "direct_history"
-                    or self.options.get("collapse_repeated_events", True)
-                )
+                collapse_item = self.options.get("collapse_repeated_events", True)
                 if collapse_item and source_id in seen_insights:
                     continue
                 if collapse_item:
@@ -1908,7 +1956,7 @@ class HomeStatusCoordinator(
                     "normal", item.get("resolved_at"), entity_id=item.get("entity_id"),
                     source=history_source,
                 ))
-        return current, upcoming, insights[:int(self.options.get("max_insight_items", 10))]
+        return current, upcoming, self._apply_item_limit(insights, "max_insight_items", 10)
 
 
     @staticmethod

@@ -65,6 +65,8 @@ class MaintenanceProviderMixin:
             unit = str(state.attributes.get("unit_of_measurement") or "%").strip()
             summary = f"Water filter usage is {state.state}{unit}"
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
         return {
             "id": f"{DOMAIN}:refrigerator_water_filter",
             "entity_id": entity_id,
@@ -79,9 +81,9 @@ class MaintenanceProviderMixin:
             "created_at": state.last_changed.isoformat(),
             "active": True,
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": None,
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": False,
             "state": state.state,
@@ -200,6 +202,8 @@ class MaintenanceProviderMixin:
             tracker.pop(entity_id, None)
             return None
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
         started = tracker.setdefault(entity_id, now)
         delay = max(
             1,
@@ -251,9 +255,9 @@ class MaintenanceProviderMixin:
             "created_at": created_at.isoformat(),
             "active": True,
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": True,
             "state": state.state,

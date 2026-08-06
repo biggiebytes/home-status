@@ -94,6 +94,8 @@ class CameraProviderMixin:
             else f"{len(names)} Cameras Offline"
         )
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
         created_at = min(
             state.last_changed.astimezone(timezone.utc)
             for _, _, state in offline
@@ -113,9 +115,9 @@ class CameraProviderMixin:
             "created_at": created_at.isoformat(),
             "active": True,
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": True,
             "state": "unavailable",

@@ -138,6 +138,8 @@ async def test_custom_onboarding_and_permanent_settings_menu(hass):
         "news_sources",
         "experimental_sensors",
         "weather",
+        "ticker_filters",
+        "ticker_timing",
         "appearance",
         "navigation",
         "customize",

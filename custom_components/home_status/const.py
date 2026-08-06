@@ -1,7 +1,7 @@
 import re
 
 DOMAIN = "home_status"
-INTEGRATION_VERSION = "0.3.8"
+INTEGRATION_VERSION = "0.3.9"
 FRONTEND_URL_BASE = "/home_status"
 FRONTEND_MODULE_URL = (
     f"{FRONTEND_URL_BASE}/home-status-card.js?v={INTEGRATION_VERSION}"
@@ -52,7 +52,7 @@ PROVIDER_CAMERAS = "cameras"
 PROVIDER_FAMILY = "family"
 PROVIDER_LIGHTING = "lighting"
 PROVIDER_NEWS = "news"
-PROVIDER_CONTRACT_VERSION = 7
+PROVIDER_CONTRACT_VERSION = 8
 
 SUPPORTED_PROVIDERS = (
     PROVIDER_SECURITY,
@@ -201,6 +201,21 @@ def normalize_providers(values) -> list[str]:
 def normalize_provider_options(options: dict) -> dict:
     """Migrate provider-bearing option values to the canonical contract."""
     normalized = dict(options)
+    # Entries created before the explicit ticker-controls release retain the
+    # previous quiet presentation until their owner changes the new settings.
+    try:
+        legacy_ticker_policy = int(normalized.get("provider_contract_version", 0)) < 8
+    except (TypeError, ValueError):
+        legacy_ticker_policy = True
+    if legacy_ticker_policy:
+        normalized.setdefault("footer_hide_normal_security", True)
+        normalized.setdefault("footer_hide_closed_contacts", True)
+        normalized.setdefault("footer_hide_disarmed_alarm", True)
+        normalized.setdefault("footer_hide_routine_climate", True)
+        normalized.setdefault("footer_hide_routine_weather", True)
+        normalized.setdefault("footer_group_contact_closures", True)
+        normalized.setdefault("footer_include_activity_history", False)
+        normalized.setdefault("footer_include_persistent_conditions", True)
     # The legacy setup wizard stored automatically guessed entity names in
     # these fields. All entity monitoring now starts only from an explicit
     # Add & Configure Entities selection.

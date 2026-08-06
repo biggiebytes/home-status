@@ -49,6 +49,8 @@ class BinaryAlertProvider(CapabilityProvider):
         if normalized["state"] not in self.active_states:
             return None, "inactive"
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(config.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
         return {
             "id": f"capability:{self.capability}:{normalized['entity_id']}:active",
             "entity_id": normalized["entity_id"],
@@ -71,9 +73,9 @@ class BinaryAlertProvider(CapabilityProvider):
             "source": f"capability:{self.capability}",
             "metadata": normalized["metadata"],
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": False,
         }, "active"
@@ -209,10 +211,7 @@ class AvailabilityProvider(CapabilityProvider):
         ) else 10
         try:
             retention_minutes = max(
-                1, min(
-                    1440,
-                    int(config.get("retention_minutes", default_retention_minutes)),
-                )
+                1, int(config.get("retention_minutes", default_retention_minutes))
             )
         except (TypeError, ValueError):
             retention_minutes = default_retention_minutes
@@ -243,6 +242,7 @@ class AvailabilityProvider(CapabilityProvider):
                 else f"{normalized['name']} is closed"
             )
             now = datetime.now(timezone.utc)
+            reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
             item = {
                 "id": f"capability:availability:{entity_id}:active",
                 "entity_id": entity_id,
@@ -273,7 +273,7 @@ class AvailabilityProvider(CapabilityProvider):
                     now + timedelta(minutes=retention_minutes)
                 ).isoformat(),
                 "last_ticker_at": None,
-                "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+                "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
                 "persistent": True,
                 "hero_eligible": False,
             }
@@ -287,6 +287,7 @@ class AvailabilityProvider(CapabilityProvider):
                 "available" if raw_state != "unknown" else "state_unknown",
             )
         now = datetime.now(timezone.utc)
+        reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
         item = {
             "id": f"capability:availability:{entity_id}:unavailable",
             "entity_id": entity_id,
@@ -312,7 +313,7 @@ class AvailabilityProvider(CapabilityProvider):
                 now + timedelta(minutes=retention_minutes)
             ).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": False,
         }

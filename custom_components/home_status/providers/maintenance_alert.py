@@ -108,6 +108,8 @@ class MaintenanceAlertProvider(CapabilityProvider):
         ).strip()
         icon = str(config.get("icon") or self.icon).strip()
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(config.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
         item = {
             "id": f"capability:maintenance_alert:{entity_id}:active",
             "entity_id": entity_id,
@@ -128,7 +130,8 @@ class MaintenanceAlertProvider(CapabilityProvider):
             "source": "capability:maintenance_alert",
             "metadata": normalized["metadata"],
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": False,
         }

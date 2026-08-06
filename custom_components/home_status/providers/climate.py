@@ -176,6 +176,8 @@ class ClimateProviderMixin:
             ),
         ])
         now = datetime.now(timezone.utc)
+        ticker_minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
+        reminder_minutes = max(0, int(self.options.get("ticker_reminder_minutes", 45)))
         short_cycle = normalized == "short cycle delay"
         return {
             "id": f"{DOMAIN}:hvac_diagnostic",
@@ -194,12 +196,15 @@ class ClimateProviderMixin:
             "created_at": state.last_changed.isoformat(),
             "active": True,
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
             "next_reminder_at": (
                 None
                 if short_cycle
-                else (now + timedelta(minutes=45)).isoformat()
+                else (
+                    (now + timedelta(minutes=reminder_minutes)).isoformat()
+                    if reminder_minutes else None
+                )
             ),
             "persistent": not short_cycle,
             "hero_eligible": priority in {"critical", "attention"},

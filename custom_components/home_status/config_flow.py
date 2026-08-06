@@ -437,6 +437,8 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         "news_sources",
         "experimental_sensors",
         "weather",
+        "ticker_filters",
+        "ticker_timing",
         "appearance",
         "navigation",
         "customize",
@@ -773,16 +775,19 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 selector.NumberSelectorConfig(min=15, max=3600, step=15, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("history_retention_days", default=current.get("history_retention_days", 7)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=365, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=1, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("history_max_events", default=current.get("history_max_events", 0)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("max_recent_items", default=current.get("max_recent_items", 10)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("max_upcoming_items", default=current.get("max_upcoming_items", 10)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("max_insight_items", default=current.get("max_insight_items", 10)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
         }))
 
@@ -1522,7 +1527,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             ),
         )] = selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=1, max=1440, step=1,
+                min=1, step=1,
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
@@ -1548,11 +1553,47 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             return await self._save_step(user_input)
         current = self._current()
         return self.async_show_form(step_id="appearance", data_schema=vol.Schema({
-            vol.Optional("hero_rotation_seconds", default=current.get("hero_rotation_seconds", 4)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=120, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("hero_rotation_seconds", default=current.get("hero_rotation_seconds", 4)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, step=1, mode=selector.NumberSelectorMode.BOX)),
             vol.Optional("media_enabled", default=current.get("media_enabled", True)): selector.BooleanSelector(),
-            vol.Optional("collapse_repeated_events", default=current.get("collapse_repeated_events", True)): selector.BooleanSelector(),
-            vol.Optional("deduplicate_by_entity", default=current.get("deduplicate_by_entity", True)): selector.BooleanSelector(),
             vol.Optional("enable_insights", default=current.get("enable_insights", True)): selector.BooleanSelector(),
+        }))
+
+    async def async_step_ticker_filters(self, user_input=None):
+        """Let owners choose which otherwise-noisy items reach the ticker."""
+        if user_input is not None:
+            return await self._save_step(user_input)
+        current = self._current()
+        return self.async_show_form(step_id="ticker_filters", data_schema=vol.Schema({
+            vol.Optional("deduplicate_by_entity", default=current.get("deduplicate_by_entity", True)): selector.BooleanSelector(),
+            vol.Optional("collapse_repeated_events", default=current.get("collapse_repeated_events", True)): selector.BooleanSelector(),
+            vol.Optional("footer_include_activity_history", default=current.get("footer_include_activity_history", True)): selector.BooleanSelector(),
+            vol.Optional("footer_activity_history_hours", default=current.get("footer_activity_history_hours", 1)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=720, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("footer_include_persistent_conditions", default=current.get("footer_include_persistent_conditions", True)): selector.BooleanSelector(),
+            vol.Optional("footer_hide_normal_security", default=current.get("footer_hide_normal_security", False)): selector.BooleanSelector(),
+            vol.Optional("footer_hide_closed_contacts", default=current.get("footer_hide_closed_contacts", False)): selector.BooleanSelector(),
+            vol.Optional("footer_hide_disarmed_alarm", default=current.get("footer_hide_disarmed_alarm", False)): selector.BooleanSelector(),
+            vol.Optional("footer_hide_routine_climate", default=current.get("footer_hide_routine_climate", False)): selector.BooleanSelector(),
+            vol.Optional("footer_hide_routine_weather", default=current.get("footer_hide_routine_weather", False)): selector.BooleanSelector(),
+            vol.Optional("footer_group_contact_closures", default=current.get("footer_group_contact_closures", False)): selector.BooleanSelector(),
+        }))
+
+    async def async_step_ticker_timing(self, user_input=None):
+        """Choose ticker sources and reminder cadence without changing providers."""
+        if user_input is not None:
+            return await self._save_step(user_input)
+        current = self._current()
+        return self.async_show_form(step_id="ticker_timing", data_schema=vol.Schema({
+            vol.Optional("ticker_providers", default=current.get("ticker_providers", self.PROVIDERS)): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=self.PROVIDERS, multiple=True, mode=selector.SelectSelectorMode.LIST)
+            ),
+            vol.Optional("ticker_reminder_minutes", default=current.get("ticker_reminder_minutes", 45)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("ticker_event_minutes", default=current.get("ticker_event_minutes", 10)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
         }))
 
     async def async_step_weather(self, user_input=None):
@@ -1569,10 +1610,13 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 selector.EntitySelectorConfig(domain="calendar", multiple=True)
             ),
             vol.Optional("calendar_lookahead_days", default=current.get("calendar_lookahead_days", 14)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=90, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=1, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("waste_collection_window_days", default=current.get("waste_collection_window_days", 7)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional("forecast_days", default=current.get("forecast_days", 1)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0, step=1, mode=selector.NumberSelectorMode.BOX)
             ),
             vol.Optional("forecast_entity", default=current.get("forecast_entity", "")): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="weather")

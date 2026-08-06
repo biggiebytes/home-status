@@ -57,6 +57,14 @@ class NumericThresholdProvider(CapabilityProvider):
             else "mdi:water-percent-check"
         )
         now = datetime.now(timezone.utc)
+        try:
+            ticker_minutes = max(1, int(config.get("ticker_event_minutes", 10)))
+        except (TypeError, ValueError):
+            ticker_minutes = 10
+        try:
+            reminder_minutes = max(0, int(config.get("ticker_reminder_minutes", 45)))
+        except (TypeError, ValueError):
+            reminder_minutes = 45
         return {
             "id": f"capability:{self.capability}:{entity_id}:{direction}",
             "entity_id": entity_id,
@@ -81,9 +89,9 @@ class NumericThresholdProvider(CapabilityProvider):
             "source": f"capability:{self.capability}",
             "metadata": normalized["metadata"],
             "ticker_eligible": True,
-            "ticker_until": (now + timedelta(minutes=10)).isoformat(),
+            "ticker_until": (now + timedelta(minutes=ticker_minutes)).isoformat(),
             "last_ticker_at": None,
-            "next_reminder_at": (now + timedelta(minutes=45)).isoformat(),
+            "next_reminder_at": (now + timedelta(minutes=reminder_minutes)).isoformat() if reminder_minutes else None,
             "persistent": True,
             "hero_eligible": False,
         }, f"{direction}_threshold_crossed"
