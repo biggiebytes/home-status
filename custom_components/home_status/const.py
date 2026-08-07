@@ -1,7 +1,7 @@
 import re
 
 DOMAIN = "home_status"
-INTEGRATION_VERSION = "0.3.11"
+INTEGRATION_VERSION = "0.3.12"
 FRONTEND_URL_BASE = "/home_status"
 FRONTEND_MODULE_URL = (
     f"{FRONTEND_URL_BASE}/home-status-card.js?v={INTEGRATION_VERSION}"

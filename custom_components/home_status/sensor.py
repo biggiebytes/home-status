@@ -41,11 +41,14 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "weather_visual_effect": data.get("weather_visual_effect"),
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
-            "active": self._compact_items(data.get("active"), 12),
-            "recent": self._compact_items(data.get("recent"), 12),
-            "hero": self._compact_items(data.get("hero"), 4),
-            "sidebar": self._compact_items(data.get("sidebar"), 4),
-            "footer": self._compact_items(data.get("footer"), 8),
+            # The coordinator has already applied the user's source, filter,
+            # and item-limit choices. Do not impose a second hidden cap while
+            # publishing those collections to the card.
+            "active": self._compact_items(data.get("active"), None),
+            "recent": self._compact_items(data.get("recent"), None),
+            "hero": self._compact_items(data.get("hero"), None),
+            "sidebar": self._compact_items(data.get("sidebar"), None),
+            "footer": self._compact_items(data.get("footer"), None),
         }
 
     @staticmethod
@@ -69,7 +72,8 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "subtitle", "body", "visual_effect", "action",
         )
         items = []
-        for item in value[:limit]:
+        selected = value if limit is None else value[:limit]
+        for item in selected:
             if not isinstance(item, dict):
                 continue
             compact = {}

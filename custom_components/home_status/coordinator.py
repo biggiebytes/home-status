@@ -259,7 +259,7 @@ class HomeStatusCoordinator(
         invalidated = removed | disabled
         if invalidated:
             self._purge_entity_records(invalidated)
-            self.history = self.history[:200]
+            self.history = self._retained_history(self.history)
             self.hass.async_create_task(self.store.async_save({"events": self.history}))
         self.entity_ids = new_ids
         if self._unsub:
