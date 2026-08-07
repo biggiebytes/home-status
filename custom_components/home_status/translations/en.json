@@ -279,7 +279,7 @@
       },
       "ticker_filters": {
         "title": "Ticker Filters",
-        "description": "Choose what is reduced or kept in the bottom ticker. Leave filters off for a complete activity feed.",
+        "description": "Choose what is reduced or kept in the bottom ticker. Leave filters off for a complete activity feed. The dashboard card controls layout only; ticker content is controlled here.",
         "data": {
           "deduplicate_by_entity": "Hide exact duplicate events",
           "collapse_repeated_events": "Combine repeated history events",
@@ -309,7 +309,7 @@
       },
       "ticker_timing": {
         "title": "Ticker Timing & Sources",
-        "description": "Choose which enabled sources may enter the bottom ticker and how often active conditions repeat.",
+        "description": "Choose which enabled sources may enter the bottom ticker and how often active conditions repeat. The dashboard card controls layout only; ticker content is controlled here.",
         "data": {
           "ticker_providers": "Sources allowed in the ticker",
           "ticker_reminder_minutes": "Active-condition reminder interval (minutes; 0 = never)",

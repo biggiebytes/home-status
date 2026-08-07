@@ -654,11 +654,10 @@ class HomeStatusCoordinator(
                 continue
             if (
                 old.get("entity_id") in LIVE_ONLY_NOTIFICATION_SOURCES
-                or old.get("entity_id") == "switch.sprinklers_rain_delay"
                 or old.get("event_type") == "hvac_short_cycle"
             ):
-                # Maintenance faults and rain delay are live-only statuses.
-                # Clearing them must not create stale history/footer noise.
+                # Maintenance faults are live-only statuses. Clearing them
+                # must not create stale history/footer noise.
                 self.ticker.pop(item_id, None)
                 continue
             resolved_item = dict(old)
@@ -1080,13 +1079,13 @@ class HomeStatusCoordinator(
             "media_url": f"/api/camera_proxy/camera.front_door?t={state.last_changed.timestamp()}" if entity_id == "binary_sensor.front_door_visitor" and active else None,
             "media_type": "image" if entity_id == "binary_sensor.front_door_visitor" and active else None,
             "active": active,
-            "ticker_eligible": active and entity_id != "switch.sprinklers_rain_delay",
+            "ticker_eligible": active,
             "ticker_until": self._recent_ticker_until(),
             "last_ticker_at": None,
             "next_reminder_at": (
                 self._ticker_reminder_at() if is_leak and active else None
             ),
-            "persistent": False if is_contact else entity_id != "switch.sprinklers_rain_delay",
+            "persistent": not is_contact,
             "hero_eligible": bool(is_contact and active) or bool(priority in {"critical", "attention"} and active and not entity_id == ALARM_ENTITY),
             "state": state.state,
         }
@@ -1424,24 +1423,22 @@ class HomeStatusCoordinator(
             item for item in [*current, *status, *upcoming]
             if item.get("id") not in hero_ids
             and item.get("entity_id") not in hero_ids
-            and item.get("category") != "contact"
-            and item.get("source") != "filter_maintenance"
-            and item.get("source") != "water_leak"
-            and item.get("source") != "hvac_short_cycle"
-            and item.get("source") not in {
-                "refrigerator_door_alert",
-                "refrigerator_temperature_alert",
-                "appliance_maintenance",
-                "appliance_near_complete",
-            }
         ]
-        alarm_status = next(
-            (item for item in status if item.get("entity_id") == ALARM_ENTITY),
-            next((item for item in current if item.get("entity_id") == ALARM_ENTITY), None),
-        )
         footer = []
-        for item in [*current, *upcoming, *insights, *status]:
-            if item.get("id") in hero_ids or item.get("entity_id") in hero_ids:
+        for item in [*ticker, *current, *upcoming, *insights, *status]:
+            if (
+                item.get("active")
+                and str(item.get("source") or "").startswith("capability:")
+                and item.get("footer_eligible")
+                and not filters["include_persistent_conditions"]
+            ):
+                continue
+            if (
+                str(item.get("source") or "").startswith("capability:")
+                and main_visible(item)
+            ):
+                # Capability settings explicitly route the initial alert to
+                # the main area before it becomes a footer item.
                 continue
             provider = normalize_provider(
                 item.get("provider") or item.get("category") or item.get("source")
@@ -1459,12 +1456,7 @@ class HomeStatusCoordinator(
                 and
                 provider == PROVIDER_WEATHER
                 and item.get("priority") == "normal"
-                and not str(item.get("id") or "").startswith(
-                    "current:weather:"
-                )
             ):
-                # Current weather is useful compact footer context, while
-                # forecast details remain sidebar-only.
                 continue
             if (
                 not filters["include_activity_history"]
@@ -1493,24 +1485,6 @@ class HomeStatusCoordinator(
             ):
                 continue
             footer.append(item)
-        footer.extend(
-            item for item in ticker
-            if str(item.get("source") or "").startswith("capability:")
-            and item.get("footer_eligible")
-            and not main_visible(item)
-            and filters["include_persistent_conditions"]
-            and normalize_provider(item.get("provider") or item.get("category") or item.get("source")) in ticker_providers
-        )
-        alarm_entity_state = self.hass.states.get(ALARM_ENTITY)
-        alarm_value = str(
-            getattr(alarm_entity_state, "state", "")
-        ).casefold()
-        if (
-            alarm_status is not None
-            and alarm_status.get("id") not in hero_ids
-            and (alarm_value != "disarmed" or not filters["hide_disarmed_alarm"])
-        ):
-            footer.append(alarm_status)
         hero = self._deduplicate_stream(hero)
         sidebar = self._deduplicate_stream(sidebar)
         footer = self._deduplicate_stream(footer)
@@ -1604,10 +1578,6 @@ class HomeStatusCoordinator(
         represented = {item.get("entity_id") for item in active}
 
         for item in active:
-            if item.get("entity_id") == "switch.sprinklers_rain_delay":
-                # Rain delay has a dedicated status item below. Publishing the
-                # generic active copy as well creates two footer entries.
-                continue
             current.append(self._stream_item(
                 item.get("id", "active"), item.get("message", "Home alert"),
                 item.get("headline") or item.get("summary")
@@ -1899,10 +1869,6 @@ class HomeStatusCoordinator(
 
         seen_insights: set[str] = set()
         for item in self.history:
-            if item.get("entity_id") == "switch.sprinklers_rain_delay":
-                # Legacy rain-delay events may still exist in stored history.
-                # The dedicated live status is the only marquee representation.
-                continue
             if item.get("active") is False:
                 if item.get("source") == "direct_history":
                     stamp = item.get("resolved_at") or item.get("created_at")

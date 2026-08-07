@@ -482,7 +482,7 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'show_active_count', 'pause_on_hover',
   'utility_header', 'quick_status', 'hero', 'sidebar', 'footer',
   'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
-  'weather_effect', 'time_entity', 'recent_ticker_limit',
+  'weather_effect', 'time_entity',
   'recent_drawer_limit', 'rotation_seconds', 'footer_speed', 'entities', 'mode'
 ]);
 
@@ -627,7 +627,6 @@ class HomeStatusCard extends HTMLElement {
       weather_effect: String(config.weather_effect || 'auto').toLowerCase(),
       pause_on_hover: config.pause_on_hover !== false,
       time_entity: config.time_entity || '',
-      recent_ticker_limit: Number.isFinite(Number(config.recent_ticker_limit)) ? Number(config.recent_ticker_limit) : 0,
       recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
       rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
     };
@@ -849,7 +848,7 @@ class HomeStatusCard extends HTMLElement {
 
       const retention = Math.max(
         Number(this._config.recent_drawer_limit) || 10,
-        Number(this._config.recent_ticker_limit) || 6
+        Number(this._config.recent_drawer_limit) || 10
       );
       this._directRecentItems = this._directRecentItems.slice(0, retention);
     }
@@ -1049,26 +1048,6 @@ class HomeStatusCard extends HTMLElement {
     return filters && typeof filters === 'object' ? filters : {};
   }
 
-  _isNormalSecurityItem(item, filters = {}) {
-    const provider = this._providerFor(item);
-    const category = String(item?.category || '').toLowerCase();
-    if (provider !== 'security' && !['security', 'contact'].includes(category)) return false;
-    const entity = String(item?.entity_id || '').toLowerCase();
-    const text = `${item?.title || ''} ${item?.message || ''} ${item?.state || ''}`.toLowerCase();
-    if (
-      entity
-      && entity === String(this._config.utility_header.security_entity || '').toLowerCase()
-      && /\b(?:disarmed|alarm off)\b/.test(text)
-    ) {
-      return filters.hide_disarmed_alarm === true;
-    }
-    if (category === 'contact' && /\b(closed|clear)\b/i.test(text)) {
-      return filters.hide_closed_contacts === true;
-    }
-    return filters.hide_normal_security === true
-      && String(item?.priority || 'normal').toLowerCase() === 'normal';
-  }
-
   _escape(value) {
     const node = document.createElement('span');
     node.textContent = String(value ?? '');
@@ -1178,11 +1157,10 @@ class HomeStatusCard extends HTMLElement {
     // sensor.home_status remains authoritative for which items are available.
     // The card chooses presentation slots so verbose or urgent content is not
     // trapped in the narrower right-hand panel by its provider category.
-    const filters = this._footerFilters(data);
     const sidebar = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
-      .filter(item => !this._isNormalSecurityItem(item, filters));
+      .slice();
     const hero = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
-      .filter(item => !this._isNormalSecurityItem(item, filters));
+      .slice();
     const seen = new Set();
     const items = [...sidebar, ...hero].filter(item => {
       const key = item?.id || item?.entity_id || `${this._label(item)}|${item?.summary || item?.secondary || ''}`;
@@ -1232,13 +1210,10 @@ class HomeStatusCard extends HTMLElement {
 
   _buildFooterStream(data) {
     if (!this._config.home_status_visibility.footer) return [];
-    const filters = this._footerFilters(data);
     const authoritativeFooter = Array.isArray(data.footer) ? data.footer : [];
     const items = authoritativeFooter
-      .filter(item => !this._isRoutineFooterStatus(item, filters))
-      .filter(item => item?.source === 'direct_history' || !this._isNormalSecurityItem(item, filters))
       .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _provider: this._providerFor(item) }));
-    return filters.group_contact_closures === true
+    return this._footerFilters(data).group_contact_closures === true
       ? this._groupFooterContactClosures(items)
       : items;
   }
@@ -1277,10 +1252,8 @@ class HomeStatusCard extends HTMLElement {
     const summary = item.summary || item.secondary || item.detail || 'Tap for details';
     const navigation = String(item.navigation || item.action || '');
     const entity = String(item.entity_id || item.entity || '');
-    const tickerLimit = Math.max(0, Number(this._config.recent_ticker_limit) || 0);
     const footerStream = this._buildFooterStream(data);
-    const footerItems = tickerLimit ? footerStream.slice(0, tickerLimit) : footerStream;
-    const phoneTickerItems = footerItems.length ? footerItems : [{
+    const phoneTickerItems = footerStream.length ? footerStream : [{
       id: 'phone-no-updates',
       message: 'No recent updates',
       summary: 'Home is quiet',
@@ -1317,17 +1290,6 @@ class HomeStatusCard extends HTMLElement {
     host.dataset.signature = markup;
     host.innerHTML = markup;
     this._bindStreamItems();
-  }
-
-  _isRoutineFooterStatus(item, filters = {}) {
-    if (filters.hide_disarmed_alarm !== true) return false;
-    if (item?.source !== 'status') return false;
-    const entity = String(item.entity_id || '').toLowerCase();
-    const text = `${item.title || ''} ${item.message || ''} ${item.summary || ''} ${item.state || ''}`.toLowerCase();
-    if (entity && entity === String(this._config.utility_header.security_entity || '').toLowerCase()) {
-      return /\b(?:alarm off|disarmed)\b/.test(text);
-    }
-    return false;
   }
 
   _groupFooterContactClosures(items) {
@@ -2605,7 +2567,6 @@ class HomeStatusCard extends HTMLElement {
       profile: 'auto',
       layout: 'responsive',
       time_entity: '',
-      recent_ticker_limit: 6,
       recent_drawer_limit: 10,
       rotation_seconds: 4,
       utility_header: { enabled: false },
@@ -2864,8 +2825,7 @@ class HomeStatusCardEditor extends HTMLElement {
         ${this._toggle('display.media_enabled', 'Show notification media', true)}
         ${this._select('weather_effect', 'Weather effect', weatherEffects, 'auto')}
       </div></details>
-      <details data-section="limits"${sectionOpen('limits') ? ' open' : ''}${levelHidden('advanced')}><summary>Item limits</summary><div class="section">
-        ${this._number('recent_ticker_limit', 'Ticker item limit', 0, 0, 1000, 'Use 0 to rotate every eligible item.')}
+      <details data-section="limits"${sectionOpen('limits') ? ' open' : ''}${levelHidden('advanced')}><summary>Drawer settings</summary><div class="section">
         ${this._number('recent_drawer_limit', 'Drawer item limit', 10, 1, 50)}
       </div></details>
       <details data-section="entities"${sectionOpen('entities') ? ' open' : ''}${levelHidden('advanced')}><summary>Manual entities</summary><div class="section">
