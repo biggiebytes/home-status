@@ -141,8 +141,20 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.hass.async_create_task(self.store.async_save(self._store_data()))
 
     def _refresh_live_news(self) -> None:
+        sample_interval = self._int_option("live_news_sample_interval", 1800, minimum=30)
+        display_duration = self._int_option("live_news_display_duration", 30, minimum=1)
+        muted = bool(self.options.get("live_news_mute", True))
+        sources = []
+        for configured in self.options.get("live_news_sources", []):
+            if not isinstance(configured, dict):
+                continue
+            source = dict(configured)
+            # Sampling is provider-wide: one source is eligible per window,
+            # then the provider advances its persisted round-robin cursor.
+            source.update({"sample_interval": sample_interval, "display_duration": display_duration, "mute": muted})
+            sources.append(source)
         self.live_news_items = self.live_news.refresh(
-            self.options.get("live_news_sources", []), datetime.now(timezone.utc)
+            sources, datetime.now(timezone.utc)
         )
         self._save_state()
 

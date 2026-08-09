@@ -526,9 +526,14 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Choose a Direct HTTPS HLS source to add or edit."""
         if user_input is not None:
             chosen = str(user_input["live_news_source"])
+            if chosen == "__settings__":
+                return await self.async_step_live_news_settings()
             self._live_news_source_id = None if chosen == "__add__" else chosen
             return await self.async_step_live_news_source_edit()
-        choices = [{"value": "__add__", "label": "Add live HLS source"}]
+        choices = [
+            {"value": "__settings__", "label": "Live News sampling settings"},
+            {"value": "__add__", "label": "Add live HLS source"},
+        ]
         for source in self.entry.options.get("live_news_sources", []):
             if isinstance(source, dict) and source.get("id"):
                 choices.append({"value": str(source["id"]), "label": str(source.get("name") or source.get("url") or "Live News")})
@@ -552,9 +557,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     "transport": "hls",
                     "enabled": bool(user_input.get("enabled", True)),
                     "priority": str(user_input.get("priority", "normal")),
-                    "sample_interval": max(30, min(86400, int(user_input.get("sample_interval", 1800)))),
-                    "display_duration": max(1, min(3600, int(user_input.get("display_duration", 30)))),
-                    "mute": bool(user_input.get("mute", True)),
                 })
             options["live_news_sources"] = sources
             return await self._save_options_and_return(options, "sources")
@@ -567,11 +569,25 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(),
             vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=priorities, mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Optional("sample_interval", default=current.get("sample_interval", 1800)): self._number(30, 86400, 30),
-            vol.Optional("display_duration", default=current.get("display_duration", 30)): self._number(1, 3600, 1),
-            vol.Optional("mute", default=current.get("mute", True)): selector.BooleanSelector(),
             vol.Optional("remove_source", default=False): selector.BooleanSelector(),
         })
+
+    async def async_step_live_news_settings(self, user_input=None):
+        """Configure the shared Live News sampling cadence."""
+        if user_input is not None:
+            options = self._options()
+            options["live_news_sample_interval"] = max(30, min(86400, int(user_input.get("sample_interval", 1800))))
+            options["live_news_display_duration"] = max(1, min(3600, int(user_input.get("display_duration", 30))))
+            options["live_news_mute"] = bool(user_input.get("mute", True))
+            return await self._save_options_and_return(options, "sources")
+        return self.async_show_form(
+            step_id="live_news_settings",
+            data_schema=vol.Schema({
+                vol.Optional("sample_interval", default=self.entry.options.get("live_news_sample_interval", 1800)): self._number(30, 86400, 30),
+                vol.Optional("display_duration", default=self.entry.options.get("live_news_display_duration", 30)): self._number(1, 3600, 1),
+                vol.Optional("mute", default=self.entry.options.get("live_news_mute", True)): selector.BooleanSelector(),
+            }),
+        )
 
     async def async_step_visual_camera(self, user_input=None):
         """Configure a generic Home Assistant camera visual and its trigger."""

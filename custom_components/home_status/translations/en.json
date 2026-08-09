@@ -123,14 +123,20 @@
       },
       "live_news_sources": {
         "title": "Live News sources",
-        "description": "Add Direct HTTPS HLS streams for occasional Visual Center samples. These streams do not create ticker or history items.",
+        "description": "Add Direct HTTPS HLS streams for shared, rotating Visual Center samples. These streams do not create ticker or history items.",
         "data": {"live_news_source":"Live News source"}
       },
       "live_news_source_edit": {
         "title": "Live HLS source",
-        "description": "Home Status periodically shows this direct HTTPS HLS stream for context. Higher-priority visuals take over immediately; Live News waits for its next scheduled sample.",
-        "data": {"name":"Name","url":"Direct HTTPS HLS URL (.m3u8)","enabled":"Enabled","priority":"Visual priority","sample_interval":"Sample interval (seconds)","display_duration":"Display duration (seconds)","mute":"Mute audio","remove_source":"Remove this source"},
-        "data_description": {"url":"Use a direct HTTPS HLS manifest URL. Home Status does not scrape or adapt publisher websites.","sample_interval":"How often this source becomes eligible for one temporary Visual Center sample.","display_duration":"How long each sample remains visible unless a higher-priority visual takes over.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
+        "description": "Configure one source for the shared Live News rotation. Higher-priority visuals take over immediately; Live News waits for its next scheduled sample.",
+        "data": {"name":"Name","url":"Direct HTTPS HLS URL (.m3u8)","enabled":"Enabled","priority":"Visual priority","remove_source":"Remove this source"},
+        "data_description": {"url":"Use a direct HTTPS HLS manifest URL. Home Status does not scrape or adapt publisher websites."}
+      },
+      "live_news_settings": {
+        "title": "Live News sampling settings",
+        "description": "Set one shared cadence for the whole Live News rotation. Each sample selects exactly one enabled source, then advances to the next source.",
+        "data": {"sample_interval":"Time between samples (seconds)","display_duration":"Video duration (seconds)","mute":"Mute audio"},
+        "data_description": {"sample_interval":"How long Home Status waits before selecting the next source in the rotation.","display_duration":"How long the selected channel stays in Visual Center unless a higher-priority visual takes over.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
       },
       "information_sources": {
         "title": "Information sources",
