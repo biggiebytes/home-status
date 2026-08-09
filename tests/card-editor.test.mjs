@@ -72,6 +72,74 @@ try {
   assert.deepEqual(registration.stub.grid_options, { columns: 36, rows: 7 });
   assert.equal(registration.editorTag, 'HOME-STATUS-CARD-EDITOR');
 
+  const visualCenterTransitions = await page.evaluate(() => {
+    const attributes = {
+      ...window.testHass.states['sensor.home_status'].attributes,
+      visual: null
+    };
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status', profile: 'tablet' });
+    const setVisual = visual => {
+      card.hass = {
+        ...window.testHass,
+        states: {
+        ...window.testHass.states,
+          'sensor.home_status': { state: 'normal', attributes: { ...attributes, visual } },
+          'camera.front_door': { entity_id: 'camera.front_door', state: 'idle', attributes: {} }
+        }
+      };
+    };
+    setVisual(null);
+    document.querySelector('#card-host').replaceChildren(card);
+    const zones = card.shadowRoot.querySelector('.ticker-zones');
+    const initial = {
+      visual: zones.querySelector('[data-visual-center]') !== null,
+      hasVisual: zones.classList.contains('has-visual'),
+      zoneCount: zones.querySelectorAll('[data-zone]').length
+    };
+
+    setVisual({ type: 'image', url: 'https://example.test/visual.jpg', priority: 'normal', live: false, resumable: true });
+    const center = zones.querySelector('[data-visual-center]');
+    const appeared = {
+      hasVisual: zones.classList.contains('has-visual'),
+      image: center?.firstElementChild?.tagName,
+      src: center?.firstElementChild?.getAttribute('src')
+    };
+
+    setVisual({ type: 'video', url: 'https://example.test/visual.mp4', priority: 'attention', live: true, resumable: true });
+    const changed = {
+      sameCenter: center === zones.querySelector('[data-visual-center]'),
+      video: center?.firstElementChild?.tagName,
+      muted: center?.firstElementChild?.muted === true,
+      controls: center?.firstElementChild?.controls === false
+    };
+
+    setVisual({ type: 'camera', entity_id: 'camera.front_door', priority: 'critical', live: true, resumable: true });
+    const camera = center?.firstElementChild;
+    const cameraResult = {
+      tag: camera?.tagName,
+      entity: camera?.getAttribute('camera-entity'),
+      stateObject: camera?.stateObj?.entity_id
+    };
+
+    setVisual({ type: 'map', url: 'https://example.test/visual-map', priority: 'attention', live: false, resumable: true });
+    const fallback = center?.textContent;
+
+    setVisual(null);
+    const disappeared = {
+      visual: zones.querySelector('[data-visual-center]') !== null,
+      hasVisual: zones.classList.contains('has-visual'),
+      zoneCount: zones.querySelectorAll('[data-zone]').length
+    };
+    return { initial, appeared, changed, cameraResult, fallback, disappeared };
+  });
+  assert.deepEqual(visualCenterTransitions.initial, { visual: false, hasVisual: false, zoneCount: 2 });
+  assert.deepEqual(visualCenterTransitions.appeared, { hasVisual: true, image: 'IMG', src: 'https://example.test/visual.jpg' });
+  assert.deepEqual(visualCenterTransitions.changed, { sameCenter: true, video: 'VIDEO', muted: true, controls: true });
+  assert.deepEqual(visualCenterTransitions.cameraResult, { tag: 'HA-CAMERA-STREAM', entity: 'camera.front_door', stateObject: 'camera.front_door' });
+  assert.match(visualCenterTransitions.fallback, /not supported yet/);
+  assert.deepEqual(visualCenterTransitions.disappeared, { visual: false, hasVisual: false, zoneCount: 2 });
+
   const resolvedIconColors = await page.evaluate(() => {
     const card = document.createElement('home-status-card');
     return {

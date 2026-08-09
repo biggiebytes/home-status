@@ -102,12 +102,53 @@
       },
       "sources": {
         "title": "Information Sources",
+        "description": "Manage the information Home Status can surface and the generic visual sources available to Visual Center.",
+        "menu_options": {
+          "information_sources": "Information sources",
+          "visual_sources": "Visual sources",
+          "back_to_init": "â† Back to Reconfiguration"
+        }
+      },
+      "information_sources": {
+        "title": "Information sources",
         "description": "Choose non-device information Home Status can surface, such as weather, calendars, location, and other supported sources. What appears on the card can be controlled separately under Presentation & behavior.",
         "data": {
           "selected_sources": "Information sources"
         },
         "data_description": {
           "selected_sources": "Select the information feeds Home Status may use. What appears on the card can be controlled separately under Presentation & behavior."
+        }
+      },
+      "visual_sources": {
+        "title": "Visual sources",
+        "description": "Add or edit visual content that Visual Center can show. Each source is generic: select a Home Assistant camera and the entity state that makes it available.",
+        "data": {
+          "visual_source": "Camera visual source"
+        },
+        "data_description": {
+          "visual_source": "Select an existing camera visual source to edit, or choose Add camera visual source."
+        }
+      },
+      "visual_camera": {
+        "title": "Camera visual source",
+        "description": "Show the selected Home Assistant camera while the selected trigger entity has the chosen state. Home Status uses Home Assistant's camera capabilities; it does not require a direct stream URL.",
+        "data": {
+          "camera_entity_id": "Camera",
+          "trigger_entity_id": "Trigger entity",
+          "trigger_state": "Trigger state",
+          "priority": "Visual priority",
+          "enabled": "Enable this visual source",
+          "resumable": "Allow this visual to resume",
+          "remove_source": "Remove this visual source"
+        },
+        "data_description": {
+          "camera_entity_id": "The Home Assistant camera to render when this source is active.",
+          "trigger_entity_id": "Any Home Assistant entity whose state determines when this camera visual is available.",
+          "trigger_state": "This source becomes active when the trigger entity exactly matches this state. The common default is on.",
+          "priority": "Higher-priority visuals temporarily take over Visual Center and lower-priority resumable visuals may return afterward.",
+          "enabled": "Turn this source off without deleting its configuration.",
+          "resumable": "Keep this visual eligible again after a higher-priority visual ends.",
+          "remove_source": "Remove this camera visual source when you save."
         }
       },
       "names": {
@@ -229,6 +270,7 @@
           "layout_sizing": "Layout & sizing",
           "routing_filters": "Routing & filters",
           "appearance": "Appearance",
+          "visual_center": "Visual Center",
           "names": "Names",
           "timing": "Timing & history",
           "back_to_init": "← Back to Reconfiguration"
@@ -438,6 +480,16 @@
               "color_success": "Used for completed or resolved activity, such as a finished appliance cycle when the completion style applies."
             }
           }
+        }
+      },
+      "visual_center": {
+        "title": "Visual Center",
+        "description": "Control whether Home Status may show the current generic visual winner between the existing left and right areas. It takes no space when no valid visual is available.",
+        "data": {
+          "visual_center_enabled": "Show Visual Center when visual content is available"
+        },
+        "data_description": {
+          "visual_center_enabled": "When enabled, the highest-priority valid visual source can appear in the center. Turn this off to keep the card in its normal two-column layout."
         }
       },
       "back_to_init": {

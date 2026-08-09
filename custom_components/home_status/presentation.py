@@ -5,12 +5,14 @@ Names are intentionally physical and memorable: left, right, bottom.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from .presentation_config import ROUTING_DEFAULTS, option
 
 
 _PRIORITY = {"critical": 0, "attention": 1, "activity": 2, "normal": 3}
+_VISUAL_TYPES = {"image", "video", "camera", "map"}
 
 
 def _sort(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -125,3 +127,102 @@ def _dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         result.append(item)
     return result
+
+
+def select_visual(
+    active: list[dict[str, Any]] | None = None,
+    recent: list[dict[str, Any]] | None = None,
+    awareness: list[dict[str, Any]] | None = None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Choose the current generic Visual Center candidate.
+
+    Items describe visual capability only. This selector deliberately knows
+    nothing about providers, categories, or placement in the card.
+    """
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    candidates: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    items = [
+        item for item in [*(active or []), *(awareness or []), *(recent or [])]
+        if isinstance(item, dict)
+    ]
+    for item in _dedupe(items):
+        visual = _normalized_visual(item.get("visual"), now)
+        if visual is None:
+            continue
+        started = _parse_visual_time(visual.get("started_at"))
+        created = _parse_visual_time(item.get("created_at"))
+        current = visual["live"] or item.get("active") is True
+        candidates.append((
+            (
+                _PRIORITY[visual["priority"]],
+                0 if current else 1,
+                -(started.timestamp() if started else 0),
+                -(created.timestamp() if created else 0),
+            ),
+            visual,
+        ))
+    return min(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
+
+
+def _normalized_visual(value: Any, now: datetime) -> dict[str, Any] | None:
+    """Validate and normalize the provider-neutral visual contract."""
+    if not isinstance(value, dict):
+        return None
+    visual_type = value.get("type")
+    if not isinstance(visual_type, str) or visual_type not in _VISUAL_TYPES:
+        return None
+    url = value.get("url")
+    entity_id = value.get("entity_id")
+    if url is not None and (not isinstance(url, str) or not url.strip()):
+        return None
+    if entity_id is not None and (not isinstance(entity_id, str) or not entity_id.strip()):
+        return None
+    if not url and not entity_id:
+        return None
+
+    priority = value.get("priority", "normal")
+    if not isinstance(priority, str) or priority not in _PRIORITY:
+        return None
+    live = value.get("live", False)
+    resumable = value.get("resumable", True)
+    if not isinstance(live, bool) or not isinstance(resumable, bool):
+        return None
+
+    started_at = value.get("started_at")
+    expires_at = value.get("expires_at")
+    started = _parse_visual_time(started_at)
+    expires = _parse_visual_time(expires_at)
+    if (started_at is not None and started is None) or (expires_at is not None and expires is None):
+        return None
+    if expires is not None and expires <= now:
+        return None
+
+    result: dict[str, Any] = {
+        "type": visual_type,
+        "priority": priority,
+        "live": live,
+        "resumable": resumable,
+    }
+    if url:
+        result["url"] = url.strip()
+    if entity_id:
+        result["entity_id"] = entity_id.strip()
+    if started_at is not None:
+        result["started_at"] = started_at
+    if expires_at is not None:
+        result["expires_at"] = expires_at
+    return result
+
+
+def _parse_visual_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)

@@ -7,6 +7,8 @@ never an eligibility gate.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import section
@@ -106,6 +108,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         self.entry = entry
         self._rename_target: str | None = None
         self._manage_target: str | None = None
+        self._visual_source_id: str | None = None
 
     def _options(self) -> dict:
         return dict(self.entry.options)
@@ -119,6 +122,8 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_monitoring()
         if parent == "presentation":
             return await self.async_step_presentation()
+        if parent == "sources":
+            return await self.async_step_sources()
         if parent == "advanced":
             return await self.async_step_advanced()
         if parent == "names":
@@ -417,13 +422,21 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_sources(self, user_input=None):
+        """Open information and visual source settings."""
+        return self.async_show_menu(
+            step_id="sources",
+            menu_options=["information_sources", "visual_sources", "back_to_init"],
+        )
+
+    async def async_step_information_sources(self, user_input=None):
+        """Manage discovered non-device information sources."""
         current = _selected(self.entry, "selected_sources")
         if user_input is not None:
             options = self._options()
             options["selected_sources"] = list(user_input.get("selected_sources", []))
-            return await self._save_options_and_return(options, "init")
+            return await self._save_options_and_return(options, "sources")
         return self.async_show_form(
-            step_id="sources",
+            step_id="information_sources",
             data_schema=vol.Schema({
                 vol.Optional("selected_sources", default=current): selector.SelectSelector(
                     selector.SelectSelectorConfig(
@@ -432,6 +445,98 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 )
+            }),
+        )
+
+    def _visual_source_choices(self):
+        choices = [{"value": "__add__", "label": "Add camera visual source"}]
+        for source in self.entry.options.get("visual_sources", []):
+            if not isinstance(source, dict) or source.get("type") != "camera":
+                continue
+            source_id = source.get("id")
+            camera = source.get("camera_entity_id")
+            trigger = source.get("trigger_entity_id")
+            if not all(isinstance(value, str) and value for value in (source_id, camera, trigger)):
+                continue
+            choices.append({
+                "value": source_id,
+                "label": f"{_entity_friendly_name(self.hass, camera)} when {_entity_friendly_name(self.hass, trigger)} is {source.get('trigger_state', 'on')}",
+            })
+        return choices
+
+    def _visual_source(self, source_id: str | None) -> dict:
+        if not source_id:
+            return {}
+        for source in self.entry.options.get("visual_sources", []):
+            if isinstance(source, dict) and source.get("id") == source_id:
+                return dict(source)
+        return {}
+
+    async def async_step_visual_sources(self, user_input=None):
+        """Select a configured visual source to add or edit."""
+        if user_input is not None:
+            selected = str(user_input["visual_source"])
+            self._visual_source_id = None if selected == "__add__" else selected
+            return await self.async_step_visual_camera()
+        return self.async_show_form(
+            step_id="visual_sources",
+            data_schema=vol.Schema({
+                vol.Required("visual_source"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=self._visual_source_choices(),
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }),
+        )
+
+    async def async_step_visual_camera(self, user_input=None):
+        """Configure a generic Home Assistant camera visual and its trigger."""
+        current = self._visual_source(self._visual_source_id)
+        if user_input is not None:
+            options = self._options()
+            configured = [
+                source for source in options.get("visual_sources", [])
+                if isinstance(source, dict) and source.get("id") != self._visual_source_id
+            ]
+            if not user_input.get("remove_source", False):
+                configured.append({
+                    "id": self._visual_source_id or uuid4().hex,
+                    "type": "camera",
+                    "camera_entity_id": str(user_input["camera_entity_id"]),
+                    "trigger_entity_id": str(user_input["trigger_entity_id"]),
+                    "trigger_state": str(user_input.get("trigger_state", "on")).strip() or "on",
+                    "priority": str(user_input.get("priority", "attention")),
+                    "enabled": bool(user_input.get("enabled", True)),
+                    "resumable": bool(user_input.get("resumable", True)),
+                })
+            options["visual_sources"] = configured
+            return await self._save_options_and_return(options, "sources")
+
+        return self.async_show_form(
+            step_id="visual_camera",
+            data_schema=vol.Schema({
+                vol.Required("camera_entity_id", default=current.get("camera_entity_id", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="camera")
+                ),
+                vol.Required("trigger_entity_id", default=current.get("trigger_entity_id", "")): selector.EntitySelector(),
+                vol.Optional("trigger_state", default=current.get("trigger_state", "on")): selector.TextSelector(
+                    selector.TextSelectorConfig()
+                ),
+                vol.Optional("priority", default=current.get("priority", "attention")): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": "normal", "label": "Normal"},
+                            {"value": "activity", "label": "Activity"},
+                            {"value": "attention", "label": "Attention"},
+                            {"value": "critical", "label": "Critical"},
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(),
+                vol.Optional("resumable", default=current.get("resumable", True)): selector.BooleanSelector(),
+                vol.Optional("remove_source", default=False): selector.BooleanSelector(),
             }),
         )
 
@@ -579,7 +684,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open the user-facing presentation and behavior settings."""
         return self.async_show_menu(
             step_id="presentation",
-            menu_options=["layout_sizing", "routing_filters", "appearance", "names", "timing", "back_to_init"],
+            menu_options=["layout_sizing", "routing_filters", "appearance", "visual_center", "names", "timing", "back_to_init"],
         )
 
     def _option_value(self, key):
@@ -756,6 +861,22 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     }),
                     {"collapsed": True},
                 ),
+            }),
+        )
+
+    async def async_step_visual_center(self, user_input=None):
+        """Configure when the provider-neutral Visual Center may be shown."""
+        if user_input is not None:
+            options = self._options()
+            options["visual_center_enabled"] = bool(user_input.get("visual_center_enabled", True))
+            return await self._save_options_and_return(options, "presentation")
+        return self.async_show_form(
+            step_id="visual_center",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "visual_center_enabled",
+                    default=self._option_value("visual_center_enabled"),
+                ): selector.BooleanSelector(),
             }),
         )
 

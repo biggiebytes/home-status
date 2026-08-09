@@ -39,6 +39,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "health": data.get("health", "normal"),
             "priority": data.get("priority", "normal"),
             "weather_visual_effect": data.get("weather_visual_effect"),
+            "visual": self._compact_visual(data.get("visual")),
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
@@ -73,6 +74,16 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             return {}
         allowed = {"layout", "emphasis", "appearance", "timestamps"}
         return {key: value[key] for key in allowed if key in value and isinstance(value[key], dict)}
+
+    @staticmethod
+    def _compact_visual(value):
+        if not isinstance(value, dict):
+            return None
+        return {
+            key: value[key]
+            for key in ("type", "url", "entity_id", "priority", "live", "started_at", "expires_at", "resumable")
+            if key in value
+        }
 
     @staticmethod
     def _compact_items(value, limit):

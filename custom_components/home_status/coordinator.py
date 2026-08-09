@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .engine import HomeStatusEngine
-from .presentation import place_items
+from .presentation import place_items, select_visual
 from .presentation_config import presentation_preferences
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,7 +78,10 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     def _reconfigure_subscription(self) -> None:
-        observed = self.engine.observed_entity_ids(self.options)
+        observed = tuple(sorted({
+            *self.engine.observed_entity_ids(self.options),
+            *self._visual_source_entity_ids(),
+        }))
         if observed == self._observed and self._unsub_state:
             return
         if self._unsub_state:
@@ -101,6 +104,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _publish(self) -> None:
         new_items = self.engine.build_active_items(self.options)
+        visual_source_items = self._configured_visual_items()
         new_active = {str(item["id"]): item for item in new_items if item.get("active")}
         previous = self.active
 
@@ -134,6 +138,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         awareness = self.engine.build_awareness_items(self.options)
 
         left, right, bottom = place_items(active, recent, awareness, self.options)
+        visual = select_visual([*active, *visual_source_items], recent, awareness) if bool(
+            self.options.get("visual_center_enabled", True)
+        ) else None
 
         priority = self._priority(active)
         weather_effect = self._weather_visual_effect(awareness)
@@ -147,6 +154,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "left": left,
             "right": right,
             "bottom": bottom,
+            "visual": visual,
             # Temporary aliases for the current card only.
             "hero": left,
             "sidebar": right,
@@ -159,6 +167,58 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "presentation": presentation_preferences(self.options),
             "last_updated": self._now(),
         })
+
+    def _visual_source_entity_ids(self) -> tuple[str, ...]:
+        """Return the camera and trigger entities configured for Visual Center."""
+        entity_ids: set[str] = set()
+        for source in self.options.get("visual_sources", []):
+            if not isinstance(source, dict) or source.get("type") != "camera":
+                continue
+            for key in ("camera_entity_id", "trigger_entity_id"):
+                entity_id = source.get(key)
+                if isinstance(entity_id, str) and "." in entity_id:
+                    entity_ids.add(entity_id)
+        return tuple(sorted(entity_ids))
+
+    def _configured_visual_items(self) -> list[dict[str, Any]]:
+        """Build provider-neutral visual-only items from explicit user sources."""
+        items: list[dict[str, Any]] = []
+        for source in self.options.get("visual_sources", []):
+            if not isinstance(source, dict) or source.get("type") != "camera":
+                continue
+            if source.get("enabled", True) is not True:
+                continue
+            camera_entity_id = source.get("camera_entity_id")
+            trigger_entity_id = source.get("trigger_entity_id")
+            if (
+                not isinstance(camera_entity_id, str)
+                or not camera_entity_id.startswith("camera.")
+                or not isinstance(trigger_entity_id, str)
+                or "." not in trigger_entity_id
+            ):
+                continue
+            trigger = self.hass.states.get(trigger_entity_id)
+            trigger_state = str(source.get("trigger_state") or "on").strip()
+            if not trigger or str(trigger.state).strip().casefold() != trigger_state.casefold():
+                continue
+            source_id = str(source.get("id") or f"{camera_entity_id}:{trigger_entity_id}")
+            items.append({
+                "id": f"visual_source:{source_id}",
+                "active": True,
+                "priority": str(source.get("priority") or "attention"),
+                "event_type": "visual_source",
+                "category": "visual",
+                "created_at": trigger.last_changed.isoformat(),
+                "visual": {
+                    "type": "camera",
+                    "entity_id": camera_entity_id,
+                    "priority": str(source.get("priority") or "attention"),
+                    "live": True,
+                    "started_at": trigger.last_changed.isoformat(),
+                    "resumable": bool(source.get("resumable", True)),
+                },
+            })
+        return items
 
     def _resolve(self, old: dict[str, Any]) -> dict[str, Any] | None:
         """Turn one active HomeDevice event into one recent event."""

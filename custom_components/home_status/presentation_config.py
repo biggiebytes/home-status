@@ -115,6 +115,9 @@ DEFAULTS: dict[str, Any] = {
     # Explicit behavior: when left has nothing routed to it, preserve the
     # current v0.3.24 fallback that promotes one useful awareness item.
     "fill_empty_left": True,
+    # Visual Center remains absent until a valid visual is available. This
+    # option only controls whether the presentation layer may show a winner.
+    "visual_center_enabled": True,
 }
 
 for _route_key, _destinations in ROUTING_DEFAULTS.items():

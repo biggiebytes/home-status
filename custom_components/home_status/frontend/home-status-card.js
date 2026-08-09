@@ -1057,7 +1057,7 @@ class HomeStatusCard extends HTMLElement {
     const count = Number(attrs.active_count || 0);
     const display = attrs.display && typeof attrs.display === 'object' ? attrs.display : {};
     const presentation = attrs.presentation && typeof attrs.presentation === 'object' ? attrs.presentation : {};
-    return { left, right, bottom, active, recent, priority, count, display, presentation, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
+    return { left, right, bottom, active, recent, priority, count, display, presentation, visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
   }
 
   _getRuntimeData() {
@@ -1088,6 +1088,115 @@ class HomeStatusCard extends HTMLElement {
       priority,
       unavailable: false
     };
+  }
+
+  _visualFromData(value) {
+    if (!value || typeof value !== 'object') return null;
+    const type = String(value.type || '').toLowerCase();
+    if (!['image', 'video', 'camera', 'map'].includes(type)) return null;
+    const url = typeof value.url === 'string' ? value.url.trim() : '';
+    const entityId = typeof value.entity_id === 'string' ? value.entity_id.trim() : '';
+    if (!url && !entityId) return null;
+    if (value.expires_at) {
+      const expires = new Date(value.expires_at);
+      if (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now()) return null;
+    }
+    if ((type === 'image' || type === 'video') && !url) return null;
+    if (type === 'camera' && !entityId) return null;
+    return {
+      type,
+      url,
+      entity_id: entityId,
+      priority: String(value.priority || 'normal'),
+      live: value.live === true,
+      started_at: typeof value.started_at === 'string' ? value.started_at : '',
+      expires_at: typeof value.expires_at === 'string' ? value.expires_at : '',
+      resumable: value.resumable !== false
+    };
+  }
+
+  _visualSignature(visual) {
+    return visual
+      ? [visual.type, visual.url, visual.entity_id, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable].join('|')
+      : '';
+  }
+
+  _syncVisualCenter(value) {
+    const zones = this.shadowRoot.querySelector('.ticker-zones');
+    if (!zones) return;
+    const visual = this._visualFromData(value);
+    let center = zones.querySelector('[data-visual-center]');
+    zones.classList.toggle('has-visual', Boolean(visual));
+    if (!visual) {
+      center?.remove();
+      return;
+    }
+    if (!center) {
+      center = document.createElement('span');
+      center.className = 'visual-center';
+      center.dataset.visualCenter = 'true';
+      zones.insertBefore(center, zones.querySelector('[data-zone="right"]'));
+    }
+    const signature = this._visualSignature(visual);
+    if (center.dataset.visualSignature === signature) return;
+    center.dataset.visualSignature = signature;
+    center.dataset.visualType = visual.type;
+    center.setAttribute('aria-label', `Home Status visual: ${visual.type}`);
+    this._renderVisualCenter(center, visual);
+  }
+
+  _renderVisualCenter(center, visual) {
+    const existing = center.firstElementChild;
+    if (visual.type === 'image') {
+      if (existing?.tagName === 'IMG') {
+        existing.src = visual.url;
+      } else {
+        const image = document.createElement('img');
+        image.className = 'visual-center-media';
+        image.alt = '';
+        image.loading = 'eager';
+        image.src = visual.url;
+        center.replaceChildren(image);
+      }
+      return;
+    }
+    if (visual.type === 'video') {
+      let video = existing?.tagName === 'VIDEO' ? existing : null;
+      if (!video) {
+        video = document.createElement('video');
+        video.className = 'visual-center-media';
+        video.muted = true;
+        video.defaultMuted = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.preload = 'metadata';
+        center.replaceChildren(video);
+      }
+      if (video.getAttribute('src') !== visual.url) video.src = visual.url;
+      video.play()?.catch?.(() => {});
+      return;
+    }
+    if (visual.type === 'camera') {
+      let camera = existing?.tagName === 'HA-CAMERA-STREAM' ? existing : null;
+      if (!camera) {
+        camera = document.createElement('ha-camera-stream');
+        camera.className = 'visual-center-camera';
+        center.replaceChildren(camera);
+      }
+      // Let Home Assistant choose the appropriate stream transport from the
+      // camera entity; Visual Center never constructs a stream URL itself.
+      camera.stateObj = this._hass?.states?.[visual.entity_id];
+      camera.fitMode = 'cover';
+      camera.muted = true;
+      camera.controls = false;
+      camera.setAttribute('camera-entity', visual.entity_id);
+      camera.setAttribute('entity', visual.entity_id);
+      return;
+    }
+    center.replaceChildren(Object.assign(document.createElement('span'), {
+      className: 'visual-center-fallback',
+      textContent: 'Visual content is not supported yet'
+    }));
   }
 
 
@@ -2493,6 +2602,7 @@ class HomeStatusCard extends HTMLElement {
     this._weatherRenderer.mount(this.shadowRoot.querySelector('.ticker'));
     this._weatherRenderer.setEffect(visualEffect);
     this._weatherRenderer.setVisible(this._ambientVisible);
+    this._syncVisualCenter(data.visual);
     this._startZoneRotations(data);
     this._renderFooterStream(this._buildFooterStream(data));
     this._updateDrawer(data);
@@ -2720,6 +2830,7 @@ class HomeStatusCard extends HTMLElement {
     this._weatherRenderer.mount(tickerButton);
     this._weatherRenderer.setEffect(visualEffect);
     this._weatherRenderer.setVisible(this._ambientVisible);
+    this._syncVisualCenter(data.visual);
     this._updateUtilityHeader();
     this._startZoneRotations(data);
     this._renderFooterStream(this._buildFooterStream(data));
@@ -3460,6 +3571,11 @@ const CSS = `
 .ticker-footer { min-height:80px; } .footer-marquee { height:80px; }
 .ticker-head { display:flex; align-items:center; width:100%; min-height:0; flex:1; }
 .ticker-zones { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr) 30px; gap:28px; align-items:center; width:100%; min-height:0; flex:1; }
+.ticker-zones.has-visual { grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr); }
+.visual-center { display:grid; place-items:center; min-width:0; height:150px; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(0,0,0,.22); }
+.visual-center-media,.visual-center-camera { display:block; width:100%; height:100%; object-fit:cover; border:0; }
+.visual-center-camera { min-width:0; }
+.visual-center-fallback { padding:14px; color:var(--secondary-text-color); font-size:13px; line-height:1.35; text-align:center; }
 .hero-zone-item { position:relative; overflow:hidden; isolation:isolate; } .hero-zone-item .hero-media-wrap,.hero-zone-item .hero-content { position:relative; z-index:1; } .hero-zone-item .hero-media-wrap { position:absolute; inset:0; z-index:0; border-radius:14px; overflow:hidden; background:rgba(0,0,0,.28); } .hero-zone-item .hero-media { display:block; width:100%; height:100%; object-fit:cover; } .hero-zone-item .hero-media-overlay { position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.22) 70%,rgba(0,0,0,.08)); } .hero-zone-item:has(.hero-media) .hero-content { padding:12px 16px; }
 .hero-zone-item.has-hero-media { display:grid; grid-template-columns:minmax(0,45%) minmax(0,1fr); gap:16px; align-items:center; width:100%; height:140px; overflow:hidden; } .hero-zone-item.has-hero-media .hero-media-wrap { position:relative; inset:auto; width:100%; height:100%; min-height:0; border-radius:14px; } .hero-zone-item.has-hero-media .hero-media-overlay { display:none; } .hero-zone-item.has-hero-media .hero-content { padding:0; min-width:0; } .primary-zone:has(.has-hero-media) { height:140px; }
  .icon-tone-critical { color:#ef5350; } .icon-tone-attention { color:#ff9800; } .icon-tone-success { color:#66bb6a; } .icon-tone-information { color:#42a5f5; } .icon-tone-media { color:#ab47bc; } .icon-tone-neutral { color:rgba(255,255,255,.72); }
