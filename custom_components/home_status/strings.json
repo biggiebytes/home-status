@@ -107,7 +107,7 @@
           "information_sources": "Information sources",
           "news_sources": "News sources",
           "visual_sources": "Visual sources",
-          "back_to_init": "â† Back to Reconfiguration"
+          "back_to_init": "← Back to Reconfiguration"
         }
       },
       "news_sources": {
