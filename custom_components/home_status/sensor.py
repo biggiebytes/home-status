@@ -94,7 +94,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "icon", "priority", "active", "source", "created_at", "updated_at",
             "occurred_at", "resolved_at", "expires_at", "scheduled_at", "all_day",
             "timestamp", "entity_id", "media_url", "media_type", "navigation",
-            "subtitle", "body", "visual_effect", "action", "source_id", "source_name", "source_kind", "home_device_id", "home_device_name", "entity_name", "event_type", "behavior", "state",
+            "subtitle", "body", "visual_effect", "action", "source_id", "source_name", "source_kind", "home_device_id", "home_device_name", "entity_name", "event_type", "behavior", "state", "raw_state", "display_state", "capability", "stage", "raw_stage", "display_stage", "semantic", "presentation",
         )
         items = []
         selected = value if limit is None else value[:limit]

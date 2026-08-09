@@ -592,7 +592,8 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             appliance_name = str(item.get("appliance_name") or name)
             if active and event_type == "appliance_cycle":
                 # Keep live remaining-time detail if the active record supplied it.
-                item.update(message=f"{appliance_name} Running")
+                display_state = str(item.get("display_state") or "Running")
+                item.update(message=f"{appliance_name} {display_state}")
             else:
                 item.update(message=f"{appliance_name} Complete", summary=f"{appliance_name} is ready", detail=f"{appliance_name} is ready")
 

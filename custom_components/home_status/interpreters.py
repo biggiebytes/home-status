@@ -16,10 +16,19 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .home_device import HomeDevice, HomeDeviceEntity
+from .normalization import normalize_semantic_state, resolve_display_label
 
 
 _RUNNING = {"run", "running", "washing", "drying", "cleaning", "active", "working"}
 _COMPLETE = {"complete", "completed", "finished", "done", "end"}
+
+_APPLIANCE_ALIASES = {
+    "cleaning": {"state": "running", "display": "Cleaning"},
+    "sensing": {"state": "running", "display": "Sensing"},
+    "soaking": {"state": "running", "display": "Soaking"},
+    "spinning": {"state": "running", "display": "Spinning"},
+    "draining": {"state": "running", "display": "Draining"},
+}
 
 # Entity-name hints that identify the primary operating state of an appliance.
 _APPLIANCE_STATE_HINTS = (
@@ -220,58 +229,44 @@ def _appliance_phase_entity(home_device: HomeDevice) -> HomeDeviceEntity | None:
     )
 
 
-def _friendly_appliance_phase(raw: str) -> str | None:
-    value = raw.strip().casefold()
-    if value in {"", "unknown", "unavailable", "none", "---", "off", "idle", "ready"}:
-        return None
-
-    normalized = re.sub(r"[_-]+", " ", value).strip()
-    aliases = {
-        "spin": "Spinning",
-        "spinning": "Spinning",
-        "wash": "Washing",
-        "washing": "Washing",
-        "rinse": "Rinsing",
-        "rinsing": "Rinsing",
-        "dry": "Drying",
-        "drying": "Drying",
-        "sense": "Sensing",
-        "sensing": "Sensing",
-        "soak": "Soaking",
-        "soaking": "Soaking",
-        "drain": "Draining",
-        "draining": "Draining",
-        "heat": "Heating",
-        "heating": "Heating",
-        "cool": "Cooling",
-        "cooling": "Cooling",
-        "pause": "Paused",
-        "paused": "Paused",
-        "night dry": "Night Dry",
-    }
-    return aliases.get(normalized, normalized.title())
-
-
 def _appliance_phase(
     hass: HomeAssistant,
     home_device: HomeDevice,
     state_entity: HomeDeviceEntity,
     state: State,
-) -> str | None:
+) -> dict[str, str] | None:
     phase_entity = _appliance_phase_entity(home_device)
     if phase_entity is not None:
         phase_state = hass.states.get(phase_entity.entity_id)
         if phase_state is not None:
-            phase = _friendly_appliance_phase(str(phase_state.state or ""))
-            if phase:
-                return phase
+            normalized = normalize_semantic_state(
+                phase_state.state,
+                entity_id=phase_entity.entity_id,
+                domain=phase_entity.domain,
+                device_class=phase_entity.device_class,
+                capability="cycle_stage",
+                provider="appliance",
+                device_role=_appliance_label(home_device).casefold(),
+                aliases=_APPLIANCE_ALIASES,
+            )
+            if normalized["state"] not in {"unknown", "unavailable", "off", "idle"}:
+                return normalized
 
     # Some integrations publish the live phase directly as the primary state
     # (for example dishwasher current_status = rinsing/drying). Use that when it
     # is more informative than a generic Run/Running signal.
-    raw_state = str(state.state or "").strip().casefold()
-    if raw_state not in {"run", "running", "active", "working"}:
-        return _friendly_appliance_phase(raw_state)
+    normalized = normalize_semantic_state(
+        state.state,
+        entity_id=state_entity.entity_id,
+        domain=state_entity.domain,
+        device_class=state_entity.device_class,
+        capability="cycle_stage",
+        provider="appliance",
+        device_role=_appliance_label(home_device).casefold(),
+        aliases=_APPLIANCE_ALIASES,
+    )
+    if normalized["state"] not in {"running", "on"}:
+        return normalized
     return None
 
 
@@ -809,34 +804,40 @@ def interpret_appliance_home_device(
         }:
             return []
 
-    raw = str(state.state or "").strip().casefold()
-    if raw in {
-        "", "unknown", "unavailable", "off", "power_off", "power off",
-        "idle", "standby", "ready", "initial", "---",
-        "complete", "completed", "finished", "done", "end", "ended",
+    normalized = normalize_semantic_state(
+        state.state,
+        entity_id=state_entity.entity_id,
+        domain=state_entity.domain,
+        device_class=state_entity.device_class,
+        capability="appliance_cycle",
+        provider="appliance",
+        device_role=_appliance_label(home_device).casefold(),
+        aliases=_APPLIANCE_ALIASES,
+    )
+    if normalized["state"] in {"idle", "off", "complete", "unavailable", "unknown"}:
+        return []
+    if normalized["state"] not in {
+        "on", "running", "starting", "washing", "rinsing", "drying",
+        "paused", "heating", "cooling",
     }:
         return []
 
-    running_states = {
-        "run", "running", "washing", "drying", "cleaning", "active",
-        "working", "sensing", "soaking", "rinsing", "spinning",
-        "pause", "paused", "night_dry", "night dry",
-    }
-    if raw not in running_states:
-        return []
-
     label = _appliance_label(home_device)
+    normalized["presentation"].update({
+        "label": label,
+        "message": f"{label} {resolve_display_label(normalized, state.state)}",
+    })
     remaining_entity = _remaining_entity(home_device)
     remaining = _remaining_minutes(hass, remaining_entity) if remaining_entity else None
     phase = _appliance_phase(hass, home_device, state_entity, state)
-    detail = remaining or phase or "In progress"
+    detail = remaining or (resolve_display_label(phase) if phase else None) or "In progress"
 
     item = _base(
         home_device,
         state_entity,
         state,
         event_type="appliance_cycle",
-        message=f"{label} Running",
+        message=f"{label} {resolve_display_label(normalized, state.state)}",
         detail=detail,
         priority="activity",
         active=True,
@@ -844,7 +845,28 @@ def interpret_appliance_home_device(
     )
     item["id"] = f"home_status:{home_device.id}:appliance_cycle"
     item["appliance_name"] = label
+    item.update({
+        "raw_state": normalized["raw_state"],
+        "state": normalized["state"],
+        "display_state": normalized["display_state"],
+        "capability": "appliance_cycle",
+        "semantic": normalized["semantic"],
+        "presentation": normalized["presentation"],
+        "normalized": normalized,
+        "appliance": {
+            "device_type": label.casefold(),
+            "state": normalized["state"],
+            "stage": phase["state"] if phase else None,
+            "remaining": remaining,
+            "complete": False,
+            "fault": False,
+        },
+        **({
+            "raw_stage": phase["raw_state"],
+            "stage": phase["state"],
+            "display_stage": phase["display_state"],
+        } if phase else {}),
+    })
     if end_entity is not None:
         item["completion_entity_id"] = end_entity.entity_id
     return [item]
-

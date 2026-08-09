@@ -11,6 +11,11 @@ async def async_get_config_entry_diagnostics(
 ) -> dict:
     coordinator = entry.runtime_data
     data = coordinator.data or {}
+    normalized_items = [
+        item["normalized"]
+        for item in [*data.get("active", []), *data.get("recent", [])]
+        if isinstance(item, dict) and item.get("normalized")
+    ]
     return {
         "selected_entities": list(
             entry.options.get("selected_entities", entry.data.get("selected_entities", []))
@@ -30,4 +35,5 @@ async def async_get_config_entry_diagnostics(
         "right_count": len(data.get("right", [])),
         "bottom_count": len(data.get("bottom", [])),
         "recent_count": len(data.get("recent", [])),
+        "normalization": normalized_items,
     }
