@@ -3572,7 +3572,7 @@ const CSS = `
 .ticker-head { display:flex; align-items:center; width:100%; min-height:0; flex:1; }
 .ticker-zones { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr) 30px; gap:28px; align-items:center; width:100%; min-height:0; flex:1; }
 .ticker-zones.has-visual { grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr); }
-.visual-center { display:grid; place-items:center; min-width:0; height:150px; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(0,0,0,.22); }
+.visual-center { display:grid; place-items:center; align-self:stretch; min-width:0; min-height:0; height:100%; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(0,0,0,.22); }
 .visual-center-media,.visual-center-camera { display:block; width:100%; height:100%; object-fit:cover; border:0; }
 .visual-center-camera { min-width:0; }
 .visual-center-fallback { padding:14px; color:var(--secondary-text-color); font-size:13px; line-height:1.35; text-align:center; }
