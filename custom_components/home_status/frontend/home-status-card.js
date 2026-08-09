@@ -90,6 +90,7 @@ const BACKEND_CATEGORY_ALIASES = Object.freeze({
 
 const FRONTEND_ASSET_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
 const LOTTIE_PLAYER_URL = `${FRONTEND_ASSET_BASE}/vendor/lottie_light_canvas.min.js`;
+const HLS_JS_URL = `${FRONTEND_ASSET_BASE}/vendor/hls.min.js`;
 const LOTTIE_WEATHER_ASSETS = Object.freeze({
   rain: Object.freeze({
     url: `${FRONTEND_ASSET_BASE}/assets/weather/rain-background.json`,
@@ -106,6 +107,21 @@ const VIDEO_WEATHER_ASSETS = Object.freeze({
   })
 });
 let lottiePlayerPromise = null;
+let hlsJsPromise = null;
+
+function loadHlsJs() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (hlsJsPromise) return hlsJsPromise;
+  hlsJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = HLS_JS_URL;
+    script.async = true;
+    script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error('hls.js did not load'));
+    script.onerror = () => reject(new Error('hls.js could not load'));
+    document.head.append(script);
+  });
+  return hlsJsPromise;
+}
 
 function loadLottiePlayer() {
   if (window.lottie?.loadAnimation) return Promise.resolve(window.lottie);
@@ -1105,6 +1121,7 @@ class HomeStatusCard extends HTMLElement {
     if (type === 'camera' && !entityId) return null;
     return {
       type,
+      transport: typeof value.transport === 'string' ? value.transport.trim().toLowerCase() : '',
       url,
       article_url: typeof value.article_url === 'string' ? value.article_url.trim() : '',
       entity_id: entityId,
@@ -1113,12 +1130,13 @@ class HomeStatusCard extends HTMLElement {
       started_at: typeof value.started_at === 'string' ? value.started_at : '',
       expires_at: typeof value.expires_at === 'string' ? value.expires_at : '',
       resumable: value.resumable !== false
+      ,mute: value.mute !== false
     };
   }
 
   _visualSignature(visual) {
     return visual
-      ? [visual.type, visual.url, visual.entity_id, visual.article_url, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable].join('|')
+      ? [visual.type, visual.transport, visual.url, visual.entity_id, visual.article_url, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable, visual.mute].join('|')
       : '';
   }
 
@@ -1129,6 +1147,7 @@ class HomeStatusCard extends HTMLElement {
     let center = zones.querySelector('[data-visual-center]');
     zones.classList.toggle('has-visual', Boolean(visual));
     if (!visual) {
+      this._destroyVisualHls(center);
       center?.remove();
       return;
     }
@@ -1150,6 +1169,7 @@ class HomeStatusCard extends HTMLElement {
   _renderVisualCenter(center, visual) {
     const existing = center.firstElementChild;
     if (visual.type === 'image') {
+      this._destroyVisualHls(center);
       if (existing?.tagName === 'IMG') {
         existing.src = visual.url;
       } else {
@@ -1167,17 +1187,17 @@ class HomeStatusCard extends HTMLElement {
       if (!video) {
         video = document.createElement('video');
         video.className = 'visual-center-media';
-        video.muted = true;
-        video.defaultMuted = true;
+        video.muted = visual.mute;
+        video.defaultMuted = visual.mute;
         video.autoplay = true;
         video.playsInline = true;
         video.preload = 'metadata';
         center.replaceChildren(video);
       }
-      if (video.getAttribute('src') !== visual.url) video.src = visual.url;
-      video.play()?.catch?.(() => {});
+      this._renderVisualVideo(center, video, visual);
       return;
     }
+    this._destroyVisualHls(center);
     if (visual.type === 'camera') {
       let camera = existing?.tagName === 'HA-CAMERA-STREAM' ? existing : null;
       if (!camera) {
@@ -1199,6 +1219,56 @@ class HomeStatusCard extends HTMLElement {
       className: 'visual-center-fallback',
       textContent: 'Visual content is not supported yet'
     }));
+  }
+
+  _destroyVisualHls(center) {
+    const hls = center?._homeStatusHls;
+    if (hls) {
+      hls.destroy();
+      delete center._homeStatusHls;
+    }
+  }
+
+  _showVisualError(center, message) {
+    this._destroyVisualHls(center);
+    center.replaceChildren(Object.assign(document.createElement('span'), {
+      className: 'visual-center-fallback',
+      textContent: message
+    }));
+  }
+
+  _renderVisualVideo(center, video, visual) {
+    this._destroyVisualHls(center);
+    video.muted = visual.mute;
+    video.defaultMuted = visual.mute;
+    const fail = () => this._showVisualError(center, 'Live stream unavailable');
+    video.onerror = fail;
+    if (visual.transport !== 'hls') {
+      if (video.getAttribute('src') !== visual.url) video.src = visual.url;
+      video.play()?.catch?.(() => {});
+      return;
+    }
+    const nativeHls = video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL');
+    if (nativeHls) {
+      video.src = visual.url;
+      video.play()?.catch?.(() => {});
+      return;
+    }
+    loadHlsJs().then(Hls => {
+      if (!center.isConnected || center.firstElementChild !== video) return;
+      if (!Hls.isSupported()) {
+        fail();
+        return;
+      }
+      const hls = new Hls({ enableWorker: true });
+      center._homeStatusHls = hls;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) this._showVisualError(center, 'Live stream unavailable');
+      });
+      hls.loadSource(visual.url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play()?.catch?.(() => {}));
+    }).catch(fail);
   }
 
 

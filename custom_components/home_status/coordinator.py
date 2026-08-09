@@ -25,6 +25,7 @@ from .engine import HomeStatusEngine
 from .presentation import place_items, select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
+from .providers.live_news import LiveNewsProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.news_seen: dict[str, list[str]] = {}
         self.news_visuals: dict[str, dict[str, Any]] = {}
         self.news_initialized: dict[str, bool] = {}
+        self.live_news = LiveNewsProvider()
+        self.live_news_items: list[dict[str, Any]] = []
+        self._current_visual_is_live_news = False
 
         self._unsub_state = None
         self._unsub_timer = None
@@ -64,7 +68,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.news_seen = stored.get("news_seen", {}) if isinstance(stored.get("news_seen", {}), dict) else {}
         self.news_visuals = stored.get("news_visuals", {}) if isinstance(stored.get("news_visuals", {}), dict) else {}
         self.news_initialized = stored.get("news_initialized", {}) if isinstance(stored.get("news_initialized", {}), dict) else {}
+        self.live_news = LiveNewsProvider(stored.get("live_news"))
         await self._refresh_news(initial=True)
+        self._refresh_live_news()
         self._reconfigure_subscription()
         self._publish()
         self._configure_timer()
@@ -85,6 +91,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Compatibility entry point used by existing Home Status setup code."""
         self.options = {**self.entry.data, **self.entry.options}
         self._reconfigure_subscription()
+        self._refresh_live_news()
         self._publish()
 
     def _configure_timer(self) -> None:
@@ -118,10 +125,35 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.options = {**self.entry.data, **self.entry.options}
         self._reconfigure_subscription()
         await self._refresh_news()
+        self._refresh_live_news()
         self._publish()
+
+    def _store_data(self) -> dict[str, Any]:
+        return {
+            "events": self.history,
+            "news_seen": self.news_seen,
+            "news_visuals": self.news_visuals,
+            "news_initialized": self.news_initialized,
+            "live_news": self.live_news.state,
+        }
+
+    def _save_state(self) -> None:
+        self.hass.async_create_task(self.store.async_save(self._store_data()))
+
+    def _refresh_live_news(self) -> None:
+        self.live_news_items = self.live_news.refresh(
+            self.options.get("live_news_sources", []), datetime.now(timezone.utc)
+        )
+        self._save_state()
 
     async def _refresh_news(self, initial: bool = False) -> None:
         articles: list[dict[str, Any]] = []
+        # RSS remains a headline/thumbnail source. Remove any short-lived
+        # video visual left by the retired RSS-enclosure experiment.
+        self.news_visuals = {
+            article_id: visual for article_id, visual in self.news_visuals.items()
+            if not isinstance(visual, dict) or visual.get("type") != "video"
+        }
         session = async_get_clientsession(self.hass)
         for feed in self.options.get("news_sources", []):
             if not isinstance(feed, dict) or feed.get("enabled", True) is not True or not valid_url(feed.get("url")):
@@ -144,7 +176,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seen.update(article["id"] for article in parsed)
                 self.news_initialized[feed_id] = True
                 if feed.get("show_visual", True):
-                    newest_with_media = next((article for article in parsed if article.get("video") or article.get("image")), None)
+                    newest_with_media = next((article for article in parsed if article.get("image")), None)
                     if newest_with_media:
                         started = now_iso()
                         self.news_visuals[newest_with_media["id"]] = self._news_visual(newest_with_media, feed, started)
@@ -154,7 +186,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if visual and str(visual.get("expires_at") or "") <= now_iso():
                     self.news_visuals.pop(article["id"], None)
                     visual = None
-                if is_new and feed.get("show_visual", True) and (article.get("video") or article.get("image")):
+                if is_new and feed.get("show_visual", True) and article.get("image"):
                     started = now_iso()
                     visual = self._news_visual(article, feed, started)
                     self.news_visuals[article["id"]] = visual
@@ -162,12 +194,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seen.add(article["id"])
             self.news_seen[feed_id] = list(seen)[-200:]
         self.news_articles = articles
-        self.hass.async_create_task(self.store.async_save({"events": self.history, "news_seen": self.news_seen, "news_visuals": self.news_visuals, "news_initialized": self.news_initialized}))
+        self._save_state()
 
     @staticmethod
     def _news_visual(article: dict[str, str], feed: dict[str, Any], started: str) -> dict[str, Any]:
-        video = article.get("video") or ""
-        return {"type":"video" if video else "image", "url":video or article["image"], "article_url":article["url"], "title":article["title"], "source":str(feed.get("name") or "News"), "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
+        return {"type":"image", "url":article["image"], "article_url":article["url"], "title":article["title"], "source":str(feed.get("name") or "News"), "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
 
     @callback
     def _state_changed(self, _event: Event) -> None:
@@ -196,7 +227,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if resolved:
             self.history = self._retained_history([*resolved, *self.history])
             self.hass.async_create_task(
-                self.store.async_save({"events": self.history})
+                self.store.async_save(self._store_data())
             )
 
         self.active = new_active
@@ -209,7 +240,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
 
         left, right, bottom = place_items(active, recent, awareness, self.options)
-        visual = self._select_current_visual(active, recent, awareness, visual_source_items)
+        visual = self._select_current_visual(active, recent, awareness, visual_source_items, self.live_news_items)
 
         priority = self._priority(active)
         weather_effect = self._weather_visual_effect(awareness)
@@ -244,15 +275,26 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         recent: list[dict[str, Any]],
         awareness: list[dict[str, Any]],
         visual_source_items: list[dict[str, Any]],
+        live_news_items: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
         """Select a visual and retire a shown non-resumable source on takeover."""
         if not bool(self.options.get("visual_center_enabled", True)):
             self._current_visual_source_activation = None
+            self._current_visual_is_live_news = False
             return None
-        visual = select_visual([*active, *visual_source_items], recent, awareness)
+        visual = select_visual([*active, *visual_source_items, *live_news_items], recent, awareness)
         if visual is None:
             self._current_visual_source_activation = None
+            self._current_visual_is_live_news = False
             return None
+
+        is_live_news = any(item.get("visual") == visual for item in live_news_items)
+        if self._current_visual_is_live_news and not is_live_news:
+            self.live_news.stop_active_after_preemption(datetime.now(timezone.utc))
+            self.live_news_items = []
+            self._save_state()
+            visual = select_visual([*active, *visual_source_items], recent, awareness)
+            is_live_news = False
 
         owner = self._visual_source_owner(visual_source_items, visual)
         previous = self._current_visual_source_activation
@@ -273,6 +315,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 visual = select_visual([*active, *sources], recent, awareness)
                 owner = self._visual_source_owner(sources, visual)
         self._current_visual_source_activation = owner
+        self._current_visual_is_live_news = is_live_news
         return visual
 
     def _visual_source_owner(
@@ -297,6 +340,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for lifetime in self._visual_source_lifetimes.values()
             if "expires_at" in lifetime
         ]
+        live_news_wakeup = self.live_news.next_wakeup()
+        if live_news_wakeup is not None:
+            expirations.append(live_news_wakeup)
         if expirations:
             self._unsub_visual_expiry = async_track_point_in_time(
                 self.hass, self._visual_expired, min(expirations)
@@ -305,6 +351,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @callback
     def _visual_expired(self, _now: datetime) -> None:
         self._unsub_visual_expiry = None
+        self._refresh_live_news()
         self._publish()
 
     def _visual_source_entity_ids(self) -> tuple[str, ...]:

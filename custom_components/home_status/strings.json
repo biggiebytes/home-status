@@ -106,6 +106,7 @@
         "menu_options": {
           "information_sources": "Information sources",
           "news_sources": "News sources",
+          "live_news_sources": "Live News sources",
           "visual_sources": "Visual sources",
           "back_to_init": "← Back to Reconfiguration"
         }
@@ -119,6 +120,17 @@
         "title": "RSS/Atom feed",
         "description": "Configure a generic news feed. An image is used only when the feed itself supplies one.",
         "data": {"name":"Name","url":"RSS/Atom feed URL","enabled":"Enabled","priority":"Priority","show_visual":"Show in Visual Center","visual_duration":"Visual display duration (seconds)","remove_source":"Remove this feed"}
+      },
+      "live_news_sources": {
+        "title": "Live News sources",
+        "description": "Add Direct HTTPS HLS streams for occasional Visual Center samples. These streams do not create ticker or history items.",
+        "data": {"live_news_source":"Live News source"}
+      },
+      "live_news_source_edit": {
+        "title": "Live HLS source",
+        "description": "Home Status periodically shows this direct HTTPS HLS stream for context. Higher-priority visuals take over immediately; Live News waits for its next scheduled sample.",
+        "data": {"name":"Name","url":"Direct HTTPS HLS URL (.m3u8)","enabled":"Enabled","priority":"Visual priority","sample_interval":"Sample interval (seconds)","display_duration":"Display duration (seconds)","mute":"Mute audio","remove_source":"Remove this source"},
+        "data_description": {"url":"Use a direct HTTPS HLS manifest URL. Home Status does not scrape or adapt publisher websites.","sample_interval":"How often this source becomes eligible for one temporary Visual Center sample.","display_duration":"How long each sample remains visible unless a higher-priority visual takes over.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
       },
       "information_sources": {
         "title": "Information sources",
@@ -519,7 +531,8 @@
       }
     },
     "error": {
-      "confirm_remove": "Check the confirmation box before removing this item."
+      "confirm_remove": "Check the confirmation box before removing this item.",
+      "invalid_hls_url": "Enter a direct HTTPS HLS URL ending in .m3u8."
     },
     "abort": {
       "no_selected_items": "Home Status is not monitoring anything yet. Add something first, then you can change its name."

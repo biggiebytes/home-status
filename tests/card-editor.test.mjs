@@ -140,6 +140,39 @@ try {
   assert.match(visualCenterTransitions.fallback, /not supported yet/);
   assert.deepEqual(visualCenterTransitions.disappeared, { visual: false, hasVisual: false, zoneCount: 2 });
 
+  const hlsLifecycle = await page.evaluate(async () => {
+    const instances = [];
+    class FakeHls {
+      static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
+      static isSupported() { return true; }
+      constructor() { this.destroyed = false; instances.push(this); }
+      on(event, callback) { if (event === FakeHls.Events.MANIFEST_PARSED) this.manifest = callback; }
+      loadSource(url) { this.url = url; }
+      attachMedia(video) { this.video = video; this.manifest?.(); }
+      destroy() { this.destroyed = true; }
+    }
+    window.Hls = FakeHls;
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType = () => '';
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    card.hass = {
+      ...window.testHass,
+      states: { ...window.testHass.states, 'sensor.home_status': { state: 'normal', attributes: {
+        ...window.testHass.states['sensor.home_status'].attributes,
+        visual: { type: 'video', transport: 'hls', url: 'https://example.test/live.m3u8', live: true, priority: 'normal', mute: true }
+      } } }
+    };
+    document.querySelector('#card-host').replaceChildren(card);
+    await Promise.resolve();
+    const instance = instances[0];
+    const video = card.shadowRoot.querySelector('[data-visual-center] video');
+    card.hass = { ...card.hass, states: { ...card.hass.states, 'sensor.home_status': { state: 'normal', attributes: { ...card.hass.states['sensor.home_status'].attributes, visual: null } } } };
+    HTMLMediaElement.prototype.canPlayType = originalCanPlayType;
+    return { source: instance?.url, muted: video?.muted, destroyed: instance?.destroyed };
+  });
+  assert.deepEqual(hlsLifecycle, { source: 'https://example.test/live.m3u8', muted: true, destroyed: true });
+
   const resolvedIconColors = await page.evaluate(() => {
     const card = document.createElement('home-status-card');
     return {

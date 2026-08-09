@@ -19,6 +19,14 @@ def article_id(feed_id: str, guid: str, link: str, title: str, published: str) -
     return f"news:{feed_id}:{sha256(value.encode()).hexdigest()[:24]}"
 
 
+def _image_url(value: object) -> str:
+    """Return a direct image URL without mistaking media video for a thumbnail."""
+    url = str(value or "").strip()
+    if not valid_url(url):
+        return ""
+    return url if urlparse(url).path.casefold().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")) else ""
+
+
 def parse_feed(raw: bytes, feed_id: str) -> list[dict[str, str]]:
     root = ET.fromstring(raw)
     entries = root.findall(".//item")
@@ -36,12 +44,11 @@ def parse_feed(raw: bytes, feed_id: str) -> list[dict[str, str]]:
         summary = text("description", "{*}summary", "{*}content")
         published = text("pubDate", "{*}published", "{*}updated")
         guid = text("guid", "{*}id")
-        video = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"content", "enclosure"} and str(node.get("type") or "").casefold() in {"video/mp4", "video/webm"}), "")
-        image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content", "enclosure"} and str(node.get("type") or "").startswith("image")), "")
+        image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content", "enclosure"} and str(node.get("type") or "").casefold().startswith("image/")), "")
         if not image:
-            image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content"} and (node.get("url") or node.get("href"))), "")
+            image = next((candidate for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content"} and (candidate := _image_url(node.get("url") or node.get("href")))), "")
         if title and valid_url(link):
-            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else "", "video": video if valid_url(video) else ""})
+            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else ""})
     return result
 
 

@@ -426,7 +426,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open information and visual source settings."""
         return self.async_show_menu(
             step_id="sources",
-            menu_options=["information_sources", "news_sources", "visual_sources", "back_to_init"],
+            menu_options=["information_sources", "news_sources", "live_news_sources", "visual_sources", "back_to_init"],
         )
 
     async def async_step_information_sources(self, user_input=None):
@@ -521,6 +521,57 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
 
     def _news_schema(self, current):
         return vol.Schema({vol.Required("name", default=current.get("name", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(), vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value":p,"label":p.title()} for p in ("normal","activity","attention","critical")], mode=selector.SelectSelectorMode.DROPDOWN)), vol.Optional("show_visual", default=current.get("show_visual", True)): selector.BooleanSelector(), vol.Optional("visual_duration", default=current.get("visual_duration", 60)): self._number(1,3600,1), vol.Optional("remove_source", default=False): selector.BooleanSelector()})
+
+    async def async_step_live_news_sources(self, user_input=None):
+        """Choose a Direct HTTPS HLS source to add or edit."""
+        if user_input is not None:
+            chosen = str(user_input["live_news_source"])
+            self._live_news_source_id = None if chosen == "__add__" else chosen
+            return await self.async_step_live_news_source_edit()
+        choices = [{"value": "__add__", "label": "Add live HLS source"}]
+        for source in self.entry.options.get("live_news_sources", []):
+            if isinstance(source, dict) and source.get("id"):
+                choices.append({"value": str(source["id"]), "label": str(source.get("name") or source.get("url") or "Live News")})
+        return self.async_show_form(step_id="live_news_sources", data_schema=vol.Schema({vol.Required("live_news_source"): selector.SelectSelector(selector.SelectSelectorConfig(options=choices, mode=selector.SelectSelectorMode.DROPDOWN))}))
+
+    async def async_step_live_news_source_edit(self, user_input=None):
+        """Persist one generic Direct HTTPS HLS source."""
+        from .providers.live_news import valid_hls_url
+        current = next((dict(item) for item in self.entry.options.get("live_news_sources", []) if isinstance(item, dict) and item.get("id") == self._live_news_source_id), {})
+        if user_input is not None:
+            url = str(user_input.get("url", "")).strip()
+            if not user_input.get("remove_source", False) and not valid_hls_url(url):
+                return self.async_show_form(step_id="live_news_source_edit", data_schema=self._live_news_schema(current), errors={"url": "invalid_hls_url"})
+            options = self._options()
+            sources = [item for item in options.get("live_news_sources", []) if isinstance(item, dict) and item.get("id") != self._live_news_source_id]
+            if not user_input.get("remove_source", False):
+                sources.append({
+                    "id": self._live_news_source_id or uuid4().hex,
+                    "name": str(user_input["name"]).strip() or "Live News",
+                    "url": url,
+                    "transport": "hls",
+                    "enabled": bool(user_input.get("enabled", True)),
+                    "priority": str(user_input.get("priority", "normal")),
+                    "sample_interval": max(30, min(86400, int(user_input.get("sample_interval", 1800)))),
+                    "display_duration": max(1, min(3600, int(user_input.get("display_duration", 30)))),
+                    "mute": bool(user_input.get("mute", True)),
+                })
+            options["live_news_sources"] = sources
+            return await self._save_options_and_return(options, "sources")
+        return self.async_show_form(step_id="live_news_source_edit", data_schema=self._live_news_schema(current))
+
+    def _live_news_schema(self, current):
+        priorities = [{"value": priority, "label": priority.title()} for priority in ("normal", "activity", "attention", "critical")]
+        return vol.Schema({
+            vol.Required("name", default=current.get("name", "")): selector.TextSelector(selector.TextSelectorConfig()),
+            vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()),
+            vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(),
+            vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=priorities, mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Optional("sample_interval", default=current.get("sample_interval", 1800)): self._number(30, 86400, 30),
+            vol.Optional("display_duration", default=current.get("display_duration", 30)): self._number(1, 3600, 1),
+            vol.Optional("mute", default=current.get("mute", True)): selector.BooleanSelector(),
+            vol.Optional("remove_source", default=False): selector.BooleanSelector(),
+        })
 
     async def async_step_visual_camera(self, user_input=None):
         """Configure a generic Home Assistant camera visual and its trigger."""

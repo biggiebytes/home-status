@@ -215,6 +215,13 @@ def _normalized_visual(value: Any, now: datetime) -> dict[str, Any] | None:
         result["started_at"] = started_at
     if expires_at is not None:
         result["expires_at"] = expires_at
+    # These fields describe a visual without affecting generic selection.
+    for key in ("transport", "article_url", "title", "source"):
+        extra = value.get(key)
+        if isinstance(extra, str) and extra.strip():
+            result[key] = extra.strip()
+    if isinstance(value.get("mute"), bool):
+        result["mute"] = value["mute"]
     return result
 
 

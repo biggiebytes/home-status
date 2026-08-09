@@ -58,3 +58,19 @@ def test_provider_and_category_names_do_not_affect_selection():
     older = _item("older", priority="normal", provider="beta", category="two")
 
     assert select_visual([older, current], now=NOW)["entity_id"] == "camera.current"
+
+
+def test_selector_preserves_renderer_metadata_without_selecting_on_it():
+    item = {
+        "id": "hls",
+        "visual": {
+            "type": "video", "url": "https://example.test/live.m3u8",
+            "transport": "hls", "title": "Channel", "source": "Live News",
+            "mute": True, "priority": "normal", "live": True,
+            "started_at": NOW.isoformat(), "resumable": False,
+        },
+    }
+    visual = select_visual([item], now=NOW)
+    assert visual["transport"] == "hls"
+    assert visual["title"] == "Channel"
+    assert visual["mute"] is True
