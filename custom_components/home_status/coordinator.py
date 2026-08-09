@@ -47,6 +47,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.news_articles: list[dict[str, Any]] = []
         self.news_seen: dict[str, list[str]] = {}
         self.news_visuals: dict[str, dict[str, Any]] = {}
+        self.news_initialized: dict[str, bool] = {}
 
         self._unsub_state = None
         self._unsub_timer = None
@@ -62,6 +63,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.history = self._retained_history(events if isinstance(events, list) else [])
         self.news_seen = stored.get("news_seen", {}) if isinstance(stored.get("news_seen", {}), dict) else {}
         self.news_visuals = stored.get("news_visuals", {}) if isinstance(stored.get("news_visuals", {}), dict) else {}
+        self.news_initialized = stored.get("news_initialized", {}) if isinstance(stored.get("news_initialized", {}), dict) else {}
         await self._refresh_news(initial=True)
         self._reconfigure_subscription()
         self._publish()
@@ -134,10 +136,20 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception:  # A source failure must not disrupt Home Status.
                 continue
             seen = set(self.news_seen.get(feed_id, []))
-            if initial and not seen:
+            bootstrap = self.news_initialized.get(feed_id) is not True
+            if bootstrap:
+                # Establish the duplicate baseline first. A new feed may show
+                # its newest eligible image once, but none of these entries is
+                # classified as a newly detected article.
                 seen.update(article["id"] for article in parsed)
+                self.news_initialized[feed_id] = True
+                if feed.get("show_visual", True):
+                    newest_with_image = next((article for article in parsed if article.get("image")), None)
+                    if newest_with_image:
+                        started = now_iso()
+                        self.news_visuals[newest_with_image["id"]] = {"type":"image", "url":newest_with_image["image"], "article_url":newest_with_image["url"], "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
             for article in parsed:
-                is_new = article["id"] not in seen
+                is_new = not bootstrap and article["id"] not in seen
                 visual = self.news_visuals.get(article["id"])
                 if visual and str(visual.get("expires_at") or "") <= now_iso():
                     self.news_visuals.pop(article["id"], None)
@@ -150,7 +162,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seen.add(article["id"])
             self.news_seen[feed_id] = list(seen)[-200:]
         self.news_articles = articles
-        self.hass.async_create_task(self.store.async_save({"events": self.history, "news_seen": self.news_seen, "news_visuals": self.news_visuals}))
+        self.hass.async_create_task(self.store.async_save({"events": self.history, "news_seen": self.news_seen, "news_visuals": self.news_visuals, "news_initialized": self.news_initialized}))
 
     @callback
     def _state_changed(self, _event: Event) -> None:
