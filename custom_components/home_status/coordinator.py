@@ -11,7 +11,11 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, State, callback
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_point_in_time,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -41,7 +45,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._unsub_state = None
         self._unsub_timer = None
+        self._unsub_visual_expiry = None
         self._observed: tuple[str, ...] = ()
+        self._visual_source_lifetimes: dict[str, dict[str, datetime]] = {}
+        self._visual_source_preemptions: dict[str, datetime] = {}
+        self._current_visual_source_activation: tuple[str, datetime] | None = None
 
     async def async_setup(self) -> None:
         stored = await self.store.async_load() or {}
@@ -58,6 +66,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._unsub_timer:
             self._unsub_timer()
             self._unsub_timer = None
+        if self._unsub_visual_expiry:
+            self._unsub_visual_expiry()
+            self._unsub_visual_expiry = None
 
     @callback
     def async_update_entities(self, _entity_ids: list[str] | None = None) -> None:
@@ -138,9 +149,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         awareness = self.engine.build_awareness_items(self.options)
 
         left, right, bottom = place_items(active, recent, awareness, self.options)
-        visual = select_visual([*active, *visual_source_items], recent, awareness) if bool(
-            self.options.get("visual_center_enabled", True)
-        ) else None
+        visual = self._select_current_visual(active, recent, awareness, visual_source_items)
 
         priority = self._priority(active)
         weather_effect = self._weather_visual_effect(awareness)
@@ -167,6 +176,76 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "presentation": presentation_preferences(self.options),
             "last_updated": self._now(),
         })
+        self._schedule_visual_expiry()
+
+    def _select_current_visual(
+        self,
+        active: list[dict[str, Any]],
+        recent: list[dict[str, Any]],
+        awareness: list[dict[str, Any]],
+        visual_source_items: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Select a visual and retire a shown non-resumable source on takeover."""
+        if not bool(self.options.get("visual_center_enabled", True)):
+            self._current_visual_source_activation = None
+            return None
+        visual = select_visual([*active, *visual_source_items], recent, awareness)
+        if visual is None:
+            self._current_visual_source_activation = None
+            return None
+
+        owner = self._visual_source_owner(visual_source_items, visual)
+        previous = self._current_visual_source_activation
+        if previous is not None and previous != owner:
+            previous_source_id, previous_started_at = previous
+            previous_item = next(
+                (
+                    item for item in visual_source_items
+                    if item.get("visual_source_id") == previous_source_id
+                    and self._visual_source_lifetimes.get(previous_source_id, {}).get("started_at") == previous_started_at
+                ),
+                None,
+            )
+            previous_visual = previous_item.get("visual") if previous_item else None
+            if isinstance(previous_visual, dict) and previous_visual.get("resumable") is False:
+                self._visual_source_preemptions[previous_source_id] = previous_started_at
+                sources = self._configured_visual_items()
+                visual = select_visual([*active, *sources], recent, awareness)
+                owner = self._visual_source_owner(sources, visual)
+        self._current_visual_source_activation = owner
+        return visual
+
+    def _visual_source_owner(
+        self, items: list[dict[str, Any]], visual: dict[str, Any] | None
+    ) -> tuple[str, datetime] | None:
+        if visual is None:
+            return None
+        for item in items:
+            source_id = item.get("visual_source_id")
+            lifetime = self._visual_source_lifetimes.get(str(source_id))
+            if item.get("visual") == visual and lifetime is not None:
+                return str(source_id), lifetime["started_at"]
+        return None
+
+    def _schedule_visual_expiry(self) -> None:
+        """Wake exactly when the next held visual reaches its expiration."""
+        if self._unsub_visual_expiry:
+            self._unsub_visual_expiry()
+            self._unsub_visual_expiry = None
+        expirations = [
+            lifetime["expires_at"]
+            for lifetime in self._visual_source_lifetimes.values()
+            if "expires_at" in lifetime
+        ]
+        if expirations:
+            self._unsub_visual_expiry = async_track_point_in_time(
+                self.hass, self._visual_expired, min(expirations)
+            )
+
+    @callback
+    def _visual_expired(self, _now: datetime) -> None:
+        self._unsub_visual_expiry = None
+        self._publish()
 
     def _visual_source_entity_ids(self) -> tuple[str, ...]:
         """Return the camera and trigger entities configured for Visual Center."""
@@ -197,28 +276,63 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or "." not in trigger_entity_id
             ):
                 continue
+            source_id = str(source.get("id") or f"{camera_entity_id}:{trigger_entity_id}")
             trigger = self.hass.states.get(trigger_entity_id)
             trigger_state = str(source.get("trigger_state") or "on").strip()
-            if not trigger or str(trigger.state).strip().casefold() != trigger_state.casefold():
+            if not trigger:
                 continue
-            source_id = str(source.get("id") or f"{camera_entity_id}:{trigger_entity_id}")
+            now = datetime.now(timezone.utc)
+            trigger_active = str(trigger.state).strip().casefold() == trigger_state.casefold()
+            started_at = trigger.last_changed.astimezone(timezone.utc)
+            lifetime = self._visual_source_lifetimes.get(source_id)
+            if trigger_active:
+                if lifetime is None or lifetime.get("started_at") != started_at:
+                    lifetime = {"started_at": started_at}
+                    self._visual_source_lifetimes[source_id] = lifetime
+                    self._visual_source_preemptions.pop(source_id, None)
+            else:
+                if lifetime is None:
+                    continue
+                if "expires_at" not in lifetime:
+                    hold_seconds = self._visual_hold_seconds(source)
+                    if hold_seconds <= 0:
+                        self._visual_source_lifetimes.pop(source_id, None)
+                        self._visual_source_preemptions.pop(source_id, None)
+                        continue
+                    lifetime["expires_at"] = now + timedelta(seconds=hold_seconds)
+                if lifetime["expires_at"] <= now:
+                    self._visual_source_lifetimes.pop(source_id, None)
+                    self._visual_source_preemptions.pop(source_id, None)
+                    continue
+            if self._visual_source_preemptions.get(source_id) == lifetime["started_at"]:
+                continue
+            expires_at = lifetime.get("expires_at")
             items.append({
                 "id": f"visual_source:{source_id}",
+                "visual_source_id": source_id,
                 "active": True,
                 "priority": str(source.get("priority") or "attention"),
                 "event_type": "visual_source",
                 "category": "visual",
-                "created_at": trigger.last_changed.isoformat(),
+                "created_at": lifetime["started_at"].isoformat(),
                 "visual": {
                     "type": "camera",
                     "entity_id": camera_entity_id,
                     "priority": str(source.get("priority") or "attention"),
-                    "live": True,
-                    "started_at": trigger.last_changed.isoformat(),
+                    "live": trigger_active,
+                    "started_at": lifetime["started_at"].isoformat(),
                     "resumable": bool(source.get("resumable", True)),
+                    **({"expires_at": expires_at.isoformat()} if expires_at else {}),
                 },
             })
         return items
+
+    @staticmethod
+    def _visual_hold_seconds(source: dict[str, Any]) -> int:
+        try:
+            return max(0, min(3600, int(source.get("hold_seconds", 30))))
+        except (TypeError, ValueError):
+            return 30
 
     def _resolve(self, old: dict[str, Any]) -> dict[str, Any] | None:
         """Turn one active HomeDevice event into one recent event."""

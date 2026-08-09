@@ -507,6 +507,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     "trigger_entity_id": str(user_input["trigger_entity_id"]),
                     "trigger_state": str(user_input.get("trigger_state", "on")).strip() or "on",
                     "priority": str(user_input.get("priority", "attention")),
+                    "hold_seconds": max(0, min(3600, int(user_input.get("hold_seconds", 30)))),
                     "enabled": bool(user_input.get("enabled", True)),
                     "resumable": bool(user_input.get("resumable", True)),
                 })
@@ -534,6 +535,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Optional("hold_seconds", default=current.get("hold_seconds", 30)): self._number(0, 3600, 5),
                 vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(),
                 vol.Optional("resumable", default=current.get("resumable", True)): selector.BooleanSelector(),
                 vol.Optional("remove_source", default=False): selector.BooleanSelector(),

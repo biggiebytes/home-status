@@ -137,6 +137,7 @@
           "trigger_entity_id": "Trigger entity",
           "trigger_state": "Trigger state",
           "priority": "Visual priority",
+          "hold_seconds": "Hold after trigger (seconds)",
           "enabled": "Enable this visual source",
           "resumable": "Allow this visual to resume",
           "remove_source": "Remove this visual source"
@@ -146,6 +147,7 @@
           "trigger_entity_id": "Any Home Assistant entity whose state determines when this camera visual is available.",
           "trigger_state": "This source becomes active when the trigger entity exactly matches this state. The common default is on.",
           "priority": "Higher-priority visuals temporarily take over Visual Center and lower-priority resumable visuals may return afterward.",
+          "hold_seconds": "After the trigger clears, keep this visual eligible for this many seconds. Set 0 to remove it immediately.",
           "enabled": "Turn this source off without deleting its configuration.",
           "resumable": "Keep this visual eligible again after a higher-priority visual ends.",
           "remove_source": "Remove this camera visual source when you save."
