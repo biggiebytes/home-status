@@ -44,6 +44,8 @@ def test_binary_device_classes_and_explicit_context_are_semantic_not_boolean():
     assert normalize_semantic_state("off", domain="binary_sensor", device_class="window")["state"] == "closed"
     assert normalize_semantic_state("on", domain="binary_sensor", device_class="motion")["display_state"] == "Motion Detected"
     assert normalize_semantic_state("unlocked", domain="lock")["state"] == "unlocked"
+    assert normalize_semantic_state("off", domain="binary_sensor", device_class="moisture")["state"] == "clear"
+    assert normalize_semantic_state("off", domain="binary_sensor", device_class="door")["display_state"] == "Closed"
 
 
 def test_adapter_aliases_override_generic_meaning():

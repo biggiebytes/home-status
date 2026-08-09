@@ -25,6 +25,7 @@ from .engine import HomeStatusEngine
 from .presentation import place_items, select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
+from .normalization import normalize_semantic_state
 from .providers.live_news import LiveNewsProvider
 
 _LOGGER = logging.getLogger(__name__)
@@ -474,19 +475,22 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "priority": "normal",
             "resolved_at": self._now(),
         })
+        self._renormalize_lifecycle_item(item, state)
 
         if event_type == "contact":
+            display_state = str(item.get("display_state") or "Closed")
             item.update({
-                "message": f"{name} Closed",
-                "summary": f"{name} is closed",
-                "detail": f"{name} is closed",
+                "message": f"{name} {display_state}",
+                "summary": f"{name} is {display_state.casefold()}",
+                "detail": f"{name} is {display_state.casefold()}",
                 "icon": "mdi:door-closed",
             })
         elif event_type == "lock":
+            display_state = str(item.get("display_state") or "Locked")
             item.update({
-                "message": f"{name} Locked",
-                "summary": f"{name} is locked",
-                "detail": f"{name} is locked",
+                "message": f"{name} {display_state}",
+                "summary": f"{name} is {display_state.casefold()}",
+                "detail": f"{name} is {display_state.casefold()}",
                 "icon": "mdi:lock",
             })
         elif event_type == "connectivity":
@@ -497,8 +501,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "icon": "mdi:lan-connect",
             })
         elif event_type == "safety":
+            display_state = str(item.get("display_state") or "Clear")
             item.update({
-                "message": f"{name} Clear",
+                "message": f"{name} {display_state}",
                 "summary": f"{name} returned to normal",
                 "detail": f"{name} returned to normal",
                 "icon": "mdi:check-circle-outline",
@@ -557,6 +562,52 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             return None
 
+        return self._sync_normalized_presentation(item)
+
+    def _renormalize_lifecycle_item(self, item: dict[str, Any], state: State | None) -> None:
+        """Re-evaluate a normalized active event when its live state clears."""
+        previous = item.get("normalized")
+        if not isinstance(previous, dict):
+            return
+        source = previous.get("source") if isinstance(previous.get("source"), dict) else {}
+        raw_state = state.state if state is not None else "off"
+        normalized = normalize_semantic_state(
+            raw_state,
+            entity_id=str(source.get("entity_id") or item.get("entity_id") or "") or None,
+            domain=str(source.get("domain") or "") or None,
+            device_class=str(source.get("device_class") or "") or None,
+            capability=str(item.get("capability") or previous.get("capability") or "") or None,
+            provider=str(source.get("provider") or "") or None,
+            device_role=str(source.get("device_role") or "") or None,
+        )
+        label = str(
+            (previous.get("presentation") or {}).get("label")
+            or item.get("entity_name")
+            or item.get("home_device_name")
+            or ""
+        )
+        normalized["presentation"]["label"] = label
+        item.update({
+            "raw_state": normalized["raw_state"],
+            "state": normalized["state"],
+            "display_state": normalized["display_state"],
+            "semantic": normalized["semantic"],
+            "presentation": normalized["presentation"],
+            "normalized": normalized,
+        })
+
+    @staticmethod
+    def _sync_normalized_presentation(item: dict[str, Any]) -> dict[str, Any]:
+        """Keep legacy-facing text synchronized with the authoritative contract."""
+        normalized = item.get("normalized")
+        presentation = item.get("presentation")
+        if not isinstance(normalized, dict) or not isinstance(presentation, dict):
+            return item
+        updated_presentation = dict(presentation)
+        updated_presentation["message"] = str(item.get("message") or "")
+        normalized = dict(normalized)
+        normalized["presentation"] = updated_presentation
+        item.update({"presentation": updated_presentation, "normalized": normalized})
         return item
 
     def _apply_current_display_name(self, old: dict[str, Any]) -> dict[str, Any]:
@@ -597,7 +648,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 item.update(message=f"{appliance_name} Complete", summary=f"{appliance_name} is ready", detail=f"{appliance_name} is ready")
 
-        return item
+        return self._sync_normalized_presentation(item)
 
     def _recent_for_bottom(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         try:

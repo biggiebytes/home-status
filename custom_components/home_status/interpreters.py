@@ -128,6 +128,48 @@ def _name(home_device: HomeDevice, entity: HomeDeviceEntity) -> str:
     return entity.name
 
 
+def _presentation_name(home_device: HomeDevice, entity: HomeDeviceEntity) -> str:
+    """Use a useful entity label without exposing a model number as its name."""
+    name = _name(home_device, entity).strip()
+    parts = name.split(maxsplit=1)
+    if len(parts) == 2 and re.fullmatch(r"(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+", parts[0]):
+        return parts[1]
+    return name
+
+
+def _with_normalization(
+    item: dict[str, Any],
+    *,
+    home_device: HomeDevice,
+    entity: HomeDeviceEntity,
+    state: State,
+    capability: str,
+    label: str,
+) -> dict[str, Any]:
+    """Attach the core boundary while preserving the established item contract."""
+    normalized = normalize_semantic_state(
+        state.state,
+        entity_id=entity.entity_id,
+        domain=entity.domain,
+        device_class=entity.device_class,
+        capability=capability,
+        provider="home_device",
+        device_role=home_device.kind,
+    )
+    normalized["presentation"].update({"label": label, "message": item["message"]})
+    item.update({
+        "entity_name": label,
+        "raw_state": normalized["raw_state"],
+        "state": normalized["state"],
+        "display_state": normalized["display_state"],
+        "capability": capability,
+        "semantic": normalized["semantic"],
+        "presentation": normalized["presentation"],
+        "normalized": normalized,
+    })
+    return item
+
+
 def _is_supporting_entity(entity: HomeDeviceEntity) -> bool:
     name = entity.name.casefold()
     return any(hint in name for hint in _SUPPORTING_NAME_HINTS)
@@ -394,7 +436,7 @@ def interpret_entity(
     raw = str(state.state or "").casefold()
     domain = entity.domain
     device_class = str(entity.device_class or "").casefold()
-    name = _name(home_device, entity)
+    name = _presentation_name(home_device, entity)
 
     # A child/supporting entity being unavailable does not mean the whole HomeDevice
     # is unavailable. Device availability will get a dedicated device-level
@@ -443,36 +485,40 @@ def interpret_entity(
                 "safety": (f"{name} Alert", f"{name} reports an unsafe condition", "mdi:alert"),
             }
             message, detail, icon = labels[device_class]
-            return [
-                _base(
-                    home_device,
-                    entity,
-                    state,
-                    event_type="safety",
-                    message=message,
-                    detail=detail,
-                    priority="critical",
-                    active=True,
-                    icon=icon,
-                )
-            ]
+            item = _base(
+                home_device,
+                entity,
+                state,
+                event_type="safety",
+                message=message,
+                detail=detail,
+                priority="critical",
+                active=True,
+                icon=icon,
+            )
+            return [_with_normalization(
+                item, home_device=home_device, entity=entity, state=state,
+                capability="fault", label=name,
+            )]
 
         if device_class in {"door", "window", "opening", "garage_door"}:
             if raw != "on":
                 return []
-            return [
-                _base(
-                    home_device,
-                    entity,
-                    state,
-                    event_type="contact",
-                    message=f"{name} Open",
-                    detail=f"{name} is open",
-                    priority="attention",
-                    active=True,
-                    icon=entity.icon or "mdi:door-open",
-                )
-            ]
+            item = _base(
+                home_device,
+                entity,
+                state,
+                event_type="contact",
+                message=f"{name} Open",
+                detail=f"{name} is open",
+                priority="attention",
+                active=True,
+                icon=entity.icon or "mdi:door-open",
+            )
+            return [_with_normalization(
+                item, home_device=home_device, entity=entity, state=state,
+                capability="contact", label=name,
+            )]
 
         if device_class in {"motion", "occupancy", "presence"}:
             if raw != "on":
@@ -515,19 +561,21 @@ def interpret_entity(
 
     if domain == "lock":
         if raw in {"unlocked", "open"}:
-            return [
-                _base(
-                    home_device,
-                    entity,
-                    state,
-                    event_type="lock",
-                    message=f"{name} Unlocked",
-                    detail=f"{name} is unlocked",
-                    priority="attention",
-                    active=True,
-                    icon="mdi:lock-open-variant",
-                )
-            ]
+            item = _base(
+                home_device,
+                entity,
+                state,
+                event_type="lock",
+                message=f"{name} Unlocked",
+                detail=f"{name} is unlocked",
+                priority="attention",
+                active=True,
+                icon="mdi:lock-open-variant",
+            )
+            return [_with_normalization(
+                item, home_device=home_device, entity=entity, state=state,
+                capability="lock", label=name,
+            )]
         return []
 
     if domain == "cover" and device_class in {"door", "garage", "gate", "window"}:
