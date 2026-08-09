@@ -133,7 +133,10 @@ def _presentation_name(home_device: HomeDevice, entity: HomeDeviceEntity) -> str
     name = _name(home_device, entity).strip()
     parts = name.split(maxsplit=1)
     if len(parts) == 2 and re.fullmatch(r"(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+", parts[0]):
-        return parts[1]
+        name = parts[1]
+    appliance = _appliance_label(home_device)
+    if name.casefold() in {"door", "laundry door"} and appliance in {"Washer", "Dryer", "Dishwasher"}:
+        return f"{appliance} Door"
     return name
 
 
