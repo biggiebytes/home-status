@@ -81,7 +81,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             return None
         return {
             key: value[key]
-            for key in ("type", "url", "entity_id", "article_url", "priority", "live", "started_at", "expires_at", "resumable")
+            for key in ("type", "url", "entity_id", "article_url", "title", "source", "priority", "live", "started_at", "expires_at", "resumable")
             if key in value
         }
 

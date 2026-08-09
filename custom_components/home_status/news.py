@@ -36,11 +36,12 @@ def parse_feed(raw: bytes, feed_id: str) -> list[dict[str, str]]:
         summary = text("description", "{*}summary", "{*}content")
         published = text("pubDate", "{*}published", "{*}updated")
         guid = text("guid", "{*}id")
+        video = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"content", "enclosure"} and str(node.get("type") or "").casefold() in {"video/mp4", "video/webm"}), "")
         image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content", "enclosure"} and str(node.get("type") or "").startswith("image")), "")
         if not image:
             image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content"} and (node.get("url") or node.get("href"))), "")
         if title and valid_url(link):
-            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else ""})
+            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else "", "video": video if valid_url(video) else ""})
     return result
 
 

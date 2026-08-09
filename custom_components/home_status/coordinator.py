@@ -144,25 +144,30 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seen.update(article["id"] for article in parsed)
                 self.news_initialized[feed_id] = True
                 if feed.get("show_visual", True):
-                    newest_with_image = next((article for article in parsed if article.get("image")), None)
-                    if newest_with_image:
+                    newest_with_media = next((article for article in parsed if article.get("video") or article.get("image")), None)
+                    if newest_with_media:
                         started = now_iso()
-                        self.news_visuals[newest_with_image["id"]] = {"type":"image", "url":newest_with_image["image"], "article_url":newest_with_image["url"], "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
+                        self.news_visuals[newest_with_media["id"]] = self._news_visual(newest_with_media, feed, started)
             for article in parsed:
                 is_new = not bootstrap and article["id"] not in seen
                 visual = self.news_visuals.get(article["id"])
                 if visual and str(visual.get("expires_at") or "") <= now_iso():
                     self.news_visuals.pop(article["id"], None)
                     visual = None
-                if is_new and feed.get("show_visual", True) and article.get("image"):
+                if is_new and feed.get("show_visual", True) and (article.get("video") or article.get("image")):
                     started = now_iso()
-                    visual = {"type":"image", "url":article["image"], "article_url":article["url"], "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
+                    visual = self._news_visual(article, feed, started)
                     self.news_visuals[article["id"]] = visual
                 articles.append({"id":article["id"], "source_id":f"news:{feed_id}", "source_name":str(feed.get("name") or "News"), "source_kind":"news", "event_type":"news_article", "title":article["title"], "message":article["title"], "summary":article.get("summary") or str(feed.get("name") or "News"), "detail":article.get("summary") or "", "category":"news", "priority":str(feed.get("priority") or "normal"), "icon":"mdi:newspaper", "active":False, "created_at":article.get("published") or now_iso(), "navigation":article["url"], "action":article["url"], **({"visual":visual} if visual else {})})
                 seen.add(article["id"])
             self.news_seen[feed_id] = list(seen)[-200:]
         self.news_articles = articles
         self.hass.async_create_task(self.store.async_save({"events": self.history, "news_seen": self.news_seen, "news_visuals": self.news_visuals, "news_initialized": self.news_initialized}))
+
+    @staticmethod
+    def _news_visual(article: dict[str, str], feed: dict[str, Any], started: str) -> dict[str, Any]:
+        video = article.get("video") or ""
+        return {"type":"video" if video else "image", "url":video or article["image"], "article_url":article["url"], "title":article["title"], "source":str(feed.get("name") or "News"), "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
 
     @callback
     def _state_changed(self, _event: Event) -> None:
