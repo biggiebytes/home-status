@@ -1106,6 +1106,7 @@ class HomeStatusCard extends HTMLElement {
     return {
       type,
       url,
+      article_url: typeof value.article_url === 'string' ? value.article_url.trim() : '',
       entity_id: entityId,
       priority: String(value.priority || 'normal'),
       live: value.live === true,
@@ -1117,7 +1118,7 @@ class HomeStatusCard extends HTMLElement {
 
   _visualSignature(visual) {
     return visual
-      ? [visual.type, visual.url, visual.entity_id, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable].join('|')
+      ? [visual.type, visual.url, visual.entity_id, visual.article_url, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable].join('|')
       : '';
   }
 
@@ -1142,6 +1143,7 @@ class HomeStatusCard extends HTMLElement {
     center.dataset.visualSignature = signature;
     center.dataset.visualType = visual.type;
     center.setAttribute('aria-label', `Home Status visual: ${visual.type}`);
+    center.onclick = visual.article_url ? event => { event.stopPropagation(); window.open(visual.article_url, '_blank', 'noopener,noreferrer'); } : null;
     this._renderVisualCenter(center, visual);
   }
 

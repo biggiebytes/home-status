@@ -16,6 +16,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -23,6 +24,7 @@ from .const import DOMAIN
 from .engine import HomeStatusEngine
 from .presentation import place_items, select_visual
 from .presentation_config import presentation_preferences
+from .news import now_iso, parse_feed, valid_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +44,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.active: dict[str, dict[str, Any]] = {}
         self.history: list[dict[str, Any]] = []
+        self.news_articles: list[dict[str, Any]] = []
+        self.news_seen: dict[str, list[str]] = {}
+        self.news_visuals: dict[str, dict[str, Any]] = {}
 
         self._unsub_state = None
         self._unsub_timer = None
@@ -55,6 +60,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         stored = await self.store.async_load() or {}
         events = stored.get("events", [])
         self.history = self._retained_history(events if isinstance(events, list) else [])
+        self.news_seen = stored.get("news_seen", {}) if isinstance(stored.get("news_seen", {}), dict) else {}
+        self.news_visuals = stored.get("news_visuals", {}) if isinstance(stored.get("news_visuals", {}), dict) else {}
+        await self._refresh_news(initial=True)
         self._reconfigure_subscription()
         self._publish()
         self._configure_timer()
@@ -107,7 +115,42 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _timer_tick(self, _now) -> None:
         self.options = {**self.entry.data, **self.entry.options}
         self._reconfigure_subscription()
+        await self._refresh_news()
         self._publish()
+
+    async def _refresh_news(self, initial: bool = False) -> None:
+        articles: list[dict[str, Any]] = []
+        session = async_get_clientsession(self.hass)
+        for feed in self.options.get("news_sources", []):
+            if not isinstance(feed, dict) or feed.get("enabled", True) is not True or not valid_url(feed.get("url")):
+                continue
+            feed_id = str(feed.get("id") or "")
+            if not feed_id:
+                continue
+            try:
+                async with session.get(str(feed["url"]), timeout=15) as response:
+                    response.raise_for_status()
+                    parsed = parse_feed(await response.read(), feed_id)
+            except Exception:  # A source failure must not disrupt Home Status.
+                continue
+            seen = set(self.news_seen.get(feed_id, []))
+            if initial and not seen:
+                seen.update(article["id"] for article in parsed)
+            for article in parsed:
+                is_new = article["id"] not in seen
+                visual = self.news_visuals.get(article["id"])
+                if visual and str(visual.get("expires_at") or "") <= now_iso():
+                    self.news_visuals.pop(article["id"], None)
+                    visual = None
+                if is_new and feed.get("show_visual", True) and article.get("image"):
+                    started = now_iso()
+                    visual = {"type":"image", "url":article["image"], "article_url":article["url"], "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
+                    self.news_visuals[article["id"]] = visual
+                articles.append({"id":article["id"], "source_id":f"news:{feed_id}", "source_name":str(feed.get("name") or "News"), "source_kind":"news", "event_type":"news_article", "title":article["title"], "message":article["title"], "summary":article.get("summary") or str(feed.get("name") or "News"), "detail":article.get("summary") or "", "category":"news", "priority":str(feed.get("priority") or "normal"), "icon":"mdi:newspaper", "active":False, "created_at":article.get("published") or now_iso(), "navigation":article["url"], "action":article["url"], **({"visual":visual} if visual else {})})
+                seen.add(article["id"])
+            self.news_seen[feed_id] = list(seen)[-200:]
+        self.news_articles = articles
+        self.hass.async_create_task(self.store.async_save({"events": self.history, "news_seen": self.news_seen, "news_visuals": self.news_visuals}))
 
     @callback
     def _state_changed(self, _event: Event) -> None:
@@ -146,7 +189,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         active = self._sorted(list(self.active.values()))
         recent = self._recent_for_bottom(self.history)
-        awareness = self.engine.build_awareness_items(self.options)
+        awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
 
         left, right, bottom = place_items(active, recent, awareness, self.options)
         visual = self._select_current_visual(active, recent, awareness, visual_source_items)

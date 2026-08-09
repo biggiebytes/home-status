@@ -109,6 +109,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         self._rename_target: str | None = None
         self._manage_target: str | None = None
         self._visual_source_id: str | None = None
+        self._news_source_id: str | None = None
 
     def _options(self) -> dict:
         return dict(self.entry.options)
@@ -425,7 +426,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open information and visual source settings."""
         return self.async_show_menu(
             step_id="sources",
-            menu_options=["information_sources", "visual_sources", "back_to_init"],
+            menu_options=["information_sources", "news_sources", "visual_sources", "back_to_init"],
         )
 
     async def async_step_information_sources(self, user_input=None):
@@ -489,6 +490,37 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 )
             }),
         )
+
+    async def async_step_news_sources(self, user_input=None):
+        """Choose a generic RSS/Atom source to add or edit."""
+        if user_input is not None:
+            chosen = str(user_input["news_source"])
+            self._news_source_id = None if chosen == "__add__" else chosen
+            return await self.async_step_news_source_edit()
+        choices = [{"value": "__add__", "label": "Add RSS/Atom feed"}]
+        for feed in self.entry.options.get("news_sources", []):
+            if isinstance(feed, dict) and feed.get("id"):
+                choices.append({"value": str(feed["id"]), "label": str(feed.get("name") or feed.get("url") or "News")})
+        return self.async_show_form(step_id="news_sources", data_schema=vol.Schema({vol.Required("news_source"): selector.SelectSelector(selector.SelectSelectorConfig(options=choices, mode=selector.SelectSelectorMode.DROPDOWN))}))
+
+    async def async_step_news_source_edit(self, user_input=None):
+        """Persist one generic RSS/Atom source."""
+        current = next((dict(item) for item in self.entry.options.get("news_sources", []) if isinstance(item, dict) and item.get("id") == self._news_source_id), {})
+        if user_input is not None:
+            from .news import valid_url
+            url = str(user_input.get("url", "")).strip()
+            if not user_input.get("remove_source", False) and not valid_url(url):
+                return self.async_show_form(step_id="news_source_edit", data_schema=self._news_schema(current), errors={"url":"invalid_feed_url"})
+            options = self._options()
+            feeds = [item for item in options.get("news_sources", []) if isinstance(item, dict) and item.get("id") != self._news_source_id]
+            if not user_input.get("remove_source", False):
+                feeds.append({"id": self._news_source_id or uuid4().hex, "name":str(user_input["name"]).strip() or "News", "url":url, "enabled":bool(user_input.get("enabled", True)), "priority":str(user_input.get("priority", "normal")), "show_visual":bool(user_input.get("show_visual", True)), "visual_duration":max(1, min(3600, int(user_input.get("visual_duration", 60))) )})
+            options["news_sources"] = feeds
+            return await self._save_options_and_return(options, "sources")
+        return self.async_show_form(step_id="news_source_edit", data_schema=self._news_schema(current))
+
+    def _news_schema(self, current):
+        return vol.Schema({vol.Required("name", default=current.get("name", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(), vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value":p,"label":p.title()} for p in ("normal","activity","attention","critical")], mode=selector.SelectSelectorMode.DROPDOWN)), vol.Optional("show_visual", default=current.get("show_visual", True)): selector.BooleanSelector(), vol.Optional("visual_duration", default=current.get("visual_duration", 60)): self._number(1,3600,1), vol.Optional("remove_source", default=False): selector.BooleanSelector()})
 
     async def async_step_visual_camera(self, user_input=None):
         """Configure a generic Home Assistant camera visual and its trigger."""
