@@ -455,9 +455,9 @@
     },
     "error": {
       "confirm_remove": "Check the confirmation box before removing this item."
+    },
+    "abort": {
+      "no_selected_items": "Home Status is not monitoring anything yet. Add something first, then you can change its name."
     }
-  },
-  "abort": {
-    "no_selected_items": "Home Status is not monitoring anything yet. Add something first, then you can change its name."
   }
 }
