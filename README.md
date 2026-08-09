@@ -418,7 +418,12 @@ Home Status. Feed addresses are redacted from downloaded diagnostics.
   - Experimental configurable environmental and immediate-safety signals
 - [Current review checklist](docs/current-review-checklist.md)
 - Timeline enhancements
-- Richer media experiences
+- Visual Center: an event-driven, priority-managed presentation surface that
+  stays hidden until relevant visual content is available. Providers may offer
+  visual content with its type, source, priority, and expiration; the
+  presentation engine decides when it takes the center. Planned uses include
+  doorbell and motion cameras, package snapshots, news video, weather radar,
+  severe-weather alerts, traffic maps, and live results.
 - Expanded notification routing
 
 Community testers can share privacy-safe entity metadata using the
