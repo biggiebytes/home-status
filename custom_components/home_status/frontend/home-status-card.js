@@ -82,13 +82,13 @@ const ENTITY_HANDLERS = {
   laundry: LaundryHandler
 };
 
-const BACKEND_PROVIDER_ALIASES = Object.freeze({
+const BACKEND_CATEGORY_ALIASES = Object.freeze({
   calendar: 'schedule',
   sprinklers: 'schedule',
   fault: 'maintenance'
 });
 
-const FRONTEND_ASSET_BASE = '/home_status';
+const FRONTEND_ASSET_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
 const LOTTIE_PLAYER_URL = `${FRONTEND_ASSET_BASE}/vendor/lottie_light_canvas.min.js`;
 const LOTTIE_WEATHER_ASSETS = Object.freeze({
   rain: Object.freeze({
@@ -428,7 +428,47 @@ class WeatherRenderer {
     if (this._renderer && this._rendererType === rendererType) return;
     this._renderer?.destroy();
     const createRenderer = this._rendererFactories[rendererType];
-    if (!createRenderer) throw new Error(`Unknown weather renderer: ${rendererType}`);
+    if (!createRenderer) throw new Error(`Unknown weather renderer: ${rendererType}
+/* HOME STATUS 10FT READABILITY FINAL OVERRIDES v0.3.24 */
+/* These rules intentionally sit last and are profile-agnostic so auto profile cannot bypass them. */
+.primary-zone .zone-item.is-measurement .zone-title,
+.secondary-zone .zone-item.is-measurement .zone-title {
+  font-size:64px !important; font-weight:850 !important; line-height:.92 !important; letter-spacing:-1.6px !important;
+}
+.primary-zone .zone-item.is-measurement .zone-title ha-icon,
+.secondary-zone .zone-item.is-measurement .zone-title ha-icon {
+  width:56px !important; height:56px !important; --mdc-icon-size:56px !important;
+}
+.primary-zone .zone-item.is-measurement .zone-summary,
+.secondary-zone .zone-item.is-measurement .zone-summary {
+  margin-top:8px !important; font-size:27px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
+}
+.zone-item.is-current-weather .zone-title {
+  font-size:60px !important; font-weight:840 !important; line-height:.94 !important; letter-spacing:-1.3px !important;
+}
+.zone-item.is-current-weather .zone-title ha-icon {
+  width:54px !important; height:54px !important; --mdc-icon-size:54px !important;
+}
+.zone-item.is-current-weather .zone-summary {
+  margin-top:8px !important; font-size:28px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
+}
+.zone-item.is-scheduled .zone-summary {
+  font-size:25px !important; font-weight:680 !important; line-height:1.12 !important;
+}
+.ticker-footer { min-height:102px !important; padding-top:12px !important; }
+.footer-marquee { height:102px !important; }
+.footer-marquee-item { padding:0 32px !important; }
+.footer-marquee-item > [data-stream-id] { gap:14px !important; }
+.footer-marquee-item ha-icon { width:38px !important; height:38px !important; --mdc-icon-size:38px !important; }
+.footer-marquee-copy strong { font-size:26px !important; font-weight:820 !important; line-height:1.02 !important; letter-spacing:.15px !important; }
+.footer-marquee-copy small { margin-top:7px !important; font-size:21px !important; font-weight:650 !important; line-height:1.05 !important; opacity:.9 !important; }
+.footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:38px !important; font-weight:850 !important; }
+.footer-marquee-item.is-current-weather .footer-marquee-copy small,
+.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { font-size:22px !important; }
+.footer-marquee-item.is-current-weather ha-icon,
+.footer-marquee-item.is-indoor-temperature ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px !important; }
+`);
     this._renderer = createRenderer();
     this._rendererType = rendererType;
   }
@@ -439,40 +479,40 @@ const HOME_STATUS_CARD_PROFILES = {
     profile: 'auto',
     layout: 'responsive',
     utility_header: { enabled: true },
-    hero: { rotate: true },
-    sidebar: { rotate: true, interval: 7 },
-    footer: { rotate: false, speed: 35 },
-    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    left: { rotate: true, interval: 7 },
+    right: { rotate: true },
+    bottom: { rotate: false, speed: 35 },
+    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   phone: {
     profile: 'phone',
     layout: 'compact',
     utility_header: { enabled: false },
-    hero: { rotate: false },
-    sidebar: { rotate: false },
-    footer: { rotate: false, speed: 26 },
-    home_status_visibility: { hero: false, sidebar: false, footer: false, phone_ticker: true },
+    left: { rotate: false },
+    right: { rotate: false },
+    bottom: { rotate: false, speed: 26 },
+    home_status_visibility: { left: false, right: false, bottom: false, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   tablet: {
     profile: 'tablet',
     layout: 'tablet-default',
     utility_header: { enabled: true },
-    hero: { rotate: true },
-    sidebar: { rotate: true, interval: 7 },
-    footer: { rotate: false, speed: 35 },
-    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    left: { rotate: true, interval: 7 },
+    right: { rotate: true },
+    bottom: { rotate: false, speed: 35 },
+    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
     sizing: { max_width: 0, min_height: 0 }
   },
   desktop: {
     profile: 'desktop',
     layout: 'desktop-wide',
     utility_header: { enabled: true },
-    hero: { rotate: true },
-    sidebar: { rotate: true, interval: 7 },
-    footer: { rotate: false, speed: 40 },
-    home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true },
+    left: { rotate: true, interval: 7 },
+    right: { rotate: true },
+    bottom: { rotate: false, speed: 40 },
+    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
     sizing: { max_width: 1800, min_height: 0 }
   }
 };
@@ -480,7 +520,7 @@ const HOME_STATUS_CARD_PROFILES = {
 const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
   'show_active_count', 'pause_on_hover',
-  'utility_header', 'quick_status', 'hero', 'sidebar', 'footer',
+  'utility_header', 'quick_status', 'left', 'right', 'bottom', 'hero', 'sidebar', 'footer',
   'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
   'weather_effect', 'time_entity',
   'recent_drawer_limit', 'rotation_seconds', 'footer_speed', 'entities', 'mode'
@@ -573,11 +613,11 @@ class HomeStatusCard extends HTMLElement {
     const utilityHeader = config.utility_header && typeof config.utility_header === 'object'
       ? config.utility_header
       : {};
-    const footerConfig = config.footer && typeof config.footer === 'object'
-      ? config.footer
-      : {};
-    const requestedFooterSpeed = Number(
-      footerConfig.speed ?? footerConfig.marquee_speed ?? config.footer_speed
+    const leftConfig = homeStatusObject(config.left ?? config.sidebar);
+    const rightConfig = homeStatusObject(config.right ?? config.hero);
+    const bottomConfig = homeStatusObject(config.bottom ?? config.footer);
+    const requestedBottomSpeed = Number(
+      bottomConfig.speed ?? bottomConfig.marquee_speed ?? config.footer_speed
     );
     const namespacedVisibility = homeStatusObject(config.home_status_visibility);
     const legacyVisibility = homeStatusObject(config.visibility);
@@ -596,11 +636,11 @@ class HomeStatusCard extends HTMLElement {
       context_actions: config.context_actions || {},
       layout: config.layout || 'tablet-default',
       profile,
-      hero: config.hero || null,
-      sidebar: config.sidebar || null,
-      footer: config.footer || null,
-      footer_speed: Number.isFinite(requestedFooterSpeed)
-        ? Math.max(1, requestedFooterSpeed)
+      left: leftConfig,
+      right: rightConfig,
+      bottom: bottomConfig,
+      bottom_speed: Number.isFinite(requestedBottomSpeed)
+        ? Math.max(1, requestedBottomSpeed)
         : 35,
       display: config.display || {},
       utility_header: {
@@ -611,9 +651,9 @@ class HomeStatusCard extends HTMLElement {
         music_path: utilityHeader.music_path || ''
       },
       home_status_visibility: {
-        hero: visibility.hero !== false,
-        sidebar: visibility.sidebar !== false,
-        footer: visibility.footer !== false,
+        left: (visibility.left ?? visibility.sidebar) !== false,
+        right: (visibility.right ?? visibility.hero) !== false,
+        bottom: (visibility.bottom ?? visibility.footer) !== false,
         phone_ticker: visibility.phone_ticker !== false,
         drawer: visibility.drawer !== false
       },
@@ -637,7 +677,7 @@ class HomeStatusCard extends HTMLElement {
           .map(item => ({ ...item, group: item.group || 'status' }))
       : [];
     this._directEntities = this._normalizeDirectEntities(config.entities);
-    this._mode = config.mode === 'direct' ? 'direct' : 'provider';
+    this._mode = config.mode === 'direct' ? 'direct' : 'backend';
     this.setAttribute('data-profile', profile);
     this.setAttribute('data-layout', this._config.layout);
     this.setAttribute('data-animation', this._config.animation.level);
@@ -647,7 +687,7 @@ class HomeStatusCard extends HTMLElement {
     this.style.minHeight = this._config.sizing.min_height ? `${this._config.sizing.min_height}px` : '';
     this.style.setProperty(
       '--home-status-phone-ticker-seconds',
-      `${Math.max(1, this._config.footer_speed)}s`
+      `${Math.max(1, this._config.bottom_speed)}s`
     );
     this._stopZoneRotations();
     this._zoneSignatures = { left: '', right: '' };
@@ -888,8 +928,38 @@ class HomeStatusCard extends HTMLElement {
 
   _date(value) {
     if (!value) return null;
-    const date = new Date(value);
+    const text = String(value).trim();
+    // Treat Home Assistant's date-only and timezone-less calendar values as
+    // local wall-clock values. Native Date parsing can otherwise interpret a
+    // date-only value as UTC and shift it to the previous day in US timezones.
+    let match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+    match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (match) {
+      const [, year, month, day, hour, minute, second = '0'] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    }
+    const date = new Date(text);
     return Number.isFinite(date.getTime()) ? date : null;
+  }
+
+  _friendlyScheduled(value, allDay = false) {
+    const date = this._date(value);
+    if (!date) return '';
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const delta = Math.round((eventDay - today) / 86400000);
+    const dayLabel = delta === 0
+      ? 'Today'
+      : delta === 1
+        ? 'Tomorrow'
+        : date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(String(value).trim())) return dayLabel;
+    return `${dayLabel} • ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
   }
 
   _time(value) {
@@ -978,13 +1048,16 @@ class HomeStatusCard extends HTMLElement {
   _data() {
     const source = this._state(this._config.entity);
     const attrs = source?.attributes || {};
-    const hero = Array.isArray(attrs.hero) ? attrs.hero : [];
+    const left = Array.isArray(attrs.left) ? attrs.left : (Array.isArray(attrs.sidebar) ? attrs.sidebar : []);
+    const right = Array.isArray(attrs.right) ? attrs.right : (Array.isArray(attrs.hero) ? attrs.hero : []);
+    const bottom = Array.isArray(attrs.bottom) ? attrs.bottom : (Array.isArray(attrs.footer) ? attrs.footer : []);
     const active = Array.isArray(attrs.active) ? attrs.active : [];
     const recent = Array.isArray(attrs.recent) ? attrs.recent : [];
     const priority = attrs.priority || attrs.health || 'normal';
     const count = Number(attrs.active_count || 0);
     const display = attrs.display && typeof attrs.display === 'object' ? attrs.display : {};
-    return { hero, sidebar: Array.isArray(attrs.sidebar) ? attrs.sidebar : [], footer: Array.isArray(attrs.footer) ? attrs.footer : [], active, recent, priority, count, display, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
+    const presentation = attrs.presentation && typeof attrs.presentation === 'object' ? attrs.presentation : {};
+    return { left, right, bottom, active, recent, priority, count, display, presentation, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
   }
 
   _getRuntimeData() {
@@ -1008,13 +1081,97 @@ class HomeStatusCard extends HTMLElement {
       upcoming: [],
       insights: this._directRecentItems,
       status: [],
-      hero: [],
-      sidebar: [],
-      footer: [],
+      left: [],
+      right: [],
+      bottom: [],
       count: active.length,
       priority,
       unavailable: false
     };
+  }
+
+
+  _applyPresentationPreferences(data) {
+    const preferences = data?.presentation && typeof data.presentation === 'object'
+      ? data.presentation
+      : {};
+    this._presentationPreferences = preferences;
+    const layout = preferences.layout && typeof preferences.layout === 'object'
+      ? preferences.layout
+      : {};
+    const emphasis = preferences.emphasis && typeof preferences.emphasis === 'object'
+      ? preferences.emphasis
+      : {};
+    const number = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+    const px = (name, value, fallback) => this.style.setProperty(name, `${number(value, fallback)}px`);
+
+    const leftTitle = number(layout.left_title_size, 23);
+    const rightTitle = number(layout.right_title_size, 23);
+    const bottomTitle = number(layout.bottom_title_size, 26);
+    const leftIcon = number(layout.left_icon_size, 40);
+    const rightIcon = number(layout.right_icon_size, 40);
+    const bottomIcon = number(layout.bottom_icon_size, 38);
+    const emphasized = emphasis.enabled !== false;
+    const leftValue = emphasized ? number(emphasis.left_measurement_size, 64) : leftTitle;
+    const rightValue = emphasized ? number(emphasis.right_measurement_size, 48) : rightTitle;
+    const rightWeather = emphasized ? number(emphasis.right_weather_size, 44) : rightTitle;
+    const bottomValue = emphasized ? number(emphasis.bottom_measurement_size, 38) : bottomTitle;
+
+    px('--hs-card-body-height', layout.card_body_height, 380);
+    px('--hs-card-live-height', number(layout.card_body_height, 380) + 44, 424);
+    px('--hs-main-row-height', layout.main_row_height, 150);
+    px('--hs-bottom-height', layout.bottom_height, 102);
+    px('--hs-left-title-size', leftTitle, 23);
+    px('--hs-left-summary-size', layout.left_summary_size, 15);
+    px('--hs-left-icon-size', leftIcon, 40);
+    px('--hs-right-title-size', rightTitle, 23);
+    px('--hs-right-summary-size', layout.right_summary_size, 15);
+    px('--hs-right-icon-size', rightIcon, 40);
+    px('--hs-bottom-title-size', bottomTitle, 26);
+    px('--hs-bottom-summary-size', layout.bottom_summary_size, 21);
+    px('--hs-bottom-icon-size', bottomIcon, 38);
+    px('--hs-left-value-size', leftValue, 64);
+    px('--hs-right-value-size', rightValue, 48);
+    px('--hs-right-weather-size', rightWeather, 44);
+    px('--hs-bottom-value-size', bottomValue, 38);
+    px('--hs-left-value-icon-size', Math.max(leftIcon, Math.round(leftValue * 0.875)), 56);
+    px('--hs-right-value-icon-size', Math.max(rightIcon, Math.round(rightValue * 0.92)), 44);
+
+    // Card YAML remains the explicit per-card override. Integration sizing is
+    // the default when the card has not specified its own maximum width.
+    if (!this._config?.sizing?.max_width) {
+      const maxWidth = number(layout.card_max_width, 0);
+      this.style.maxWidth = maxWidth ? `${maxWidth}px` : (this._config?.profile === 'phone' ? '600px' : '');
+    }
+  }
+
+  _presentationColorKey(item) {
+    const category = this._categoryFor(item);
+    const priority = String(item?.priority || '').toLowerCase();
+    const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
+    const state = String(item?.state || '').toLowerCase();
+    const resolved = state === 'resolved' || (item?.active === false && Boolean(item?.resolved_at));
+    if (resolved || /complete|completed|finished|resolved|healthy/.test(text)) return 'success';
+    if (priority === 'critical') return 'security';
+    if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'attention';
+    if (/recycl/.test(text)) return 'recycling';
+    if (category === 'security' || /\b(?:door|window|lock|alarm)\b/.test(text)) return 'security';
+    if (category === 'weather') return 'weather';
+    if (category === 'waste' || /waste|garbage|trash/.test(text)) return 'waste';
+    if (/sprinkler|irrigation|watering/.test(text)) return 'irrigation';
+    if (category === 'calendar' || category === 'schedule' || /calendar|schedule|event/.test(text)) return 'calendar';
+    if (category === 'news' || ['rss', 'atom', 'news'].includes(String(item?.source_kind || '').toLowerCase())) return 'news';
+    if (category === 'climate' || /climate|temperature|humidity|thermostat/.test(text)) return 'climate';
+    if (['laundry', 'appliance'].includes(category) || /laundry|washer|dryer|dishwasher/.test(text)) return 'appliance';
+    return '';
+  }
+
+  _iconStyle(item) {
+    const appearance = this._presentationPreferences?.appearance;
+    if (!appearance || appearance.semantic_colors === false) return '';
+    const key = this._presentationColorKey(item);
+    const color = key ? appearance.colors?.[key] : '';
+    return color ? ` style="color:${this._escape(color)}"` : '';
   }
 
 
@@ -1024,8 +1181,7 @@ class HomeStatusCard extends HTMLElement {
     const labels = {
       'Dryer Finished': 'Dryer Complete',
       'Washer Finished': 'Washer Complete',
-      'Dishwasher Finished': 'Dishes Clean',
-      'Dishwasher Complete': 'Dishes Clean',
+      'Dishwasher Finished': 'Dishwasher Complete',
       'Everything Looks Good': 'Home Normal'
     };
     const value = item?.message || item?.title || 'Home notification';
@@ -1063,48 +1219,74 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _iconTone(item) {
-    const provider = this._providerFor(item);
+    const category = this._categoryFor(item);
     const priority = String(item?.priority || '').toLowerCase();
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     if (priority === 'critical' || /alarm|leak|smoke|security|severe weather/.test(text)) return 'critical';
     if (priority === 'attention' || /warning|advisory|traffic delay|package/.test(text)) return 'attention';
-    if (provider === 'media' || /music|tv|entertainment/.test(text)) return 'media';
+    if (category === 'media' || /music|tv|entertainment/.test(text)) return 'media';
     if (priority === 'activity' || /complete|completed|finished|resolved|healthy|normal/.test(text)) return 'success';
-    if (['weather', 'schedule', 'climate', 'energy', 'maintenance'].includes(provider)) return 'information';
+    if (['weather', 'schedule', 'climate', 'energy', 'maintenance'].includes(category)) return 'information';
     return 'neutral';
   }
 
   _iconSemanticClass(item) {
-    const provider = this._providerFor(item);
+    if (this._presentationPreferences?.appearance?.semantic_colors === false) return 'semantic-white';
+    const category = this._categoryFor(item);
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     const priority = String(item?.priority || '').toLowerCase();
     const state = String(item?.state || '').toLowerCase();
     const resolved = state === 'resolved'
       || (item?.active === false && Boolean(item?.resolved_at));
-    // Resolution is a successful transition regardless of the provider that
+    // Resolution is a successful transition regardless of the category that
     // raised the original alert. Evaluate it before security keywords so a
     // closed door or cleared smoke alarm cannot retain its alert color.
     if (resolved) return 'semantic-green';
     if (priority === 'critical' || /active leak|smoke|alarm|security|severe/.test(text)) return 'semantic-red';
     if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'semantic-orange';
     if (/complete|completed|finished|resolved|healthy/.test(text)) return 'semantic-green';
-    if (provider === 'security' || /\b(?:door|lock|alarm)\b/.test(text)) return 'semantic-red';
-    if (/leak|water|moisture/.test(text)) return 'semantic-cyan';
-    if (provider === 'weather') return 'semantic-sky';
-    if (/waste|garbage|recycl/.test(text)) return 'semantic-green';
+    if (category === 'security' || /\b(?:door|lock|alarm)\b/.test(text)) return 'semantic-red';
+    if (/leak|water|moisture|humidity/.test(text)) return 'semantic-cyan';
+    if (category === 'weather') return 'semantic-sky';
+    if (/recycl/.test(text)) return 'semantic-teal';
+    if (category === 'waste' || /waste|garbage|trash/.test(text)) return 'semantic-green';
     if (/sprinkler|irrigation|watering/.test(text)) return 'semantic-teal';
-    if (/calendar|schedule|event/.test(text)) return 'semantic-purple';
+    if (category === 'schedule' || /calendar|schedule|event/.test(text)) return 'semantic-purple';
     if (/package|delivery/.test(text)) return 'semantic-orange';
     if (/traffic|road/.test(text)) return 'semantic-amber';
-    if (provider === 'energy' || /energy|power/.test(text)) return 'semantic-yellow';
+    if (category === 'energy' || /energy|power/.test(text)) return 'semantic-yellow';
     if (/climate|temperature|thermostat/.test(text)) return 'semantic-blue';
-    if (provider === 'laundry' || /laundry|washer|dryer/.test(text)) return 'semantic-lime';
+    if (category === 'laundry' || /laundry|washer|dryer/.test(text)) return 'semantic-lime';
     if (/music|media|tv|entertainment/.test(text)) return 'semantic-purple';
     return 'semantic-white';
   }
 
   _timestamp(item, active) {
-    return this._date(active ? (item?.created_at || item?.timestamp) : (item?.resolved_at || item?.created_at || item?.timestamp));
+    return this._date(
+      item?.resolved_at ||
+      (active
+        ? (item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp)
+        : (item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp))
+    );
+  }
+
+  _timestampValue(item, active = item?.active !== false) {
+    return item?.resolved_at || item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '';
+  }
+
+  _showsRelativeAge(item, category = this._categoryFor(item), title = this._label(item)) {
+    const settings = this._presentationPreferences?.timestamps || {};
+    const text = `${item?.entity_name || ''} ${item?.entity_id || ''} ${title || ''} ${item?.message || ''} ${item?.summary || ''} ${item?.state || ''}`.toLowerCase();
+    const eventType = String(item?.event_type || '').toLowerCase();
+    const contactEvent = eventType === 'contact' || (
+      category === 'security' && /\b(?:doors?|windows?)\b/.test(text)
+    );
+    const completedApplianceEvent = ['appliance_cycle', 'appliance_complete'].includes(eventType)
+      && /\b(?:washer|dryer|dishwasher)\b/.test(text)
+      && /\b(?:complete|completed|finished|done|cycle end)\b/.test(text);
+    if (contactEvent) return settings.contacts !== false;
+    if (completedApplianceEvent) return settings.appliance_complete !== false;
+    return settings.other === true;
   }
 
   _streamAsTicker(item, fallback = 'No new information') {
@@ -1126,13 +1308,25 @@ class HomeStatusCard extends HTMLElement {
       detail: '',
       priority: item.priority || 'normal',
       category: item.category || 'Home Status',
-      provider: item.provider,
       source: item.source,
-      _provider: item._provider,
+      source_kind: item.source_kind,
+      _category: item._category,
       entity_id: item.entity_id,
+      active: item.active,
+      state: item.state,
       created_at: item.created_at,
+      updated_at: item.updated_at,
+      occurred_at: item.occurred_at,
       resolved_at: item.resolved_at,
+      scheduled_at: item.scheduled_at,
+      all_day: item.all_day === true,
+      expires_at: item.expires_at,
       timestamp: item.timestamp,
+      source_id: item.source_id,
+      source_name: item.source_name,
+      home_device_id: item.home_device_id,
+      home_device_name: item.home_device_name,
+      entity_name: item.entity_name,
       navigation: item.action || item.navigation,
       icon: item.icon,
       media_url: item.media_url || item.media?.url || item.image_url || '',
@@ -1154,65 +1348,17 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _zoneItems(data) {
-    // sensor.home_status remains authoritative for which items are available.
-    // The card chooses presentation slots so verbose or urgent content is not
-    // trapped in the narrower right-hand panel by its provider category.
-    const sidebar = (this._config.home_status_visibility.sidebar && Array.isArray(data.sidebar) ? data.sidebar : [])
-      .slice();
-    const hero = (this._config.home_status_visibility.hero && Array.isArray(data.hero) ? data.hero : [])
-      .slice();
-    const seen = new Set();
-    const items = [...sidebar, ...hero].filter(item => {
-      const key = item?.id || item?.entity_id || `${this._label(item)}|${item?.summary || item?.secondary || ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (items.length < 2) return { left: items, right: [] };
-
-    const ranked = items
-      .map((item, index) => ({ item, index, score: this._wideSlotScore(item) }))
-      .sort((a, b) => b.score - a.score || a.index - b.index);
-    const left = ranked.filter(entry => entry.score >= 90).map(entry => entry.item);
-    const right = ranked.filter(entry => entry.score < 90).map(entry => entry.item);
-
-    // Preserve the familiar two-panel balance when all content is compact.
-    if (!left.length) {
-      const preferred = sidebar[0] || ranked[0].item;
-      left.push(preferred);
-      const preferredKey = preferred?.id || preferred?.entity_id || preferred;
-      const rightIndex = right.findIndex(item => (item?.id || item?.entity_id || item) === preferredKey);
-      if (rightIndex >= 0) right.splice(rightIndex, 1);
-    }
-    // If everything qualifies for the wide slot, keep the shortest routine
-    // item as supporting context unless every item is attention-worthy.
-    if (!right.length && left.length > 1) {
-      const candidate = [...left]
-        .reverse()
-        .find(item => !['critical', 'attention'].includes(String(item?.priority || 'normal').toLowerCase()));
-      if (candidate) {
-        left.splice(left.indexOf(candidate), 1);
-        right.push(candidate);
-      }
-    }
-    return { left, right };
-  }
-
-  _wideSlotScore(item) {
-    const priority = String(item?.priority || 'normal').toLowerCase();
-    const priorityScore = { critical: 1000, attention: 700, activity: 120, normal: 0 }[priority] || 0;
-    const title = this._label(item);
-    const summary = String(item?.summary || item?.secondary || item?.detail || '');
-    const textScore = Math.min(180, title.length + summary.length);
-    const mediaScore = this._heroMedia(item) ? 120 : 0;
-    return priorityScore + textScore + mediaScore;
+    return {
+      left: this._config.home_status_visibility.left && Array.isArray(data.left) ? data.left.slice() : [],
+      right: this._config.home_status_visibility.right && Array.isArray(data.right) ? data.right.slice() : []
+    };
   }
 
   _buildFooterStream(data) {
-    if (!this._config.home_status_visibility.footer) return [];
-    const authoritativeFooter = Array.isArray(data.footer) ? data.footer : [];
-    const items = authoritativeFooter
-      .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _provider: this._providerFor(item) }));
+    if (!this._config.home_status_visibility.bottom) return [];
+    const authoritativeBottom = Array.isArray(data.bottom) ? data.bottom : [];
+    const items = authoritativeBottom
+      .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _category: this._categoryFor(item) }));
     return this._footerFilters(data).group_contact_closures === true
       ? this._groupFooterContactClosures(items)
       : items;
@@ -1266,7 +1412,7 @@ class HomeStatusCard extends HTMLElement {
       const secondary = display.summary || relative
         ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? this._escape(relative) : ''}</small>`
         : '';
-      return `<span class="phone-status-ticker-item" data-stream-id="${this._escape(footerItem.id || '')}" data-stream-navigation="${this._escape(footerItem.navigation || '')}" data-stream-entity="${this._escape(footerItem.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(footerItem)}" icon="${this._escape(display.icon)}"></ha-icon><span class="phone-status-ticker-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span>`;
+      return `<span class="phone-status-ticker-item" data-stream-id="${this._escape(footerItem.id || '')}" data-stream-navigation="${this._escape(footerItem.navigation || '')}" data-stream-entity="${this._escape(footerItem.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(footerItem)}" icon="${this._escape(display.icon)}"${this._iconStyle(footerItem)}></ha-icon><span class="phone-status-ticker-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span>`;
     }).join('');
     const phoneTickerSequence = renderPhoneTickerSequence();
     const actionable = navigation || entity;
@@ -1301,7 +1447,7 @@ class HomeStatusCard extends HTMLElement {
     const isClosure = item => {
       const text = contactSearchText(item);
       return item.source === 'direct_history'
-        && item._provider === 'security'
+        && item._category === 'security'
         && /\bclosed\b/.test(text)
         && /\b(?:doors?|windows?|openings?|garage)\b/.test(text);
     };
@@ -1378,51 +1524,53 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _formatFooterItem(item) {
-    const provider = item._provider || this._providerFor(item);
+    const category = item._category || this._categoryFor(item);
     const id = String(item.id || '');
-    let title = this._label(item);
+    let title = this._glanceableMeasurementTitle(this._label(item));
     let summary = this._humanizeStatusText(item.summary || item.secondary || '');
     let icon = item.icon || 'mdi:information-outline';
-    const currentWeather = provider === 'weather' && id.startsWith('current:weather:');
-    const indoorTemperature = provider === 'climate'
+    const currentWeather = category === 'weather' && (id.startsWith('current:weather:') || item.source_kind === 'weather');
+    const indoorTemperature = category === 'climate'
       && (id.startsWith('current:climate:') || /^Indoor Temperature$/i.test(title));
     if (currentWeather) {
-      const weatherSummary = String(summary).replace(/\s*(?:\u2022|\u00e2\u20ac\u00a2)\s*\d+\s*(?:min|hr|day)s?\s+ago\s*$/i, '');
-      const parts = weatherSummary.split(/\s*(?:\u2022|\u00e2\u20ac\u00a2|\|)\s*/, 2);
-      title = parts[0] || title;
-      summary = this._friendlyWeatherCondition(parts[1] || item.state || '');
-      icon = 'mdi:thermometer';
+      title = this._glanceableTemperature(title || item.summary || item.detail || '');
+      summary = this._friendlyWeatherCondition(item.state || item.summary || item.detail || '');
+      icon = item.icon || 'mdi:weather-partly-cloudy';
     } else if (indoorTemperature) {
       title = this._glanceableTemperature(summary);
       summary = 'Indoors';
       icon = item.icon || 'mdi:home-thermometer-outline';
     }
-    const relativeStamp = !currentWeather && !indoorTemperature
-      ? item.resolved_at || item.created_at || item.timestamp || ''
+    const scheduled = item.scheduled_at ? this._friendlyScheduled(item.scheduled_at, item.all_day === true) : '';
+    if (scheduled) {
+      summary = [item.source_name || summary, scheduled].filter(Boolean).join(' · ');
+    }
+    const relativeStamp = !currentWeather && !indoorTemperature && !scheduled && this._showsRelativeAge(item, category, title)
+      ? this._timestampValue(item)
       : '';
-    if (provider === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
+    if (category === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
       title = String(title).replace(/^NT WEATHER\s*/i, '').replace(/\s+/g, ' ').trim();
       summary = item.expires_at ? `Until ${this._formatDateTime(item.expires_at)}` : '';
       icon = 'mdi:weather-alert';
-    } else if (provider === 'security') {
+    } else if (category === 'security') {
       icon = item.icon || 'mdi:shield-check';
-      const contactText = `${item.entity_id || ''} ${title}`;
-      if (
-        item.source === 'direct_history'
-        && /\bclosed\b/i.test(contactText)
-        && /\b(?:doors?|windows?|openings?|garage)\b/i.test(contactText)
-      ) {
-        const name = this._plainEntityName(
+      const contactText = `${item.entity_id || ''} ${item.entity_name || ''} ${title}`;
+      if (/\bclosed\b/i.test(contactText) && /\b(?:doors?|windows?|openings?|garage)\b/i.test(contactText)) {
+        const explicitName = String(item.entity_name || '').trim();
+        const name = explicitName || this._plainEntityName(
           item.entity_id,
-          String(title).replace(/\s+(?:is\s+)?closed\b.*$/i, '')
+          String(item.message || title).replace(/\s+(?:is\s+)?closed\b.*$/i, '')
         );
-        title = `${name} Closed`;
+        if (name) title = `${name} Closed`;
         summary = '';
       }
-    } else if (provider === 'laundry') {
+    } else if (category === 'laundry') {
       icon = item.icon || 'mdi:washing-machine';
-    } else if (provider === 'cameras') {
+    } else if (category === 'cameras') {
       icon = item.icon || 'mdi:camera';
+    }
+    if (item.active === false && item.resolved_at) {
+      summary = '';
     }
     return {
       title: String(title).replace(/\s+/g, ' ').trim().slice(0, 60),
@@ -1474,16 +1622,18 @@ class HomeStatusCard extends HTMLElement {
       const groupedLabels = Array.isArray(item.grouped_contact_labels)
         ? ` data-footer-group-labels="${this._escape(JSON.stringify(item.grouped_contact_labels))}" data-footer-group-title="${this._escape(display.title)}"`
         : '';
-      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupedLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
+      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupedLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"${this._iconStyle(item)}></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
     }).join('');
     const sequence = items.length ? renderSequence() : '';
-    const duplicateSequence = sequence;
+    const singleItem = items.length === 1;
     target.innerHTML = sequence
-      ? `<div class="footer-marquee"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div><div class="footer-sequence" aria-hidden="true">${duplicateSequence}</div></div></div>`
+      ? singleItem
+        ? `<div class="footer-marquee single-item"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div></div></div>`
+        : `<div class="footer-marquee"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div><div class="footer-sequence" aria-hidden="true">${sequence}</div></div></div>`
       : '';
     const trackElement = target.querySelector('.footer-marquee-track');
     const firstSequence = target.querySelector('.footer-sequence');
-    if (trackElement && firstSequence) {
+    if (!singleItem && trackElement && firstSequence) {
       this._updateFooterMarqueeMetrics(target);
       if (typeof ResizeObserver !== 'undefined') {
         this._footerResizeObserver = new ResizeObserver(() => {
@@ -1502,14 +1652,14 @@ class HomeStatusCard extends HTMLElement {
     if (!track || !firstSequence) return;
     const distance = firstSequence.getBoundingClientRect().width;
     if (!Number.isFinite(distance) || distance <= 0) return;
-    const duration = Math.max(8, distance / this._config.footer_speed);
+    const duration = Math.max(8, distance / this._config.bottom_speed);
     track.style.setProperty('--marquee-distance', `${distance}px`);
     track.style.setProperty('--marquee-duration', `${duration}s`);
   }
 
-  _providerFor(item) {
-    const rawCategory = String(item?.provider || item?.category || item?.source || '').toLowerCase();
-    const category = BACKEND_PROVIDER_ALIASES[rawCategory] || rawCategory;
+  _categoryFor(item) {
+    const rawCategory = String(item?.category || item?.source_kind || item?.source || '').toLowerCase();
+    const category = BACKEND_CATEGORY_ALIASES[rawCategory] || rawCategory;
     return category.includes('weather') ? 'weather'
       : category.includes('security') || category.includes('alarm') || category.includes('contact') ? 'security'
         : category.includes('fault') ? 'maintenance'
@@ -1522,12 +1672,12 @@ class HomeStatusCard extends HTMLElement {
 
   _zoneMarkup(item, emptyLabel) {
     if (!item) return `<span class="zone-item zone-empty">${this._escape(emptyLabel)}</span>`;
-    let title = this._label(item);
+    let title = this._glanceableMeasurementTitle(this._label(item));
     let summary = this._humanizeStatusText(item.summary || item.secondary || item.detail || '');
-    const provider = this._providerFor(item);
-    const currentWeather = provider === 'weather'
-      && (/^current:weather:/i.test(String(item.id || '')) || /^weather$/i.test(title));
-    const indoorTemperature = provider === 'climate'
+    const category = this._categoryFor(item);
+    const currentWeather = category === 'weather'
+      && (/^current:weather:/i.test(String(item.id || '')) || item.source_kind === 'weather' || /^weather$/i.test(title));
+    const indoorTemperature = category === 'climate'
       && (/^current:climate:/i.test(String(item.id || '')) || /^Indoor Temperature$/i.test(title));
     if (currentWeather) {
       const parts = String(summary).split(/\s*(?:\u2022|\u00e2\u20ac\u00a2|\|)\s*/, 2);
@@ -1537,17 +1687,30 @@ class HomeStatusCard extends HTMLElement {
       title = this._glanceableTemperature(summary);
       summary = 'Indoors';
     }
-    const relative = !currentWeather && !indoorTemperature
-      ? this._relative(this._timestamp(item, item?.active !== false))
+    const scheduled = item.scheduled_at ? this._friendlyScheduled(item.scheduled_at, item.all_day === true) : '';
+    if (scheduled) {
+      summary = [item.source_name || summary, scheduled].filter(Boolean).join(' · ');
+    }
+    const relative = !currentWeather && !indoorTemperature && !scheduled && this._showsRelativeAge(item, category, title)
+      ? this._relative(this._timestampValue(item))
       : '';
     if (relative) {
       summary = [summary, relative].filter(Boolean).join(' — ');
     }
     const brief = `${title} ${summary}`.trim().length <= 42;
+    const measurementValue = /^-?\d+(?:\.\d+)?(?:%|°[CF])$/i.test(String(title).trim());
     const media = this._heroMedia(item);
     const mediaMarkup = media ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true"><span class="hero-media-overlay"></span></span>` : '';
-    const content = `<span class="hero-content"><span class="zone-title"><ha-icon class="icon-tone-${this._iconTone(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
-    return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''}${brief ? ' is-brief' : ''}${currentWeather ? ' is-current-weather' : ''}${indoorTemperature ? ' is-indoor-temperature' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
+    const content = `<span class="hero-content"><span class="zone-title"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"${this._iconStyle(item)}></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
+    return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''}${brief ? ' is-brief' : ''}${currentWeather ? ' is-current-weather' : ''}${indoorTemperature ? ' is-indoor-temperature' : ''}${measurementValue ? ' is-measurement' : ''}${scheduled ? ' is-scheduled' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
+  }
+
+  _glanceableMeasurementTitle(value) {
+    const text = String(value || '').trim();
+    return text.replace(/^(Humidity|Temperature):\s*(-?\d+(?:\.\d+)?)(%|°?[CF])$/i, (_match, _label, number, unit) => {
+      const rounded = Math.round(Number(number));
+      return `${rounded}${unit}`;
+    });
   }
 
   _glanceableTemperature(value) {
@@ -1622,10 +1785,16 @@ class HomeStatusCard extends HTMLElement {
       item?.entity_id || '',
       item?.title || item?.message || '',
       item?.summary || item?.secondary || item?.detail || '',
+      item?.home_device_name || '',
+      item?.entity_name || '',
+      item?.source_name || '',
+      item?.scheduled_at || '',
+      item?.all_day === true ? 'all-day' : '',
+      item?.resolved_at || item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '',
       item?.priority || '',
       item?.icon || '',
       item?.media_url || item?.media?.url || item?.image_url || '',
-      item?.provider || '',
+      item?.category || '',
       item?.state || ''
     ].join('|');
   }
@@ -1635,11 +1804,14 @@ class HomeStatusCard extends HTMLElement {
     const zones = this._zoneItems(data);
     const signatures = Object.fromEntries(
       Object.entries(zones).map(([zone, items]) => {
-        const area = zone === 'left' ? 'sidebar' : 'hero';
-        const config = this._config[area] || {};
-        const interval = zone === 'right'
-          ? Number(data.display?.hero_rotation_seconds) || this._config.rotation_seconds
-          : Number(config.interval) || (zone === 'left' ? 5 : 7);
+        const config = this._config[zone] || {};
+        const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
+        const legacyRightInterval = zone === 'right' ? Number(data.display?.hero_rotation_seconds) : NaN;
+        const interval = Number.isFinite(backendInterval) && backendInterval > 0
+          ? backendInterval
+          : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
+            ? legacyRightInterval
+            : Number(config.interval) || this._config.rotation_seconds;
         return [
           zone,
           `${items.map(item => this._zoneItemSignature(item)).join('||')}::${config.rotate !== false}|${interval}`
@@ -1664,15 +1836,18 @@ class HomeStatusCard extends HTMLElement {
       const previous = previousId && ids.indexOf(previousId) >= 0 ? ids.indexOf(previousId) : this._zoneIndexes[zone];
       this._zoneIndexes[zone] = Math.min(previous, Math.max(0, zones[zone].length - 1));
       this._zoneIds[zone] = ids[this._zoneIndexes[zone]] || null;
-      const area = zone === 'left' ? 'sidebar' : zone === 'right' ? 'hero' : 'footer';
-      const config = this._config[area] || {};
+      const config = this._config[zone] || {};
       const item = zones[zone][this._zoneIndexes[zone]];
       this._renderZone(zone, item, zone === 'right' ? 'No current events' : 'No upcoming information');
       if (config.rotate === false || zones[zone].length < 2) return;
-      const backendHeroInterval = Number(data.display?.hero_rotation_seconds);
-      const interval = zone === 'right'
-        ? Math.max(1, Number.isFinite(backendHeroInterval) && backendHeroInterval > 0 ? backendHeroInterval : this._config.rotation_seconds)
-        : Math.max(2, Number(config.interval) || (5 + index * 2));
+      const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
+      const legacyRightInterval = zone === 'right' ? Number(data.display?.hero_rotation_seconds) : NaN;
+      const configuredInterval = Number.isFinite(backendInterval) && backendInterval > 0
+        ? backendInterval
+        : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
+          ? legacyRightInterval
+          : Number(config.interval) || this._config.rotation_seconds;
+      const interval = Math.max(zone === 'left' ? 2 : 1, configuredInterval);
       this._zoneTimers[zone] = setInterval(() => {
         if (this._rotationPaused) return;
         this._zoneIndexes[zone] = (this._zoneIndexes[zone] + 1) % zones[zone].length;
@@ -1945,16 +2120,16 @@ class HomeStatusCard extends HTMLElement {
     }
     if (id === 'cameras') {
       const item = (data?.active || []).find(candidate =>
-        candidate?.provider === 'cameras' || candidate?.event_type === 'camera_offline'
+        candidate?.category === 'cameras' || candidate?.event_type === 'camera_offline'
       );
       return item
         ? { state: item.message || item.title || 'Camera Offline', icon: 'mdi:cctv-off', tone: 'critical', active: true }
         : neutral('All Online', 'mdi:cctv');
     }
     if (id === 'calendar') {
-      const item = [...(data?.sidebar || []), ...(data?.footer || [])].find(candidate => {
+      const item = [...(data?.left || []), ...(data?.right || []), ...(data?.bottom || [])].find(candidate => {
         const entity = String(candidate?.entity_id || '');
-        return candidate?.provider === 'schedule'
+        return candidate?.category === 'schedule'
           && !/sprinkler|watering|garbage|recycl|waste/i.test(`${entity} ${candidate?.title || ''}`);
       });
       const state = item?.title || item?.message || 'Open Calendar';
@@ -2041,7 +2216,256 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _styles() {
-    return `<style>${CSS}</style>`;
+    return `<style>${CSS}
+/* Tablet-first 10-foot readability: measurements and schedule time are glance targets. */
+.primary-zone .zone-item.is-measurement .zone-title,.secondary-zone .zone-item.is-measurement .zone-title { font-size:64px !important; font-weight:780; line-height:.98; letter-spacing:-1.4px; }
+.primary-zone .zone-item.is-measurement .zone-summary,.secondary-zone .zone-item.is-measurement .zone-summary { margin-top:10px; font-size:24px !important; font-weight:600; line-height:1.15; color:rgba(255,255,255,.88); }
+.primary-zone .zone-item.is-measurement .zone-title ha-icon,.secondary-zone .zone-item.is-measurement .zone-title ha-icon { width:56px !important; height:56px !important; --mdc-icon-size:56px; }
+.primary-zone .zone-item.is-scheduled .zone-summary,.secondary-zone .zone-item.is-scheduled .zone-summary { margin-top:9px; font-size:22px !important; font-weight:650; line-height:1.2; color:rgba(255,255,255,.9); }
+.footer-marquee-item ha-icon { width:38px !important; height:38px !important; --mdc-icon-size:38px; }
+.footer-marquee-copy strong { font-size:21px !important; font-weight:780 !important; line-height:1.05; }
+.footer-marquee-copy small { margin-top:6px !important; font-size:17px !important; font-weight:600; line-height:1.1; opacity:.88 !important; }
+.footer-marquee-item.is-current-weather ha-icon,.footer-marquee-item.is-indoor-temperature ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px; }
+.footer-marquee-item.is-current-weather .footer-marquee-copy strong,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:30px !important; font-weight:800 !important; }
+.footer-marquee-item.is-current-weather .footer-marquee-copy small,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { font-size:18px !important; }
+
+/* HOME STATUS 10FT READABILITY FINAL OVERRIDES v0.3.24 */
+/* Match the tablet/desktop profile specificity of the v0.3.23 rules so these final values actually win. */
+:host([data-profile="auto"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title {
+  font-size:64px !important; font-weight:850 !important; line-height:.92 !important; letter-spacing:-1.6px !important;
+}
+:host([data-profile="auto"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon {
+  width:56px !important; height:56px !important; --mdc-icon-size:56px !important;
+}
+:host([data-profile="auto"]) .primary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-summary {
+  margin-top:8px !important; font-size:27px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
+}
+:host([data-profile="auto"]) .zone-item.is-current-weather .zone-title,
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title {
+  font-size:60px !important; font-weight:840 !important; line-height:.94 !important; letter-spacing:-1.3px !important;
+}
+:host([data-profile="auto"]) .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title ha-icon {
+  width:54px !important; height:54px !important; --mdc-icon-size:54px !important;
+}
+:host([data-profile="auto"]) .zone-item.is-current-weather .zone-summary,
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-summary,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-summary {
+  margin-top:8px !important; font-size:28px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
+}
+:host([data-profile="auto"]) .zone-item.is-scheduled .zone-summary,
+:host([data-profile="tablet"]) .zone-item.is-scheduled .zone-summary,
+:host([data-profile="desktop"]) .zone-item.is-scheduled .zone-summary {
+  font-size:25px !important; font-weight:680 !important; line-height:1.12 !important;
+}
+:host([data-profile="auto"]) .ticker-footer,
+:host([data-profile="tablet"]) .ticker-footer,
+:host([data-profile="desktop"]) .ticker-footer { min-height:102px !important; padding-top:12px !important; }
+:host([data-profile="auto"]) .footer-marquee,
+:host([data-profile="tablet"]) .footer-marquee,
+:host([data-profile="desktop"]) .footer-marquee { height:102px !important; }
+:host([data-profile="auto"]) .footer-marquee-item,
+:host([data-profile="tablet"]) .footer-marquee-item,
+:host([data-profile="desktop"]) .footer-marquee-item { padding:0 32px !important; }
+:host([data-profile="auto"]) .footer-marquee-item > [data-stream-id],
+:host([data-profile="tablet"]) .footer-marquee-item > [data-stream-id],
+:host([data-profile="desktop"]) .footer-marquee-item > [data-stream-id] { gap:14px !important; }
+:host([data-profile="auto"]) .footer-marquee-item ha-icon,
+:host([data-profile="tablet"]) .footer-marquee-item ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item ha-icon { width:38px !important; height:38px !important; --mdc-icon-size:38px !important; }
+:host([data-profile="auto"]) .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-copy strong { font-size:26px !important; font-weight:820 !important; line-height:1.02 !important; letter-spacing:.15px !important; }
+:host([data-profile="auto"]) .footer-marquee-copy small,
+:host([data-profile="tablet"]) .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-copy small { margin-top:7px !important; font-size:21px !important; font-weight:650 !important; line-height:1.05 !important; opacity:.9 !important; }
+:host([data-profile="auto"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="auto"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:38px !important; font-weight:850 !important; }
+:host([data-profile="auto"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
+:host([data-profile="auto"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { font-size:22px !important; }
+:host([data-profile="auto"]) .footer-marquee-item.is-current-weather ha-icon,
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather ha-icon,
+:host([data-profile="auto"]) .footer-marquee-item.is-indoor-temperature ha-icon,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px !important; }
+
+/* Right information area balance: keep 10-foot readability without letting weather/measurements dominate. */
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title {
+  font-size:48px !important; font-weight:820 !important; line-height:.98 !important; letter-spacing:-1px !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon {
+  width:44px !important; height:44px !important; --mdc-icon-size:44px !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-summary,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-summary,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-summary {
+  margin-top:7px !important; font-size:22px !important; font-weight:640 !important; line-height:1.1 !important;
+}
+
+/* Main information icons: give normal left/right items enough visual weight at tablet distance. */
+:host([data-profile="auto"]) .primary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon,
+:host([data-profile="tablet"]) .primary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon,
+:host([data-profile="desktop"]) .primary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon,
+:host([data-profile="auto"]) .secondary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item:not(.is-measurement):not(.is-current-weather) .zone-title ha-icon {
+  width:40px !important; height:40px !important; --mdc-icon-size:40px !important;
+}
+
+/* Weather-only balance: slightly reduce right-side current-condition prominence. */
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title {
+  font-size:44px !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon {
+  width:40px !important; height:40px !important; --mdc-icon-size:40px !important;
+}
+
+
+/* User-configurable presentation contract. These rules intentionally come last. */
+:host([data-profile="auto"]) .ticker,
+:host([data-profile="tablet"]) .ticker,
+:host([data-profile="desktop"]) .ticker {
+  height:var(--hs-card-body-height,380px) !important;
+  min-height:var(--hs-card-body-height,380px) !important;
+}
+:host([data-profile="auto"]) .ticker:has(.live-banner-details:not([hidden])),
+:host([data-profile="tablet"]) .ticker:has(.live-banner-details:not([hidden])),
+:host([data-profile="desktop"]) .ticker:has(.live-banner-details:not([hidden])) {
+  height:var(--hs-card-live-height,424px) !important;
+  min-height:var(--hs-card-live-height,424px) !important;
+}
+:host([data-profile="auto"]) .ticker-zone,
+:host([data-profile="tablet"]) .ticker-zone,
+:host([data-profile="desktop"]) .ticker-zone,
+:host([data-profile="auto"]) .secondary-item,
+:host([data-profile="tablet"]) .secondary-item,
+:host([data-profile="desktop"]) .secondary-item {
+  height:var(--hs-main-row-height,150px) !important;
+}
+:host([data-profile="auto"]) .primary-zone .zone-title,
+:host([data-profile="tablet"]) .primary-zone .zone-title,
+:host([data-profile="desktop"]) .primary-zone .zone-title { font-size:var(--hs-left-title-size,23px) !important; }
+:host([data-profile="auto"]) .primary-zone .zone-summary,
+:host([data-profile="tablet"]) .primary-zone .zone-summary,
+:host([data-profile="desktop"]) .primary-zone .zone-summary { font-size:var(--hs-left-summary-size,15px) !important; }
+:host([data-profile="auto"]) .primary-zone .zone-title ha-icon,
+:host([data-profile="tablet"]) .primary-zone .zone-title ha-icon,
+:host([data-profile="desktop"]) .primary-zone .zone-title ha-icon {
+  width:var(--hs-left-icon-size,40px) !important; height:var(--hs-left-icon-size,40px) !important; --mdc-icon-size:var(--hs-left-icon-size,40px) !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-title { font-size:var(--hs-right-title-size,23px) !important; }
+:host([data-profile="auto"]) .secondary-zone .zone-summary,
+:host([data-profile="tablet"]) .secondary-zone .zone-summary,
+:host([data-profile="desktop"]) .secondary-zone .zone-summary { font-size:var(--hs-right-summary-size,15px) !important; }
+:host([data-profile="auto"]) .secondary-zone .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-title ha-icon {
+  width:var(--hs-right-icon-size,40px) !important; height:var(--hs-right-icon-size,40px) !important; --mdc-icon-size:var(--hs-right-icon-size,40px) !important;
+}
+:host([data-profile="auto"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title {
+  font-size:var(--hs-left-value-size,64px) !important;
+}
+:host([data-profile="auto"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon {
+  width:var(--hs-left-value-icon-size,56px) !important; height:var(--hs-left-value-icon-size,56px) !important; --mdc-icon-size:var(--hs-left-value-icon-size,56px) !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title {
+  font-size:var(--hs-right-value-size,48px) !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon {
+  width:var(--hs-right-value-icon-size,44px) !important; height:var(--hs-right-value-icon-size,44px) !important; --mdc-icon-size:var(--hs-right-value-icon-size,44px) !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title {
+  font-size:var(--hs-right-weather-size,44px) !important;
+}
+:host([data-profile="auto"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-current-weather .zone-title ha-icon {
+  width:var(--hs-right-icon-size,40px) !important; height:var(--hs-right-icon-size,40px) !important; --mdc-icon-size:var(--hs-right-icon-size,40px) !important;
+}
+:host([data-profile="auto"]) .ticker-footer,
+:host([data-profile="tablet"]) .ticker-footer,
+:host([data-profile="desktop"]) .ticker-footer,
+:host([data-profile="auto"]) .footer-marquee,
+:host([data-profile="tablet"]) .footer-marquee,
+:host([data-profile="desktop"]) .footer-marquee {
+  min-height:var(--hs-bottom-height,102px) !important;
+  height:var(--hs-bottom-height,102px) !important;
+}
+:host([data-profile="auto"]) .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-copy strong { font-size:var(--hs-bottom-title-size,26px) !important; }
+:host([data-profile="auto"]) .footer-marquee-copy small,
+:host([data-profile="tablet"]) .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-copy small { font-size:var(--hs-bottom-summary-size,21px) !important; }
+:host([data-profile="auto"]) .footer-marquee-item ha-icon,
+:host([data-profile="tablet"]) .footer-marquee-item ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item ha-icon {
+  width:var(--hs-bottom-icon-size,38px) !important; height:var(--hs-bottom-icon-size,38px) !important; --mdc-icon-size:var(--hs-bottom-icon-size,38px) !important;
+}
+:host([data-profile="auto"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="auto"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong {
+  font-size:var(--hs-bottom-value-size,38px) !important;
+}
+</style>`;
   }
 
   _stopZoneRotations() {
@@ -2052,7 +2476,7 @@ class HomeStatusCard extends HTMLElement {
     this._zoneRenderGenerations = { left: 0, right: 0 };
   }
 
-  _renderProviderLayout(data) {
+  _renderCategoryLayout(data) {
     this._ensureVisibilityObserver();
     const configuredMedia = this._config.display?.media_enabled;
     this._mediaEnabled = configuredMedia === undefined
@@ -2088,8 +2512,8 @@ class HomeStatusCard extends HTMLElement {
   _weatherVisualEffect(data) {
     if (this._config.animation.level === 'none') return 'none';
     if (this._config.weather_effect !== 'auto') return this._config.weather_effect;
-    const items = [...(data.hero || []), ...(data.sidebar || []), ...(data.footer || [])];
-    const weather = items.find(item => item?.provider === 'weather' && item?.visual_effect);
+    const items = [...(data.left || []), ...(data.right || []), ...(data.bottom || [])];
+    const weather = items.find(item => item?.category === 'weather' && item?.visual_effect);
     return data.weather_visual_effect || weather?.visual_effect || 'none';
   }
 
@@ -2275,11 +2699,13 @@ class HomeStatusCard extends HTMLElement {
   render() {
     if (!this._config || !this._hass) return;
     const data = this._getRuntimeData();
-    this._renderProviderLayout(data);
+    this._applyPresentationPreferences(data);
+    this._renderCategoryLayout(data);
   }
 
   _update() {
     const data = this._getRuntimeData();
+    this._applyPresentationPreferences(data);
     if (!this.shadowRoot.querySelector('.ticker')) return this.render();
     this._renderPhoneStatus(data);
     const tickerButton = this.shadowRoot.querySelector('.ticker');
@@ -2570,9 +2996,9 @@ class HomeStatusCard extends HTMLElement {
       recent_drawer_limit: 10,
       rotation_seconds: 4,
       utility_header: { enabled: false },
-      hero: { rotate: true },
-      sidebar: { rotate: true, interval: 7 },
-      footer: { rotate: false, speed: 35 },
+      left: { rotate: true, interval: 7 },
+      right: { rotate: true },
+      bottom: { rotate: false, speed: 35 },
       grid_options: { columns: 36, rows: 7 },
       sizing: { max_width: 0, min_height: 0 },
       animation: { level: 'full' },
@@ -2580,9 +3006,9 @@ class HomeStatusCard extends HTMLElement {
       weather_effect: 'auto',
       pause_on_hover: true,
       home_status_visibility: {
-        hero: true,
-        sidebar: true,
-        footer: true,
+        left: true,
+        right: true,
+        bottom: true,
         phone_ticker: true,
         drawer: false
       }
@@ -2631,7 +3057,29 @@ class HomeStatusCardEditor extends HTMLElement {
   }
 
   _value(path, fallback = '') {
-    return homeStatusGetPath(this._config, path, fallback);
+    const value = homeStatusGetPath(this._config, path, undefined);
+    if (value !== undefined) return value;
+    const compatibilityPaths = {
+      left: 'sidebar',
+      right: 'hero',
+      bottom: 'footer',
+      'home_status_visibility.left': 'home_status_visibility.sidebar',
+      'home_status_visibility.right': 'home_status_visibility.hero',
+      'home_status_visibility.bottom': 'home_status_visibility.footer',
+      'left.rotate': 'sidebar.rotate',
+      'left.interval': 'sidebar.interval',
+      'right.rotate': 'hero.rotate',
+      'right.interval': 'hero.interval',
+      'bottom.rotate': 'footer.rotate',
+      'bottom.speed': 'footer.speed'
+    };
+    const legacyPath = compatibilityPaths[path];
+    if (legacyPath) {
+      const legacyValue = homeStatusGetPath(this._config, legacyPath, undefined);
+      if (legacyValue !== undefined) return legacyValue;
+    }
+    if (path === 'right.interval') return homeStatusGetPath(this._config, 'rotation_seconds', fallback);
+    return fallback;
   }
 
   _select(path, label, options, fallback, help = '') {
@@ -2683,7 +3131,7 @@ class HomeStatusCardEditor extends HTMLElement {
       warnings.push('The full layout needs at least 7 rows. A shorter grid can overlap the next dashboard section.');
     }
     const visibility = homeStatusObject(this._value('home_status_visibility', {}));
-    if ([visibility.hero, visibility.sidebar, visibility.footer, visibility.phone_ticker].every(value => value === false)) {
+    if ([this._value('home_status_visibility.left', true), this._value('home_status_visibility.right', true), this._value('home_status_visibility.bottom', true), visibility.phone_ticker].every(value => value === false)) {
       warnings.push('Every information area is hidden, so the card may appear empty. Enable at least one presentation area.');
     }
     const configuredActions = Object.values(homeStatusObject(this._value('context_actions', {})))
@@ -2773,7 +3221,7 @@ class HomeStatusCardEditor extends HTMLElement {
       .advanced-note { padding:12px 14px; border-left:4px solid var(--warning-color,#ff9800); border-radius:8px; background:color-mix(in srgb,var(--warning-color,#ff9800) 9%,transparent); }
       @media (max-width:520px) { .section { grid-template-columns:1fr; } }
     </style><div class="editor">
-      <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration providers and notification rules remain in Settings → Devices & services → Home Status.</small></div>
+      <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration discovery and notification rules remain in Settings → Devices & services → Home Status.</small></div>
       ${entityMissing ? `<div class="warning"><strong>Home Status sensor not found</strong><br><span>${this._escape(entity)}</span><small>Finish integration setup or choose an existing Home Status sensor below. The card will show an unavailable message until the entity exists.</small></div>` : ''}
       ${validationWarnings.length ? `<div class="warning"><strong>Check these settings</strong>${validationWarnings.map(message => `<small>${this._escape(message)}</small>`).join('')}</div>` : ''}
       <nav class="level-nav" aria-label="Editor level">${['recommended', 'customize', 'advanced'].map(level => `<button type="button" data-editor-level="${level}" class="${this._editorLevel === level ? 'active' : ''}">${level[0].toUpperCase()}${level.slice(1)}</button>`).join('')}</nav>
@@ -2802,18 +3250,18 @@ class HomeStatusCardEditor extends HTMLElement {
       </div></details>
       <details data-section="visibility"${sectionOpen('visibility', true) ? ' open' : ''}${levelHidden('customize')}><summary>What appears</summary><div class="section">
         ${this._toggle('utility_header.enabled', 'Clock, security & music header', true)}
-        ${this._toggle('home_status_visibility.hero', 'Main notification area', true)}
-        ${this._toggle('home_status_visibility.sidebar', 'Details panel', true)}
-        ${this._toggle('home_status_visibility.footer', 'Footer ticker', true)}
+        ${this._toggle('home_status_visibility.left', 'Left area', true)}
+        ${this._toggle('home_status_visibility.right', 'Right area', true)}
+        ${this._toggle('home_status_visibility.bottom', 'Bottom ticker', true)}
         ${this._toggle('home_status_visibility.phone_ticker', 'Phone ticker', true)}
         ${this._toggle('home_status_visibility.drawer', 'Navigation drawer', false, 'Enable after adding destinations in Advanced. Opens configured navigation buttons when the main card is tapped.')}
       </div></details>
       <details data-section="ticker"${sectionOpen('ticker', true) ? ' open' : ''}${levelHidden('customize')}><summary>Motion & timing</summary><div class="section">
-        ${this._number('footer.speed', 'Ticker speed', 35, 8, 120, 'Lower values move faster.')}
-        ${this._number('rotation_seconds', 'Default rotation time', 4, 1, 120)}
-        ${this._number('sidebar.interval', 'Side rotation time', 7, 2, 120)}
-        ${this._toggle('hero.rotate', 'Rotate main items', true)}
-        ${this._toggle('sidebar.rotate', 'Rotate side items', true)}
+        ${this._number('bottom.speed', 'Bottom ticker speed', 35, 8, 120, 'Lower values move faster.')}
+        ${this._number('right.interval', 'Right rotation time', 4, 1, 120)}
+        ${this._number('left.interval', 'Left rotation time', 7, 2, 120)}
+        ${this._toggle('left.rotate', 'Rotate left items', true)}
+        ${this._toggle('right.rotate', 'Rotate right items', true)}
         ${this._toggle('pause_on_hover', 'Pause animation while hovering', true)}
         ${this._select('animation.level', 'Animation level', [
           { value: 'full', label: 'Full' },
@@ -2998,9 +3446,9 @@ const CSS = `
 :host([data-animation="reduced"]) .utility-security { animation:none !important; }
 :host, ha-card { display:block; overflow:hidden; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family, sans-serif); }
 .phone-status-host { display:none; }
-.ticker { height:310px !important; min-height:310px !important; }
+.ticker { height:380px !important; min-height:380px !important; }
 .ticker.has-live-state .ticker-zones { padding-top:44px; box-sizing:border-box; }
-.ticker:has(.live-banner-details:not([hidden])) { height:354px !important; min-height:354px !important; }
+.ticker:has(.live-banner-details:not([hidden])) { height:424px !important; min-height:424px !important; }
 .ticker:has(.live-banner-details:not([hidden])) .ticker-zones { padding-top:88px; }
 .primary-zone:has(.has-hero-media) { height:176px; } .hero-zone-item.has-hero-media { height:176px; } .primary-zone .zone-title { font-size:31px !important; } .primary-zone .zone-summary { font-size:18px !important; line-height:1.45; }
 .primary-zone .zone-title ha-icon { width:31px !important; height:31px !important; } .secondary-zone .zone-title ha-icon { width:31px !important; height:31px !important; }
@@ -3018,9 +3466,9 @@ const CSS = `
  .zone-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; cursor:pointer; opacity:1; transition:opacity 180ms ease, transform 180ms ease; } .zone-changing .zone-item { opacity:0; transform:translateY(4px); } .zone-title { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; font-weight:650; line-height:1.2; white-space:nowrap; } .zone-title span { overflow:hidden; text-overflow:ellipsis; } .zone-title ha-icon { flex:0 0 auto; width:22px; height:22px; } .zone-summary { display:-webkit-box; margin-top:7px; overflow:hidden; color:rgba(255,255,255,.76); line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; } .zone-empty { color:var(--secondary-text-color); font-size:13px; }
 .secondary-zone .zone-item.is-brief .zone-title { font-size:28px !important; } .secondary-zone .zone-item.is-brief .zone-summary { font-size:18px !important; } .secondary-zone .zone-item.is-brief .zone-title ha-icon { width:30px !important; height:30px !important; }
 .secondary-zone .zone-item.is-current-weather .zone-title,.secondary-zone .zone-item.is-indoor-temperature .zone-title { font-size:52px !important; font-weight:740; line-height:1.05; } .secondary-zone .zone-item.is-current-weather .zone-summary,.secondary-zone .zone-item.is-indoor-temperature .zone-summary { margin-top:6px; font-size:25px !important; line-height:1.2; color:rgba(255,255,255,.84); } .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,.secondary-zone .zone-item.is-indoor-temperature .zone-title ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px; }
-.ticker-zone { display:flex; align-items:center; min-width:0; height:104px; }
+.ticker-zone { display:flex; align-items:center; min-width:0; height:150px; }
 .secondary-zone { padding-left:24px; border-left:1px solid rgba(255,255,255,.1); }
-.secondary-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; height:104px; }
+.secondary-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; height:150px; }
 .secondary-empty { opacity:.65; }
 .ticker:focus-visible { outline:2px solid var(--focus-color,#42a5f5); outline-offset:3px; }
 .main-icon { display:grid; place-items:center; flex:0 0 40px; width:40px; height:40px; border-radius:12px; background:rgba(102,187,106,.12); color:#66bb6a; }
@@ -3029,6 +3477,7 @@ const CSS = `
 .ticker-primary { overflow:hidden; font-size:25px; font-weight:650; line-height:30px; text-overflow:ellipsis; white-space:nowrap; } .ticker-detail { display:block; max-width:100%; margin-top:8px; overflow:hidden; color:rgba(255,255,255,.82); font-size:15px; line-height:20px; text-overflow:ellipsis; white-space:nowrap; } .ticker-secondary { overflow:hidden; margin-top:7px; color:var(--secondary-text-color); font-size:13px; line-height:17px; text-overflow:ellipsis; white-space:nowrap; }
  .ticker-footer { min-height:68px; box-sizing:border-box; } .footer-marquee { height:68px; } .footer-marquee-track { height:100%; align-items:stretch; } .footer-sequence { height:100%; } .footer-marquee-item { position:relative; display:inline-flex; align-items:center; min-width:max-content; height:100%; padding:0 28px; margin-right:0; box-sizing:border-box; font-size:inherit; text-transform:none; letter-spacing:0; } .footer-marquee-item + .footer-marquee-item::before,.footer-sequence + .footer-sequence .footer-marquee-item:first-child::before { content:""; position:absolute; left:0; width:1px; height:38px; background:rgba(255,255,255,.25); } .footer-marquee-item > [data-stream-id] { display:flex; align-items:center; gap:10px; min-width:0; } .footer-marquee-item ha-icon { flex:0 0 auto; width:27px; height:27px; } .footer-marquee-copy { display:flex; flex-direction:column; justify-content:center; min-width:0; line-height:1.15; white-space:nowrap; } .footer-marquee-copy strong { color:rgba(255,255,255,.94); font-size:16px; font-weight:600; } .footer-marquee-copy small { display:block; margin-top:3px; color:var(--secondary-text-color); font-size:13px; opacity:.7; text-transform:none; letter-spacing:0; }
 .footer-marquee-item.is-current-weather ha-icon,.footer-marquee-item.is-indoor-temperature ha-icon { width:34px; height:34px; --mdc-icon-size:34px; } .footer-marquee-item.is-current-weather .footer-marquee-copy strong,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:25px; font-weight:720; line-height:1; } .footer-marquee-item.is-current-weather .footer-marquee-copy small,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { margin-top:4px; font-size:17px; line-height:1; opacity:.82; }
+.footer-marquee.single-item .footer-marquee-track { animation:none !important; transform:none !important; }
 .footer-marquee.group-details-open .footer-marquee-track { animation-play-state:paused; } [data-footer-group-labels] { cursor:pointer; } [data-footer-group-labels].footer-group-expanded .footer-marquee-copy strong { color:#90caf9; }
 .drawer { margin-top:0; max-height:min(58vh,560px); overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 24px 24px; background:linear-gradient(145deg,rgba(31,37,44,.94),rgba(14,18,23,.94)); }
 .drawer-host { overflow:hidden; }
@@ -3136,6 +3585,76 @@ const CSS = `
 @media (prefers-reduced-motion:reduce) {
   .phone-status-ticker-track { animation:none; }
   .phone-status-ticker-sequence[aria-hidden="true"] { display:none; }
+}
+
+/* v0.3.23 tablet/desktop 10-foot readability hierarchy */
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title {
+  font-size:58px !important; font-weight:820 !important; line-height:.95 !important; letter-spacing:-1.2px !important;
+}
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon {
+  width:50px !important; height:50px !important; --mdc-icon-size:50px !important;
+}
+:host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-summary,
+:host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-summary {
+  margin-top:10px !important; font-size:25px !important; font-weight:650 !important; line-height:1.08 !important; color:rgba(255,255,255,.9) !important;
+}
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title {
+  font-size:56px !important; font-weight:820 !important; line-height:.95 !important;
+}
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title ha-icon,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title ha-icon {
+  width:50px !important; height:50px !important; --mdc-icon-size:50px !important;
+}
+:host([data-profile="tablet"]) .zone-item.is-current-weather .zone-summary,
+:host([data-profile="desktop"]) .zone-item.is-current-weather .zone-summary {
+  font-size:25px !important; font-weight:650 !important; line-height:1.08 !important;
+}
+:host([data-profile="tablet"]) .zone-item.is-scheduled .zone-summary,
+:host([data-profile="desktop"]) .zone-item.is-scheduled .zone-summary {
+  font-size:24px !important; font-weight:700 !important; line-height:1.1 !important;
+}
+:host([data-profile="tablet"]) .ticker-footer,
+:host([data-profile="tablet"]) .footer-marquee,
+:host([data-profile="desktop"]) .ticker-footer,
+:host([data-profile="desktop"]) .footer-marquee { min-height:94px !important; height:94px !important; }
+:host([data-profile="tablet"]) .footer-marquee-item ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item ha-icon {
+  width:36px !important; height:36px !important; --mdc-icon-size:36px !important;
+}
+:host([data-profile="tablet"]) .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-copy strong {
+  font-size:24px !important; font-weight:800 !important; line-height:1.02 !important; letter-spacing:.2px !important;
+}
+:host([data-profile="tablet"]) .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-copy small {
+  margin-top:7px !important; font-size:20px !important; font-weight:650 !important; line-height:1.05 !important; opacity:.9 !important;
+}
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather ha-icon,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather ha-icon,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature ha-icon {
+  width:42px !important; height:42px !important; --mdc-icon-size:42px !important;
+}
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong {
+  font-size:36px !important; font-weight:840 !important; line-height:.95 !important;
+}
+:host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
+:host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
+:host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small {
+  font-size:21px !important; font-weight:680 !important;
 }
 `;
 

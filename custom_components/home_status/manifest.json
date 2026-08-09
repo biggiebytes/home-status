@@ -1,12 +1,18 @@
 {
   "domain": "home_status",
   "name": "Home Status",
-  "codeowners": ["@biggiebytes"],
+  "codeowners": [
+    "@biggiebytes"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "lovelace"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "lovelace"
+  ],
   "documentation": "https://github.com/biggiebytes/home-status",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/biggiebytes/home-status/issues",
-  "version": "0.3.12"
+  "version": "0.4.0"
 }

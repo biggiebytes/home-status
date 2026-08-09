@@ -1,0 +1,36 @@
+{
+  "options": {
+    "step": {
+      "layout_sizing": {
+        "sections": {
+          "card_dimensions": "mdi:resize",
+          "left_area": "mdi:format-align-left",
+          "right_area": "mdi:format-align-right",
+          "bottom_area": "mdi:dock-bottom",
+          "value_emphasis": "mdi:numeric"
+        }
+      },
+      "routing_filters": {
+        "sections": {
+          "contacts": "mdi:door",
+          "appliances_and_security": "mdi:washing-machine",
+          "information": "mdi:information-outline",
+          "empty_area_behavior": "mdi:view-dashboard-outline"
+        }
+      },
+      "appearance": {
+        "sections": {
+          "color_behavior": "mdi:palette-outline",
+          "category_colors": "mdi:palette-swatch-outline",
+          "event_colors": "mdi:alert-circle-outline"
+        }
+      },
+      "timing": {
+        "sections": {
+          "timestamps": "mdi:clock-outline",
+          "retention": "mdi:history"
+        }
+      }
+    }
+  }
+}

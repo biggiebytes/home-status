@@ -2,507 +2,462 @@
   "config": {
     "step": {
       "user": {
-        "title": "Welcome to Home Status",
-        "description": "Choose a starting point. Smart Setup finds the useful parts of your home, then lets you review them before anything is monitored.",
+        "title": "Set up Home Status",
+        "description": "Choose what Home Status should watch and surface. Select individual entities for precise control, whole devices when related sensors should be interpreted together, and non-device information such as weather or calendars. You can change these selections later.",
         "data": {
-          "setup_profile": "How would you like to begin?"
+          "selected_entities": "Entities you want to monitor",
+          "selected_devices": "Whole devices you want to monitor",
+          "selected_sources": "Information sources"
         },
         "data_description": {
-          "setup_profile": "Smart Setup preselects compatible entry, safety, connectivity, and appliance entities for review. Essentials starts with entry and safety. Custom lets you choose each information source now."
+          "selected_entities": "Use this for exact control over specific sensors, binary sensors, alarms, or other entities you want Home Status to watch.",
+          "selected_devices": "Use a whole device when several related entities belong together, such as a washer, dryer, dishwasher, thermostat, or similar device.",
+          "selected_sources": "Choose supported information that is not primarily a device, such as weather, calendars, location, or other Home Status sources."
         }
-      },
-      "onboarding_preview": {
-        "title": "Review your Smart Setup",
-        "description": "Home Status found {count} useful entities. The checked items will be monitored after setup. Uncheck duplicates or anything you do not want; nothing else is added automatically.",
-        "data": {
-          "starter_entities": "Entities to monitor"
-        },
-        "data_description": {
-          "starter_entities": "Every item is safe to deselect and can be added later from Add & Configure Entities."
-        }
-      },
-      "sources": {
-        "title": "Choose your information",
-        "description": "Select the kinds of household information Home Status should organize. You can change these later.",
-        "data": {
-          "enabled_providers": "Information sources"
-        },
-        "data_description": {
-          "enabled_providers": "Choose the providers that should contribute notifications and awareness."
-        }
-      },
-      "weather": {
-        "title": "Choose your weather source",
-        "description": "Home Status found more than one weather provider. Weather is only one part of the whole-home awareness experience.",
-        "data": {
-          "forecast_entity": "Weather provider",
-          "include_nws_alerts": "Include National Weather Service alerts"
-        },
-        "data_description": {
-          "forecast_entity": "Select the weather entity Home Status should use for forecasts.",
-          "include_nws_alerts": "Include official alerts when an NWS alert entity is available."
-        }
-      },
-      "summary": {
-        "title": "Home Status is ready",
-        "description": "Detected:\n{detected}\n\nNot detected:\n{not_detected}\n\nYou can change these later from Configure.\n\nHome Status creates sensor.home_status. Next, add the Home Status card to any dashboard."
       }
-    },
-    "abort": {
-      "already_configured": "Home Status is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Home Status settings",
-        "description": "Choose what Home Status monitors and how it appears.",
+        "title": "Home Status - Reconfiguration",
+        "description": "Configure what Home Status monitors, how information is presented on the card, and how recent activity is retained. These settings affect Home Status only; they do not change your Home Assistant devices, entities, or Recorder history.",
         "menu_options": {
-          "setup_summary": "Current Setup",
-          "smart_setup": "Smart Setup",
-          "general": "Updates & History",
-          "information_sources": "Information Sources",
-          "news_sources": "News Sources",
-          "experimental_sensors": "Add & Configure Entities",
-          "ticker_filters": "Ticker Filters",
-          "ticker_timing": "Ticker Timing & Sources",
-          "navigation": "Open Pages When Tapped",
-          "appearance": "Appearance",
-          "weather": "Weather & Schedules",
-          "customize": "Customize Notifications",
-          "advanced": "Advanced Settings"
+          "monitoring": "Monitoring",
+          "sources": "Information sources",
+          "presentation": "Presentation & behavior",
+          "advanced": "Advanced settings"
         }
       },
-      "setup_summary": {
-        "title": "Current Setup",
-        "description": "This is the configuration Home Status is using right now.\n\nAlarm panel: Alarmo (`alarm_control_panel.alarmo`) — {alarm}\nEnabled categories: {providers}\nConfigured entity monitors: {sensors}\nWeather source: {forecast}\n\nUse the other settings pages to make changes.",
-        "data": {}
-      },
-      "smart_setup": {
-        "title": "Smart Setup",
-        "description": "Rebuild a useful whole-home setup without configuring every entity one at a time. Home Status will show a checked review list before it saves anything.",
+      "manage": {
+        "title": "Currently Monitoring",
+        "description": "Review the items Home Status is currently using. Select an item to change its display name or stop monitoring it.",
         "data": {
-          "starter_profile": "Setup size",
-          "recommended_categories": "Include in the review"
+          "item": "Monitored item"
         },
         "data_description": {
-          "starter_profile": "Essentials focuses on doors, windows, and safety. Whole home also includes useful connectivity and appliance alerts.",
-          "recommended_categories": "Choose the kinds of entities to preselect. You can uncheck individual entities on the next screen."
+          "item": "Choose the monitored item you want to manage."
         }
       },
-      "general": {
-        "title": "Updates & History",
-        "description": "Choose how often Home Status checks for updates and how much information it keeps available.",
+      "manage_empty": {
+        "title": "Currently Monitoring",
+        "description": "Home Status is not monitoring anything yet. Add an entity, whole device, or supported information source to begin."
+      },
+      "manage_item": {
+        "title": "{item_name}",
+        "description": "Choose what you want to change for {item_name}: its Home Status display name or whether Home Status continues monitoring it.",
+        "menu_options": {
+          "manage_rename": "Rename / Change Label",
+          "manage_remove": "Remove from Home Status"
+        }
+      },
+      "manage_remove": {
+        "title": "Remove {item_name}?",
+        "description": "Stop monitoring {item_name} in Home Status.",
         "data": {
-          "refresh_interval": "Check Every (seconds)",
-          "history_retention_days": "Keep Completed Events (days)",
-          "history_max_events": "Maximum stored history events (0 = all)",
-          "max_recent_items": "Recent Events to Keep",
-          "max_upcoming_items": "Upcoming Items to Show",
-          "max_insight_items": "Insights to Keep"
+          "confirm": "Yes, remove this item from Home Status"
         },
         "data_description": {
-          "refresh_interval": "Time between update checks. Recommended: 60 seconds.",
-          "history_retention_days": "How long resolved alerts and completed events remain in recent history.",
-          "history_max_events": "Set 0 to retain every event within the selected history period.",
-          "max_recent_items": "Maximum completed events available to the card and timeline.",
-          "max_upcoming_items": "Maximum upcoming schedules and reminders available to the card.",
-          "max_insight_items": "Maximum patterns and helpful observations Home Status keeps available."
+          "confirm": "Confirmation is required because the item will be removed from Home Status monitoring."
         }
       },
-      "information_sources": {
+      "add": {
+        "title": "Add Something",
+        "description": "Add something Home Status should use. Choose an individual entity for exact control, a whole device when related entities belong together, or an information source for non-device information such as weather or calendars.",
+        "menu_options": {
+          "add_entities": "Search All Entities",
+          "add_devices": "Add a Whole Device",
+          "add_sources": "Add an Information Source"
+        }
+      },
+      "add_entities": {
+        "title": "Search All Entities",
+        "description": "Search the full Home Assistant entity list and select the exact entities Home Status should monitor.",
+        "data": {
+          "entities": "Entities to add"
+        },
+        "data_description": {
+          "entities": "Select one or more individual Home Assistant entities to add to Home Status."
+        }
+      },
+      "add_devices": {
+        "title": "Add a Whole Device",
+        "description": "Add a whole device when related entities should be interpreted together, such as an appliance or other multi-entity device.",
+        "data": {
+          "devices": "Devices to add"
+        },
+        "data_description": {
+          "devices": "Select one or more whole devices to add to grouped Home Status monitoring."
+        }
+      },
+      "add_sources": {
+        "title": "Add an Information Source",
+        "description": "Add supported non-device information such as weather, calendars, location, or other information sources.",
+        "data": {
+          "sources": "Sources to add"
+        },
+        "data_description": {
+          "sources": "Select one or more supported information sources to add to Home Status."
+        }
+      },
+      "sources": {
         "title": "Information Sources",
-        "description": "Choose what Home Status may show. Checked sources are enabled. Ready means compatible information was found. Enabled sources without Ready stay quiet until configured. Ready now: {detected}.",
+        "description": "Choose non-device information Home Status can surface, such as weather, calendars, location, and other supported sources. What appears on the card can be controlled separately under Presentation & behavior.",
         "data": {
-          "enabled_providers": "Sources to Enable"
+          "selected_sources": "Information sources"
         },
         "data_description": {
-          "enabled_providers": "Turn each type of household information on or off. Home Status does not monitor every discovered entity automatically."
+          "selected_sources": "Select the information feeds Home Status may use. What appears on the card can be controlled separately under Presentation & behavior."
         }
       },
-      "news_sources": {
-        "title": "News Sources",
-        "description": "Choose the RSS or Atom feeds Home Status uses for news. {summary}.",
+      "names": {
+        "title": "Names",
+        "description": "Choose a monitored item and set the name people see in Home Status. The list uses friendly names; raw entity IDs and provider data are not shown.",
         "data": {
-          "news_source": "Source to manage"
+          "item": "Item to rename"
         },
         "data_description": {
-          "news_source": "Select an existing source to edit it, or add a favorite feed."
+          "item": "Select the item whose Home Status display name you want to review or change."
         }
       },
-      "news_source": {
-        "title": "Configure a News Source",
-        "description": "{mode}. Home Status reads the feed directly and displays its newest items in the Notification Center.",
+      "name_edit": {
+        "title": "Display name",
+        "description": "Use the normal Home Assistant friendly name or set a custom display name for Home Status.",
         "data": {
-          "enabled": "Enabled",
-          "name": "Display name",
-          "url": "RSS or Atom feed URL",
-          "icon": "Icon",
-          "refresh_minutes": "Check for news every",
-          "max_items": "Items from this source",
-          "remove_source": "Remove this source"
+          "name_mode": "Name to display",
+          "custom_name": "Custom name"
         },
         "data_description": {
-          "enabled": "Turn this source on or off without losing its settings.",
-          "name": "A friendly name such as Local News or Space.",
-          "url": "Use the publisher's direct RSS or Atom feed address beginning with http:// or https://.",
-          "icon": "Optional Material Design icon, for example mdi:newspaper.",
-          "refresh_minutes": "How often Home Status checks this source. Five minutes is the minimum.",
-          "max_items": "How many recent headlines this source may contribute.",
-          "remove_source": "Permanently remove this source from Home Status."
+          "name_mode": "Use the Home Assistant friendly name, or choose Custom name to set a different label in Home Status.",
+          "custom_name": "Enter the name people should see when Custom name is selected."
         }
       },
-      "review": {
-        "title": "Review changes",
-        "description": "Nothing has been saved yet.\n\nSettings changing:\n{changes}\n\nChecks:\n{warnings}\n\nSubmit to apply these changes, or go back to revise them."
+      "timing": {
+        "title": "Timing & history",
+        "description": "Control relative timestamps such as “Just now” or “5 min ago,” how long recent completed activity stays visible, and how much Home Status event history is retained.",
+        "sections": {
+          "timestamps": {
+            "name": "Relative timestamps",
+            "description": "Choose which kinds of information should show an age. Relative time is useful for events such as a door closing or an appliance completing, but can make continuously valid information look stale, so each group can be controlled separately.",
+            "data": {
+              "timestamp_contacts": "Doors & windows",
+              "timestamp_appliance_complete": "Completed appliances",
+              "timestamp_other": "Other current information"
+            },
+            "data_description": {
+              "timestamp_contacts": "Show relative time on door/window activity so people can see how recently the contact changed.",
+              "timestamp_appliance_complete": "Show relative time on completed appliance events, such as “Dryer Complete · 5 min ago.” Running appliance countdowns are separate.",
+              "timestamp_other": "Show relative time on other current/status information. Leave this off if you do not want ongoing values such as schedules or climate information to look stale."
+            }
+          },
+          "retention": {
+            "name": "Retention",
+            "data": {
+              "ticker_event_minutes": "Keep recent activity visible for (minutes)",
+              "history_retention_days": "Keep Home Status history for (days)"
+            },
+            "description": "Set how long recent completed activity remains available for display and how many days of Home Status event history are kept.",
+            "data_description": {
+              "ticker_event_minutes": "How long recent completed events remain eligible for the bottom ticker before aging out of recent activity.",
+              "history_retention_days": "How many days Home Status keeps its own event history for Home Status features and diagnostics."
+            }
+          }
+        }
       },
-      "experimental_sensors": {
-        "title": "Add & Configure Entities",
-        "description": "Use Smart Setup for a reviewed whole-home configuration, or configure one entity yourself. Home Status monitors nothing until you apply a selection.",
+      "advanced": {
+        "title": "Advanced settings",
+        "description": "Directly manage the selected entity and device lists. Most users should use Monitoring instead.",
+        "menu_options": {
+          "devices": "Whole device selection",
+          "entities_advanced": "Individual entity selection",
+          "back_to_init": "← Back to Reconfiguration"
+        }
+      },
+      "devices": {
+        "title": "Whole Device Selection",
+        "description": "Directly review the whole devices Home Status is monitoring as grouped devices.",
         "data": {
-          "remove_entity": "Remove a configured entity",
-          "starter_profile": "How would you like to start?",
-          "recommended_categories": "What types should Recommended Setup include?",
-          "capability_mode": "What should Home Status watch for?",
-          "capability_entity": "Choose an entity"
+          "selected_devices": "Selected devices"
         },
         "data_description": {
-          "remove_entity": "Search the entities currently monitored by Home Status, then choose one to stop monitoring.",
-          "starter_profile": "Quick Start recommends doors, windows, and safety sensors. Recommended Setup also includes connectivity and appliances. Custom Setup lets you choose any entity.",
-          "recommended_categories": "Choose only the categories you want to review. Nothing is monitored until you submit the review.",
-          "capability_mode": "Recommended configuration uses the entity's Home Assistant metadata. The simple trigger creates an event when the entity exactly matches a state you choose.",
-          "capability_entity": "Search by the entity's name or ID. Nothing is monitored until you configure it."
+          "selected_devices": "Whole devices currently selected for grouped Home Status monitoring."
         }
       },
-      "starter_preview": {
-        "title": "Review {profile}",
-        "description": "These recommendations use Home Assistant metadata, not entity names. Review the checked entities, then submit to start monitoring only those entities.",
+      "entities_advanced": {
+        "title": "Individual entity selection",
+        "description": "Directly review every individually selected entity Home Status is monitoring.",
         "data": {
-          "starter_entities": "Entities to monitor"
+          "selected_entities": "Selected entities"
         },
         "data_description": {
-          "starter_entities": "Uncheck anything you do not want. You can edit every setting later."
+          "selected_entities": "Individual entities currently selected for Home Status monitoring."
         }
       },
-      "remove_entity": {
-        "title": "Remove {entity}?",
-        "description": "This stops Home Status from monitoring this entity. It does not delete or change the original Home Assistant entity.",
-        "data": {
-          "confirm_remove": "Yes, stop monitoring it"
+      "monitoring": {
+        "title": "Monitoring",
+        "description": "Choose what Home Status watches. Use Individual entities when you want exact control over specific Home Assistant entities, or Whole devices when Home Status should interpret related sensors from the same physical device together.",
+        "menu_options": {
+          "monitoring_entities": "Individual entities",
+          "monitoring_devices": "Whole devices",
+          "back_to_init": "← Back to Reconfiguration"
         }
       },
-      "experimental_sensor": {
-        "title": "Set Up {entity}",
-        "description": "Choose what Home Status watches for and how it presents alerts from this sensor. Temperature and humidity use thresholds in {unit}.",
+      "monitoring_entities": {
+        "title": "Individual entities",
+        "description": "Select the exact entities Home Status should watch for activity, alerts, and recent events. Use this when you want precise control instead of monitoring a whole device.",
         "data": {
-          "low_threshold": "Low threshold",
-          "high_threshold": "High threshold",
-          "priority": "How important is this?",
-          "display_name": "Name shown by Home Status (optional)",
-          "trigger_state": "Create an event when the state equals",
-          "appliance_type": "Appliance type",
-          "complete_states": "States that mean the cycle completed",
-          "idle_states": "States that mean the appliance is idle",
-          "remaining_entity": "Remaining-time sensor (optional)",
-          "active_message": "Message while maintenance is needed (optional)",
-          "resolved_message": "Message after maintenance is cleared (optional)",
-          "icon": "Icon shown by Home Status (optional)",
-          "alert_behavior": "When should it return to the main ticker?",
-          "display_route": "Where should alerts appear?",
-          "trigger_delay_seconds": "Alert only after the condition lasts (seconds)",
-          "publish_current": "Also show the current value",
-          "alert_when_active": "Alert while open or active",
-          "retention_minutes": "Keep in the footer after it clears (minutes)",
-          "remove_sensor": "Remove this sensor from Home Status"
+          "selected_entities": "Entities"
         },
         "data_description": {
-          "low_threshold": "Create an event only when the value falls below this limit.",
-          "high_threshold": "Create an event only when the value rises above this limit.",
-          "display_name": "Leave blank to use the automatic alert title. This does not rename the Home Assistant entity.",
-          "trigger_state": "Enter the exact Home Assistant state that represents the condition you want shown.",
-          "appliance_type": "Sets the appliance icon; it does not limit which entity may be selected.",
-          "complete_states": "These values produce a completed-cycle event when the appliance stops running.",
-          "idle_states": "These values end a cycle without reporting it as completed.",
-          "remaining_entity": "If available, Home Status adds its remaining time to the running-cycle details.",
-          "active_message": "Leave blank to use the selected sensor's visible name with a maintenance alert.",
-          "resolved_message": "Leave blank to use the selected sensor's visible name with a completion message.",
-          "icon": "Optional Material Design icon, for example mdi:dishwasher-alert.",
-          "alert_behavior": "One-time activity appears briefly once. Other choices return to the main ticker while the condition remains active.",
-          "display_route": "The recommended default shows new alerts in the main area briefly, then keeps them in the bottom ticker.",
-          "trigger_delay_seconds": "Prevents brief connection or startup flickers from becoming alerts. Use 0 for immediate alerts.",
-          "publish_current": "Off by default. Turn on only if you want the normal reading published continuously.",
-          "alert_when_active": "When enabled, an open door or window, or active motion sensor, also creates an alert.",
-          "retention_minutes": "How long completed events stay in the footer. This is saved separately for each sensor.",
-          "remove_sensor": "Stops Home Status from monitoring this sensor. It does not change the original Home Assistant entity."
+          "selected_entities": "Search your full Home Assistant entity list. Use individual selection when you want Home Status to watch exactly this entity rather than an entire device."
         }
       },
-      "navigation": {
-        "title": "Open Pages When Tapped",
-        "description": "Choose what opens when you tap information in the Notification Center.",
+      "monitoring_devices": {
+        "title": "Whole devices",
+        "description": "Select whole devices when related entities should be interpreted together. This is useful for appliances and other devices that expose separate state, remaining-time, completion, fault, or measurement entities.",
         "data": {
-          "navigation_enabled": "Open pages when I tap notifications",
-          "navigation_security": "When I tap Security History",
-          "navigation_weather": "When I tap Weather",
-          "navigation_schedule": "When I tap Calendar Events",
-          "navigation_sprinklers": "When I tap Sprinklers",
-          "navigation_waste": "When I tap Trash & Recycling",
-          "navigation_maintenance": "When I tap Maintenance",
-          "navigation_laundry": "When I tap Laundry",
-          "navigation_climate": "When I tap Climate",
-          "navigation_cameras": "When I tap Camera Alerts",
-          "navigation_family": "When I tap Family Location",
-          "navigation_lighting": "When I tap Exterior Lighting"
+          "selected_devices": "Devices"
         },
         "data_description": {
-          "navigation_enabled": "Open a related page when available.",
-          "navigation_schedule": "Choose the page for calendar events.",
-          "navigation_sprinklers": "Choose the page for watering schedules and rain delay.",
-          "navigation_waste": "Choose the page for garbage and recycling collection.",
-          "navigation_cameras": "Choose the page for camera status and live views.",
-          "navigation_family": "Choose the map or location page for your household.",
-          "navigation_lighting": "Choose the page where exterior lights can be checked and controlled."
+          "selected_devices": "Choose devices whose related entities should be interpreted together by Home Status."
+        }
+      },
+      "presentation": {
+        "title": "Presentation & behavior",
+        "description": "Control the Home Status card without editing YAML or raw provider data. Adjust card and text sizing, choose where different kinds of information appear, set icon colors, change display names, and control timestamps and retention. The current Home Status look is used as the starting configuration.",
+        "menu_options": {
+          "layout_sizing": "Layout & sizing",
+          "routing_filters": "Routing & filters",
+          "appearance": "Appearance",
+          "names": "Names",
+          "timing": "Timing & history",
+          "back_to_init": "← Back to Reconfiguration"
+        }
+      },
+      "layout_sizing": {
+        "title": "Layout & sizing",
+        "description": "Tune card dimensions, text, secondary text, icons, and emphasized values for readability on wall tablets, desktops, and other displays.",
+        "sections": {
+          "card_dimensions": {
+            "name": "Card dimensions",
+            "description": "Control the overall space Home Status uses. Increase the body or main-row height when larger text needs more breathing room; adjust the bottom height for the ticker. Maximum width limits how wide the card may grow; 0 leaves width unrestricted by Home Status.",
+            "data": {
+              "card_body_height": "Card body height",
+              "main_row_height": "Main information row height",
+              "bottom_height": "Bottom ticker height",
+              "card_max_width": "Maximum card width"
+            },
+            "data_description": {
+              "card_body_height": "Overall height available to the main Home Status body. Increase this when the left/right content feels vertically cramped.",
+              "main_row_height": "Vertical space reserved for the main left and right information items inside the card.",
+              "bottom_height": "Height of the bottom ticker area. Increase this for larger ticker text and icons or reduce it for a more compact card.",
+              "card_max_width": "Maximum width Home Status may use. Set to 0 to let the dashboard layout determine the width without a Home Status limit."
+            }
+          },
+          "left_area": {
+            "name": "Left area",
+            "data": {
+              "left_title_size": "Title text size",
+              "left_summary_size": "Secondary text size",
+              "left_icon_size": "Icon size"
+            },
+            "description": "Set the normal typography and icon size for items shown in the left main area. These values do not control specially emphasized measurements.",
+            "data_description": {
+              "left_title_size": "Size of the primary headline, such as “Washer Running” or “Front Door Open.”",
+              "left_summary_size": "Size of supporting text below the headline, such as remaining time, dates, or status details.",
+              "left_icon_size": "Size of the icon shown beside normal left-area information."
+            }
+          },
+          "right_area": {
+            "name": "Right area",
+            "data": {
+              "right_title_size": "Title text size",
+              "right_summary_size": "Secondary text size",
+              "right_icon_size": "Icon size"
+            },
+            "description": "Set the normal typography and icon size for items shown in the right main area. Weather conditions and large numeric values can use separate emphasis sizes below.",
+            "data_description": {
+              "right_title_size": "Size of the primary headline for normal right-area information.",
+              "right_summary_size": "Size of supporting text below normal right-area headlines.",
+              "right_icon_size": "Size of the icon shown beside normal right-area information."
+            }
+          },
+          "bottom_area": {
+            "name": "Bottom ticker",
+            "data": {
+              "bottom_title_size": "Title text size",
+              "bottom_summary_size": "Secondary text size",
+              "bottom_icon_size": "Icon size"
+            },
+            "description": "Control the typography and icon size of the bottom ticker. The ticker often carries recent events and additional information, so it can be sized independently from the main areas.",
+            "data_description": {
+              "bottom_title_size": "Size of the main text for each bottom-ticker item.",
+              "bottom_summary_size": "Size of supporting text in the bottom ticker, including dates, details, or relative time when enabled.",
+              "bottom_icon_size": "Size of icons used in the bottom ticker."
+            }
+          },
+          "value_emphasis": {
+            "name": "Value emphasis",
+            "description": "Use larger typography for values that should be readable at a glance, such as temperature, humidity, and other measurements. This does not enlarge every title; it only affects values Home Status recognizes as emphasis-worthy.",
+            "data": {
+              "emphasize_measurements": "Emphasize measurements",
+              "left_measurement_size": "Left emphasized value size",
+              "right_measurement_size": "Right emphasized value size",
+              "right_weather_size": "Right weather condition size",
+              "bottom_measurement_size": "Bottom emphasized value size"
+            },
+            "data_description": {
+              "emphasize_measurements": "When enabled, supported numeric measurements can use the larger value sizes below instead of ordinary title sizing.",
+              "left_measurement_size": "Large-value text size when an emphasized measurement is shown in the left area.",
+              "right_measurement_size": "Large-value text size when an emphasized measurement is shown in the right area.",
+              "right_weather_size": "Text size used for the current weather condition in the right area, such as “Cloudy” or “Rainy.”",
+              "bottom_measurement_size": "Large-value text size when an emphasized measurement is shown in the bottom ticker."
+            }
+          }
+        }
+      },
+      "routing_filters": {
+        "title": "Routing & filters",
+        "description": "Decide where each type of information may appear. Left and Right are the main information areas; Bottom is the scrolling/recent-activity ticker. Choose more than one destination when useful, or clear all destinations to hide that type from the card.",
+        "sections": {
+          "contacts": {
+            "name": "Doors & windows",
+            "data": {
+              "route_doors_open": "Open doors",
+              "route_doors_closed": "Recently closed doors",
+              "route_windows_open": "Open windows",
+              "route_windows_closed": "Recently closed windows"
+            },
+            "description": "Route active contact states separately from recent resolved activity. For example, an open door can stay prominent in a main area while a recently closed door can move to the bottom ticker.",
+            "data_description": {
+              "route_doors_open": "Where currently open door information may appear.",
+              "route_doors_closed": "Where recent door-closed events may appear after a door has been resolved.",
+              "route_windows_open": "Where currently open window information may appear.",
+              "route_windows_closed": "Where recent window-closed events may appear after a window has been resolved."
+            }
+          },
+          "appliances_and_security": {
+            "name": "Appliances & security",
+            "data": {
+              "route_appliances_running": "Running appliances",
+              "route_appliances_complete": "Completed appliances",
+              "route_security": "Security alerts"
+            },
+            "description": "Control active appliance activity, completed appliance events, and security alerts independently. This lets running appliances remain visible without forcing completion events into the same area.",
+            "data_description": {
+              "route_appliances_running": "Where active washer, dryer, dishwasher, and other supported appliance activity may appear.",
+              "route_appliances_complete": "Where recent appliance-completion events may appear after a cycle ends.",
+              "route_security": "Where active security-related alerts may appear."
+            }
+          },
+          "information": {
+            "name": "Information",
+            "data": {
+              "route_weather": "Weather",
+              "route_climate": "Climate & measurements",
+              "route_waste": "Waste collection",
+              "route_calendar": "Calendar",
+              "route_news": "News",
+              "route_irrigation": "Sprinklers & irrigation",
+              "route_location": "Location",
+              "route_other": "Other information"
+            },
+            "description": "Choose where ongoing and upcoming information is presented. These categories are informational rather than recent completed events, so many users keep them in the main left/right areas.",
+            "data_description": {
+              "route_weather": "Current weather conditions and supported forecast-related information.",
+              "route_climate": "Temperature, humidity, and other supported climate or measurement values.",
+              "route_waste": "Garbage, recycling, and other supported waste-collection information.",
+              "route_calendar": "Upcoming calendar events selected under Information sources.",
+              "route_news": "News items supplied by supported Home Status news/RSS sources.",
+              "route_irrigation": "Sprinkler schedules, rain delay, next watering, and other supported irrigation information.",
+              "route_location": "Supported family/location information.",
+              "route_other": "Supported information that does not match one of the specific categories above."
+            }
+          },
+          "empty_area_behavior": {
+            "name": "Empty-area behavior",
+            "data": {
+              "fill_empty_left": "Fill an empty left area with another useful item"
+            },
+            "data_description": {
+              "fill_empty_left": "When enabled, Home Status may place another eligible useful item in an otherwise empty left area so half of the card is not left blank."
+            },
+            "description": "Control what Home Status does when the left main area has nothing assigned to it. This is a presentation fallback, not a new monitoring rule."
+          }
         }
       },
       "appearance": {
         "title": "Appearance",
-        "description": "Control how information is shown on your dashboard.",
-        "data": {
-          "hero_rotation_seconds": "Rotate Main Information Every (seconds)",
-          "media_enabled": "Show Media",
-          "enable_insights": "Show Helpful Insights"
-        },
-        "data_description": {
-          "hero_rotation_seconds": "How many seconds each main item stays visible.",
-          "media_enabled": "Show photos and other rich media when available.",
-          "enable_insights": "Show helpful suggestions based on recent activity."
+        "description": "Choose how Home Status uses icon colors to distinguish categories and important states at a glance. These settings affect icons, not text or card backgrounds.",
+        "sections": {
+          "color_behavior": {
+            "name": "Color behavior",
+            "data": {
+              "semantic_colors": "Use category colors"
+            },
+            "description": "Turn Home Status category coloring on or off. With category colors enabled, icons can use different colors to visually distinguish weather, appliances, waste, calendar items, and other information.",
+            "data_description": {
+              "semantic_colors": "Enable the category and alert/completion color choices below. Turn this off if you prefer Home Status to use its normal/default icon treatment instead."
+            }
+          },
+          "category_colors": {
+            "name": "Category colors",
+            "data": {
+              "color_security": "Security",
+              "color_appliance": "Appliances",
+              "color_weather": "Weather",
+              "color_climate": "Climate & measurements",
+              "color_waste": "Garbage / waste",
+              "color_recycling": "Recycling",
+              "color_calendar": "Calendar & schedules",
+              "color_irrigation": "Sprinklers & irrigation",
+              "color_news": "News"
+            },
+            "description": "Choose the icon color associated with each normal information category. Category color answers “what kind of information is this?” and helps repeated item types stay visually consistent across the card.",
+            "data_description": {
+              "color_security": "Icon color for security-related information.",
+              "color_appliance": "Icon color for active washer, dryer, dishwasher, and other supported appliance information.",
+              "color_weather": "Icon color for current weather and weather-related information.",
+              "color_climate": "Icon color for temperature, humidity, and other climate/measurement information.",
+              "color_waste": "Icon color for garbage and general waste-collection information.",
+              "color_recycling": "Icon color for recycling collection information.",
+              "color_calendar": "Icon color for calendar events and schedule-style information.",
+              "color_irrigation": "Icon color for sprinkler, watering, rain-delay, and irrigation information.",
+              "color_news": "Icon color for supported news items."
+            }
+          },
+          "event_colors": {
+            "name": "Alert & completion colors",
+            "data": {
+              "color_attention": "Attention / warning",
+              "color_success": "Completed / resolved"
+            },
+            "description": "Choose colors that describe what happened rather than what category an item belongs to. These can highlight attention/warning states and completed or resolved events.",
+            "data_description": {
+              "color_attention": "Used when Home Status presents an item as needing attention or warning.",
+              "color_success": "Used for completed or resolved activity, such as a finished appliance cycle when the completion style applies."
+            }
+          }
         }
       },
-      "ticker_filters": {
-        "title": "Ticker Filters",
-        "description": "Choose what is reduced or kept in the bottom ticker. Leave filters off for a complete activity feed. The dashboard card controls layout only; ticker content is controlled here.",
-        "data": {
-          "deduplicate_by_entity": "Hide exact duplicate events",
-          "collapse_repeated_events": "Combine repeated history events",
-          "footer_include_activity_history": "Include activity history in the ticker",
-          "footer_activity_history_hours": "Activity history window (hours)",
-          "footer_include_persistent_conditions": "Keep active conditions in the ticker",
-          "footer_hide_normal_security": "Hide normal security messages",
-          "footer_hide_closed_contacts": "Hide closed and clear contact events",
-          "footer_hide_disarmed_alarm": "Hide disarmed alarm status",
-          "footer_hide_routine_climate": "Hide routine climate status",
-          "footer_hide_routine_weather": "Hide routine weather status",
-          "footer_group_contact_closures": "Combine contact-closure events"
-        },
-        "data_description": {
-          "deduplicate_by_entity": "Removes only duplicate records with the same event identity; distinct changes stay visible.",
-          "collapse_repeated_events": "Combines repeated entries from the same source in the recent-history stream.",
-          "footer_include_activity_history": "Adds resolved events such as door opened and door closed to the ticker.",
-          "footer_activity_history_hours": "How far back activity history may be included when that option is enabled.",
-          "footer_include_persistent_conditions": "Keep selected active conditions available after their initial alert window ends.",
-          "footer_hide_normal_security": "Suppresses normal-priority security and contact items.",
-          "footer_hide_closed_contacts": "Suppresses closed or clear door, window, and contact events.",
-          "footer_hide_disarmed_alarm": "Suppresses the normal disarmed alarm status.",
-          "footer_hide_routine_climate": "Suppresses normal climate readings from the ticker.",
-          "footer_hide_routine_weather": "Suppresses normal weather detail from the ticker.",
-          "footer_group_contact_closures": "Combines related door and window closure records into a compact ticker item."
-        }
+      "back_to_init": {
+        "title": "Back to Reconfiguration"
       },
-      "ticker_timing": {
-        "title": "Ticker Timing & Sources",
-        "description": "Choose which enabled sources may enter the bottom ticker and how often active conditions repeat. The dashboard card controls layout only; ticker content is controlled here.",
-        "data": {
-          "ticker_providers": "Sources allowed in the ticker",
-          "ticker_reminder_minutes": "Active-condition reminder interval (minutes; 0 = never)",
-          "ticker_event_minutes": "Resolved-event ticker duration (minutes)"
-        }
+      "back_to_monitoring": {
+        "title": "Back to Monitoring"
       },
-      "weather": {
-        "title": "Weather & Schedules",
-        "description": "Configure forecasts, calendar events, sprinklers, and collection days.",
-        "data": {
-          "include_nws_alerts": "National Weather Alerts",
-          "include_sprinkler_schedule": "Sprinkler Schedule",
-          "include_waste_collection": "Trash & Recycling",
-          "calendar_entities": "Calendars",
-          "calendar_lookahead_days": "Calendar Look-Ahead (Days)",
-          "waste_collection_window_days": "Waste Collection Look-Ahead (Days)",
-          "forecast_days": "Forecast days (0 = all)",
-          "forecast_entity": "Weather Provider",
-          "weather_preview_condition": "Weather Preview"
-        },
-        "data_description": {
-          "include_nws_alerts": "Include official National Weather Service alerts.",
-          "include_sprinkler_schedule": "Include the next scheduled sprinkler watering.",
-          "include_waste_collection": "Include upcoming trash and recycling collection.",
-          "calendar_entities": "Choose the calendars whose upcoming events should appear.",
-          "calendar_lookahead_days": "Show events scheduled in this many upcoming days.",
-          "waste_collection_window_days": "Show waste pickups scheduled in this many upcoming days.",
-          "forecast_days": "Set 0 to include every forecast day returned by your weather service.",
-          "forecast_entity": "Choose the weather service used for forecasts.",
-          "weather_preview_condition": "Temporarily preview a weather visual. Leave blank to use live weather."
-        }
+      "back_to_presentation": {
+        "title": "Back to Presentation & behavior"
       },
-      "customize": {
-        "title": "Customize Notifications",
-        "description": "Change how an individual item appears in Home Status.",
-        "data": {
-          "override_entity": "Item to Customize",
-          "provider_override": "Category",
-          "label_override": "Display Name",
-          "icon_override": "Display Icon",
-          "priority_override": "Importance",
-          "publish_mode": "Show In",
-          "reset_override": "Remove Customization"
-        },
-        "data_description": {
-          "override_entity": "Select an item only if you want to customize it.",
-          "provider_override": "Choose the category shown for this item.",
-          "label_override": "Set a friendly name for this item.",
-          "icon_override": "Set the icon shown for this item.",
-          "priority_override": "Choose how important this item is.",
-          "publish_mode": "Choose where this item appears.",
-          "reset_override": "Remove the saved customization for this item."
-        }
-      },
-      "advanced": {
-        "title": "Advanced Settings",
-        "description": "Tools for troubleshooting and advanced customization.",
-        "data": {
-          "debug_logging": "Debug Logging",
-          "refrigerator_door_delay_minutes": "Alert When a Refrigerator Door Is Open For",
-          "refrigerator_temperature_delay_minutes": "Alert When Temperature Is High For",
-          "refrigerator_fridge_high_temperature": "Refrigerator High Temperature",
-          "refrigerator_freezer_high_temperature": "Freezer High Temperature",
-          "navigation_custom_security": "Custom Security Page",
-          "navigation_custom_weather": "Custom Weather Page",
-          "navigation_custom_schedule": "Custom Calendar Page",
-          "navigation_custom_sprinklers": "Custom Sprinklers Page",
-          "navigation_custom_waste": "Custom Trash & Recycling Page",
-          "navigation_custom_maintenance": "Custom Maintenance Page",
-          "navigation_custom_laundry": "Custom Laundry Page",
-          "navigation_custom_climate": "Custom Climate Page",
-          "navigation_custom_cameras": "Custom Cameras Page",
-          "navigation_custom_family": "Custom Family Location Page",
-          "navigation_custom_lighting": "Custom Lighting Page"
-        },
-        "data_description": {
-          "debug_logging": "Enable detailed logs for troubleshooting.",
-          "refrigerator_door_delay_minutes": "Minutes a refrigerator or freezer door may remain open before Home Status alerts you.",
-          "refrigerator_temperature_delay_minutes": "Minutes a high temperature must continue before Home Status alerts you.",
-          "refrigerator_fridge_high_temperature": "Alert when the refrigerator remains above this temperature.",
-          "refrigerator_freezer_high_temperature": "Alert when the freezer remains above this temperature.",
-          "navigation_custom_weather": "Only used when Weather is set to Custom Page (Advanced)."
-        }
-      },
-      "init_legacy": {
-        "title": "Home Status settings",
-        "data": {
-          "entities": "Devices and status sensors to monitor",
-          "refresh_interval": "Update Frequency",
-          "history_retention_days": "History Length",
-          "max_recent_items": "Recent Events",
-          "max_upcoming_items": "Upcoming Events",
-          "max_insight_items": "Smart Insights",
-          "enabled_providers": "Information Sources",
-          "publish_status": "Show Home Status",
-          "include_healthy_status": "Show \"Everything Is OK\" Messages",
-          "collapse_repeated_events": "Combine Similar Events",
-          "deduplicate_by_entity": "Hide Duplicate Messages",
-          "enable_insights": "Show Smart Insights",
-          "include_nws_alerts": "National Weather Alerts",
-          "include_sprinkler_schedule": "Sprinkler Schedule",
-          "include_waste_collection": "Trash & Recycling",
-          "forecast_entity": "Weather Provider",
-          "debug_logging": "Developer Logging",
-          "override_entity": "Customize an Item",
-          "provider_override": "Category",
-          "label_override": "Display Name",
-          "icon_override": "Display Icon",
-          "priority_override": "Importance",
-          "publish_mode": "Show In",
-          "reset_override": "Remove Customization"
-        },
-        "data_description": {
-          "refresh_interval": "How often Home Status checks for new information.",
-          "history_retention_days": "How many days completed events are kept.",
-          "max_recent_items": "Maximum number of recent notifications to remember.",
-          "max_upcoming_items": "Maximum number of upcoming reminders to display.",
-          "max_insight_items": "Maximum number of insights Home Status keeps available.",
-          "enabled_providers": "Choose what Home Status monitors.",
-          "publish_status": "Display an overall home status when nothing urgent needs attention.",
-          "include_healthy_status": "Display reassuring messages when your home is operating normally.",
-          "collapse_repeated_events": "Merge repeated notifications into one item.",
-          "deduplicate_by_entity": "Prevent the same event from appearing multiple times.",
-          "enable_insights": "Display helpful suggestions based on recent activity.",
-          "include_nws_alerts": "Include official National Weather Service alerts.",
-          "include_sprinkler_schedule": "Include the next scheduled sprinkler watering.",
-          "include_waste_collection": "Include upcoming trash and recycling collection.",
-          "forecast_entity": "Choose the weather service used for forecasts.",
-          "override_entity": "Select an entity to change how it appears in Home Status.",
-          "debug_logging": "Enable detailed logs for troubleshooting."
-        }
+      "back_to_advanced": {
+        "title": "Back to Advanced settings"
       }
     },
     "error": {
-      "custom_page_must_start_with_slash": "Custom pages must begin with /.",
-      "duplicate_news_feed_url": "That feed is already configured.",
-      "invalid_news_feed_url": "Enter a complete http:// or https:// RSS or Atom feed URL without embedded credentials.",
-      "low_threshold_must_be_less_than_high": "The low threshold must be less than the high threshold."
+      "confirm_remove": "Check the confirmation box before removing this item."
     }
   },
-  "selector": {
-    "setup_profile": {
-      "options": {
-        "recommended": "Smart Setup (recommended)",
-        "essentials": "Essentials only",
-        "custom": "Choose everything myself"
-      }
-    },
-    "enabled_providers": {
-      "options": {
-        "security": "Security",
-        "weather": "Weather",
-        "schedule": "Calendar",
-        "maintenance": "Maintenance",
-        "laundry": "Laundry",
-        "climate": "Climate",
-        "cameras": "Cameras",
-        "family": "Family",
-        "lighting": "Lighting",
-        "news": "News & Discovery"
-      }
-    },
-    "provider_override": {
-      "options": {
-        "none": "Automatic",
-        "security": "Security",
-        "weather": "Weather",
-        "schedule": "Calendar",
-        "maintenance": "Maintenance",
-        "laundry": "Laundry",
-        "climate": "Climate",
-        "cameras": "Cameras",
-        "family": "Family",
-        "lighting": "Lighting",
-        "news": "News & Discovery"
-      }
-    },
-    "publish_mode": {
-      "options": {
-        "events": "Side Information",
-        "status": "Main Display",
-        "both": "Everywhere",
-        "disabled": "Hidden"
-      }
-    },
-    "priority_override": {
-      "options": {
-        "none": "No override",
-        "activity": "Low",
-        "attention": "High",
-        "critical": "Critical",
-        "normal": "Normal"
-      }
-    }
+  "abort": {
+    "no_selected_items": "Home Status is not monitoring anything yet. Add something first, then you can change its name."
   }
 }

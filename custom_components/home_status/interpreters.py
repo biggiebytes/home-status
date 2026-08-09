@@ -1,0 +1,850 @@
+"""Conservative internal state interpreters for device-first Home Status.
+
+Home Status should only publish states it understands. Secondary entities,
+settings, helper sensors, and transient unavailable states are silent unless
+there is a specific interpretation for them.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from math import ceil
+import re
+from typing import Any
+
+from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
+
+from .home_device import HomeDevice, HomeDeviceEntity
+
+
+_RUNNING = {"run", "running", "washing", "drying", "cleaning", "active", "working"}
+_COMPLETE = {"complete", "completed", "finished", "done", "end"}
+
+# Entity-name hints that identify the primary operating state of an appliance.
+_APPLIANCE_STATE_HINTS = (
+    "machine state", "machine_state",
+    "operation state", "operation_state",
+    "operating state", "operating_state",
+    "current status", "current_status",
+    "cycle state", "cycle_state",
+    "cycle status", "cycle_status",
+    "job state", "job_state",
+    "job status", "job_status",
+    "washer state", "dryer state", "dishwasher state",
+)
+
+_APPLIANCE_END_HINTS = (
+    "end of cycle", "end_of_cycle",
+    "cycle complete", "cycle_complete",
+    "cycle completed", "cycle_completed",
+    "cycle finished", "cycle_finished",
+)
+
+# Phase/status telemetry is useful only as supporting text for an active appliance.
+# Deliberately exclude generic "cycle" entities because those usually describe the
+# selected program (Normal, Towels, Perm Press), not what the machine is doing now.
+_APPLIANCE_PHASE_HINTS = (
+    "sub cycle", "sub_cycle",
+    "phase",
+    "stage",
+)
+
+# Settings/supporting telemetry should never become generic notifications.
+_SUPPORTING_NAME_HINTS = (
+    "chime", "sound", "volume", "remaining time", "total time", "delayed start",
+    "delay start", "current cycle", "program", "temperature setting", "setpoint",
+    "signal", "rssi", "wifi", "battery", "firmware", "diagnostic",
+)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _category_for(event_type: str, home_device: HomeDevice) -> str:
+    """Return a legacy category without making category part of architecture."""
+    appliance_label = _appliance_label(home_device).casefold()
+    laundry = appliance_label in {"washer", "dryer"}
+    return {
+        "security": "security",
+        "safety": "security",
+        "contact": "security",
+        "lock": "security",
+        "presence": "security",
+        "connectivity": "maintenance",
+        "appliance_cycle": "laundry" if laundry else "appliance",
+        "appliance_complete": "laundry" if laundry else "appliance",
+    }.get(event_type, home_device.kind)
+
+
+def _base(
+    home_device: HomeDevice,
+    entity: HomeDeviceEntity,
+    state: State,
+    *,
+    event_type: str,
+    message: str,
+    detail: str,
+    priority: str,
+    active: bool,
+    icon: str | None = None,
+) -> dict[str, Any]:
+    category = _category_for(event_type, home_device)
+    return {
+        "id": f"home_status:{home_device.id}:{entity.entity_id}:{event_type}",
+        "home_device_id": home_device.id,
+        "home_device_name": home_device.name,
+        "entity_name": _name(home_device, entity),
+        "entity_id": entity.entity_id,
+        "event_type": event_type,
+        "message": message,
+        "summary": detail,
+        "detail": detail,
+        "category": category,
+        "source": "home_device",
+        "behavior": "contact" if event_type == "contact" else event_type,
+        "priority": priority,
+        "icon": icon or entity.icon or state.attributes.get("icon") or "mdi:information-outline",
+        "active": active,
+        "state": state.state,
+        "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
+        "ticker_eligible": True,
+    }
+
+
+def _name(home_device: HomeDevice, entity: HomeDeviceEntity) -> str:
+    if len(home_device.entities) == 1:
+        return home_device.name
+    return entity.name
+
+
+def _is_supporting_entity(entity: HomeDeviceEntity) -> bool:
+    name = entity.name.casefold()
+    return any(hint in name for hint in _SUPPORTING_NAME_HINTS)
+
+
+def _entity_key(entity: HomeDeviceEntity) -> str:
+    return f"{entity.entity_id} {entity.name}".casefold()
+
+
+def _is_appliance_state_entity(entity: HomeDeviceEntity) -> bool:
+    key = _entity_key(entity)
+    return any(hint in key for hint in _APPLIANCE_STATE_HINTS)
+
+
+def _is_appliance_end_entity(entity: HomeDeviceEntity) -> bool:
+    key = _entity_key(entity)
+    return any(hint in key for hint in _APPLIANCE_END_HINTS)
+
+
+def _appliance_label(home_device: HomeDevice) -> str:
+    text = " ".join([
+        home_device.name,
+        *(entity.entity_id for entity in home_device.entities),
+        *(entity.name for entity in home_device.entities),
+    ]).casefold()
+    if "dishwasher" in text:
+        return "Dishwasher"
+    if "dryer" in text or "tumble dryer" in text:
+        return "Dryer"
+    if "washer" in text or "washing machine" in text:
+        return "Washer"
+    return home_device.name
+
+
+def _appliance_icon(label: str) -> str:
+    lower = label.casefold()
+    if "dishwasher" in lower:
+        return "mdi:dishwasher"
+    if "dryer" in lower:
+        return "mdi:tumble-dryer"
+    return "mdi:washing-machine"
+
+
+def _remaining_minutes(hass: HomeAssistant, entity: HomeDeviceEntity) -> str | None:
+    state = hass.states.get(entity.entity_id)
+    if state is None:
+        return None
+    raw = str(state.state or "").strip()
+    if raw.casefold() in {"", "unknown", "unavailable", "none", "---"}:
+        return None
+
+    device_class = str(state.attributes.get("device_class") or entity.device_class or "").casefold()
+    if device_class == "timestamp":
+        parsed = dt_util.parse_datetime(raw)
+        if parsed is None:
+            return None
+        parsed = dt_util.as_utc(parsed)
+        seconds = (parsed - dt_util.utcnow()).total_seconds()
+        if seconds <= 0:
+            return None
+        return f"{max(1, ceil(seconds / 60))} min remaining"
+
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return f"{raw} remaining"
+
+    unit = str(state.attributes.get("unit_of_measurement") or entity.unit or "").casefold()
+    if unit in {"h", "hr", "hrs", "hour", "hours"}:
+        value *= 60
+    elif unit in {"s", "sec", "secs", "second", "seconds"}:
+        value /= 60
+    if value <= 0:
+        return None
+    return f"{max(1, round(value))} min remaining"
+
+
+def _remaining_entity(home_device: HomeDevice) -> HomeDeviceEntity | None:
+    candidates: list[tuple[int, HomeDeviceEntity]] = []
+    for entity in home_device.entities:
+        key = _entity_key(entity)
+        if "delay" in key or "delayed" in key or "total_time" in key or "total time" in key:
+            continue
+        if "time_remaining" in key or "time remaining" in key:
+            candidates.append((0, entity))
+        elif "remaining_time" in key or "remaining time" in key:
+            candidates.append((1, entity))
+    return min(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def _appliance_phase_entity(home_device: HomeDevice) -> HomeDeviceEntity | None:
+    return next(
+        (
+            entity
+            for entity in home_device.entities
+            if any(hint in _entity_key(entity) for hint in _APPLIANCE_PHASE_HINTS)
+        ),
+        None,
+    )
+
+
+def _friendly_appliance_phase(raw: str) -> str | None:
+    value = raw.strip().casefold()
+    if value in {"", "unknown", "unavailable", "none", "---", "off", "idle", "ready"}:
+        return None
+
+    normalized = re.sub(r"[_-]+", " ", value).strip()
+    aliases = {
+        "spin": "Spinning",
+        "spinning": "Spinning",
+        "wash": "Washing",
+        "washing": "Washing",
+        "rinse": "Rinsing",
+        "rinsing": "Rinsing",
+        "dry": "Drying",
+        "drying": "Drying",
+        "sense": "Sensing",
+        "sensing": "Sensing",
+        "soak": "Soaking",
+        "soaking": "Soaking",
+        "drain": "Draining",
+        "draining": "Draining",
+        "heat": "Heating",
+        "heating": "Heating",
+        "cool": "Cooling",
+        "cooling": "Cooling",
+        "pause": "Paused",
+        "paused": "Paused",
+        "night dry": "Night Dry",
+    }
+    return aliases.get(normalized, normalized.title())
+
+
+def _appliance_phase(
+    hass: HomeAssistant,
+    home_device: HomeDevice,
+    state_entity: HomeDeviceEntity,
+    state: State,
+) -> str | None:
+    phase_entity = _appliance_phase_entity(home_device)
+    if phase_entity is not None:
+        phase_state = hass.states.get(phase_entity.entity_id)
+        if phase_state is not None:
+            phase = _friendly_appliance_phase(str(phase_state.state or ""))
+            if phase:
+                return phase
+
+    # Some integrations publish the live phase directly as the primary state
+    # (for example dishwasher current_status = rinsing/drying). Use that when it
+    # is more informative than a generic Run/Running signal.
+    raw_state = str(state.state or "").strip().casefold()
+    if raw_state not in {"run", "running", "active", "working"}:
+        return _friendly_appliance_phase(raw_state)
+    return None
+
+
+
+def _is_irrigation_context(home_device: HomeDevice, entity: HomeDeviceEntity | None = None) -> bool:
+    """Return True when a device/entity clearly represents irrigation.
+
+    This is interpretation only; it never controls selection/discovery.
+    """
+    text = " ".join([
+        home_device.name,
+        *(item.name for item in home_device.entities),
+        entity.name if entity is not None else "",
+    ]).casefold()
+    return home_device.kind == "irrigation" or any(
+        hint in text for hint in ("sprinkler", "irrigation", "watering", "rain delay", "rain_delay")
+    )
+
+
+def _friendly_datetime(value: Any) -> str | None:
+    """Format an HA datetime value for glanceable presentation."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parsed = dt_util.parse_datetime(raw)
+    if parsed is None:
+        return None
+    local = dt_util.as_local(parsed)
+    return local.strftime("%a, %b %-d · %-I:%M %p")
+
+
+def _waste_collection_kind(home_device: HomeDevice, entity: HomeDeviceEntity) -> tuple[str, str] | None:
+    """Return the supported curbside collection label and icon for a sensor."""
+    text = " ".join([home_device.name, entity.entity_id, entity.name]).casefold()
+    if "recycl" in text:
+        return "Recycling", "mdi:recycle"
+    if "garbage" in text or "trash" in text:
+        return "Garbage", "mdi:trash-can-outline"
+    return None
+
+
+def _waste_collection_date(value: Any) -> str | None:
+    """Turn common Waste Collection Schedule sensor states into glanceable dates."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    # Waste Collection Schedule commonly renders values such as
+    # "On Thu, 13.08.2026". Pull the numeric date out first so locale weekday
+    # abbreviations do not matter.
+    parsed_date = None
+    match = re.search(r"(?<!\d)(\d{1,2})[.](\d{1,2})[.](\d{4})(?!\d)", raw)
+    if match:
+        day, month, year = (int(part) for part in match.groups())
+        try:
+            parsed_date = datetime(year, month, day).date()
+        except ValueError:
+            parsed_date = None
+
+    if parsed_date is None:
+        iso_match = re.search(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", raw)
+        if iso_match:
+            year, month, day = (int(part) for part in iso_match.groups())
+            try:
+                parsed_date = datetime(year, month, day).date()
+            except ValueError:
+                parsed_date = None
+
+    if parsed_date is None:
+        return None
+
+    days = (parsed_date - dt_util.now().date()).days
+    if days == 0:
+        return "Today"
+    if days == 1:
+        return "Tomorrow"
+    if 2 <= days <= 7:
+        return parsed_date.strftime("%A")
+    return f"{parsed_date.strftime('%a, %b')} {parsed_date.day}"
+
+def _has_semantic_owner(home_device: HomeDevice, entity: HomeDeviceEntity) -> bool:
+    """Return True when Home Status already understands this entity's semantics.
+
+    A claimed entity may intentionally produce no item for a normal state. That
+    silence is authoritative and must not fall through to the generic manual
+    entity awareness path.
+    """
+    domain = entity.domain
+    device_class = str(entity.device_class or "").casefold()
+
+    if domain == "alarm_control_panel":
+        return True
+    if domain == "binary_sensor" and device_class in {
+        "smoke", "carbon_monoxide", "gas", "moisture", "problem", "safety",
+        "door", "window", "opening", "garage_door",
+        "motion", "occupancy", "presence", "connectivity",
+    }:
+        return True
+    if domain == "lock":
+        return True
+    if domain == "valve":
+        return True
+    if _is_irrigation_context(home_device, entity):
+        return True
+    if domain == "cover" and device_class in {"door", "garage", "gate", "window"}:
+        return True
+    if home_device.kind == "appliance":
+        return True
+    if domain == "climate":
+        return True
+    if domain == "sensor" and device_class in {"temperature", "humidity"}:
+        return True
+    return False
+
+def interpret_entity(
+    hass: HomeAssistant,
+    home_device: HomeDevice,
+    entity: HomeDeviceEntity,
+) -> list[dict[str, Any]]:
+    """Interpret one entity conservatively; unknown meaning stays silent."""
+    state = hass.states.get(entity.entity_id)
+    if state is None:
+        return []
+
+    raw = str(state.state or "").casefold()
+    domain = entity.domain
+    device_class = str(entity.device_class or "").casefold()
+    name = _name(home_device, entity)
+
+    # A child/supporting entity being unavailable does not mean the whole HomeDevice
+    # is unavailable. Device availability will get a dedicated device-level
+    # interpretation later. This prevents sirens, timers, remaining-time
+    # sensors, etc. from flooding Home Status.
+    if raw in {"unknown", "unavailable"}:
+        return []
+
+    if domain == "alarm_control_panel":
+        labels = {
+            "disarmed": ("Alarm Off", "Home security is disarmed", "normal", False),
+            "armed_home": ("Alarm On", "Home security is armed", "normal", False),
+            "armed_away": ("Alarm On", "Home security is armed", "normal", False),
+            "armed_night": ("Alarm On", "Home security is armed", "normal", False),
+            "arming": ("Alarm Arming", "Security countdown is active", "attention", True),
+            "pending": ("Entry Delay", "Security entry delay is active", "critical", True),
+            "triggered": ("Security Alert", "Alarm has been triggered", "critical", True),
+        }
+        if raw in labels:
+            message, detail, priority, active = labels[raw]
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="security",
+                    message=message,
+                    detail=detail,
+                    priority=priority,
+                    active=active,
+                    icon="mdi:shield-home",
+                )
+            ]
+        return []
+
+    if domain == "binary_sensor":
+        if device_class in {"smoke", "carbon_monoxide", "gas", "moisture", "problem", "safety"}:
+            if raw != "on":
+                return []
+            labels = {
+                "smoke": ("Smoke Detected", "Smoke was detected", "mdi:smoke-detector-alert"),
+                "carbon_monoxide": ("Carbon Monoxide Detected", "Carbon monoxide was detected", "mdi:molecule-co"),
+                "gas": ("Gas Detected", "Gas was detected", "mdi:gas-cylinder"),
+                "moisture": (f"{name} Leak", "Water detected", "mdi:water-alert"),
+                "problem": (f"{name} Problem", f"{name} reports a problem", "mdi:alert-circle"),
+                "safety": (f"{name} Alert", f"{name} reports an unsafe condition", "mdi:alert"),
+            }
+            message, detail, icon = labels[device_class]
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="safety",
+                    message=message,
+                    detail=detail,
+                    priority="critical",
+                    active=True,
+                    icon=icon,
+                )
+            ]
+
+        if device_class in {"door", "window", "opening", "garage_door"}:
+            if raw != "on":
+                return []
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="contact",
+                    message=f"{name} Open",
+                    detail=f"{name} is open",
+                    priority="attention",
+                    active=True,
+                    icon=entity.icon or "mdi:door-open",
+                )
+            ]
+
+        if device_class in {"motion", "occupancy", "presence"}:
+            if raw != "on":
+                return []
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="presence",
+                    message=f"{name} Activity",
+                    detail=f"Activity detected by {name}",
+                    priority="activity",
+                    active=True,
+                    icon=entity.icon or "mdi:motion-sensor",
+                )
+            ]
+
+        if device_class == "connectivity":
+            # HA connectivity sensors conventionally mean ON = connected.
+            if raw == "on":
+                return []
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="connectivity",
+                    message=f"{home_device.name} Offline",
+                    detail=f"{home_device.name} appears offline",
+                    priority="attention",
+                    active=True,
+                    icon="mdi:lan-disconnect",
+                )
+            ]
+
+        # No generic binary_sensor fallback. A switch-like configuration flag
+        # such as "Chime sound" being ON is not an event.
+        return []
+
+    if domain == "lock":
+        if raw in {"unlocked", "open"}:
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="lock",
+                    message=f"{name} Unlocked",
+                    detail=f"{name} is unlocked",
+                    priority="attention",
+                    active=True,
+                    icon="mdi:lock-open-variant",
+                )
+            ]
+        return []
+
+    if domain == "cover" and device_class in {"door", "garage", "gate", "window"}:
+        if raw in {"open", "opening"}:
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="contact",
+                    message=f"{name} Open",
+                    detail=f"{name} is open",
+                    priority="attention",
+                    active=True,
+                    icon="mdi:garage-open",
+                )
+            ]
+        return []
+
+    if domain == "valve":
+        # Closed valves are a normal state and stay silent. Open irrigation
+        # zones are meaningful activity; other valves use a neutral Open label.
+        if raw in {"open", "opening", "on"}:
+            irrigation = _is_irrigation_context(home_device, entity)
+            label = entity.name if len(home_device.entities) > 1 else home_device.name
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="irrigation" if irrigation else "valve",
+                    message=f"{label} Watering" if irrigation else f"{label} Open",
+                    detail=f"{home_device.name} is watering" if irrigation else f"{label} is open",
+                    priority="activity" if irrigation else "attention",
+                    active=True,
+                    icon=entity.icon or ("mdi:sprinkler-variant" if irrigation else "mdi:valve-open"),
+                )
+            ]
+        return []
+
+    # Appliance HomeDevices often expose dozens of controls/timers. Only the primary
+    # operating-state entity may create cycle notifications.
+    if home_device.kind == "appliance":
+        if _is_supporting_entity(entity) or not _is_appliance_state_entity(entity):
+            return []
+        if raw in _RUNNING:
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="appliance_cycle",
+                    message=f"{home_device.name} Running",
+                    detail=f"{home_device.name} is running",
+                    priority="activity",
+                    active=True,
+                    icon="mdi:washing-machine",
+                )
+            ]
+        if raw in _COMPLETE:
+            return [
+                _base(
+                    home_device,
+                    entity,
+                    state,
+                    event_type="appliance_complete",
+                    message=f"{home_device.name} Complete",
+                    detail=f"{home_device.name} is ready",
+                    priority="activity",
+                    active=True,
+                    icon="mdi:check-circle-outline",
+                )
+            ]
+        return []
+
+    # Weather/calendar/current-value entities are awareness/status, not alerts.
+    if domain in {"weather", "calendar", "person", "climate", "sensor", "siren", "switch", "valve", "camera"}:
+        return []
+
+    # Unknown entity meaning is intentionally silent.
+    return []
+
+def awareness_entity(
+    hass: HomeAssistant,
+    home_device: HomeDevice,
+    entity: HomeDeviceEntity,
+) -> list[dict[str, Any]]:
+    """Return quiet current-awareness information for selected HomeDevices."""
+    state = hass.states.get(entity.entity_id)
+    if state is None or str(state.state).casefold() in {"unknown", "unavailable"}:
+        return []
+
+    domain = entity.domain
+    attrs = state.attributes
+    name_overridden = bool(home_device.metadata.get('name_overridden'))
+    if len(home_device.entities) == 1:
+        name = home_device.name
+    elif name_overridden:
+        # A user rename is the presentation identity for the whole Home Device.
+        # Preserve the measurement meaning for multi-entity devices instead of
+        # falling back to Home Assistant's original entity label.
+        device_class = str(entity.device_class or '').casefold()
+        measurement = {
+            'temperature': 'Temperature',
+            'humidity': 'Humidity',
+        }.get(device_class, entity.name)
+        base = home_device.name.strip()
+        name = base if measurement.casefold() in base.casefold() else f"{base} {measurement}"
+    else:
+        name = entity.name
+    message = None
+    detail = None
+    icon = entity.icon or attrs.get("icon") or "mdi:information-outline"
+
+    waste_kind = _waste_collection_kind(home_device, entity)
+    if waste_kind is not None and domain == "sensor":
+        collection, waste_icon = waste_kind
+        message = collection
+        detail = _waste_collection_date(state.state) or str(state.state).removeprefix("On ").strip()
+        icon = waste_icon
+
+    # Normal alarm states (disarmed/armed) belong to the dedicated security UI,
+    # not generic awareness. Attention/critical alarm states are produced by
+    # interpret_entity() and can still surface through the normal lifecycle.
+    # This also prevents explicitly selected alarm entities from duplicating
+    # "Armed Home" in the bottom stream.
+    if domain == "alarm_control_panel":
+        return []
+
+    # Irrigation is a multi-entity device: rain delay, next watering, and zone
+    # valves have different semantics. Interpret them before generic fallback.
+    if _is_irrigation_context(home_device, entity):
+        entity_text = entity.name.casefold().replace("_", " ")
+        raw = str(state.state or "").casefold()
+
+        if domain == "switch" and "rain delay" in entity_text:
+            if raw not in {"on", "true", "active"}:
+                return []
+            message = "Rain Delay Active"
+            detail = "Scheduled watering is paused"
+            icon = entity.icon or "mdi:weather-rainy"
+
+        elif domain == "sensor" and ("next watering" in entity_text or "next water" in entity_text):
+            friendly = _friendly_datetime(state.state)
+            if not friendly:
+                return []
+            message = "Next Watering"
+            detail = friendly
+            icon = entity.icon or "mdi:sprinkler-variant"
+
+        elif domain == "valve":
+            # Valve activity is handled by interpret_entity(); normal closed
+            # zones intentionally stay silent here.
+            return []
+
+    if domain == "climate":
+        current = attrs.get("current_temperature")
+        target = attrs.get("temperature")
+        mode = str(state.state).replace("_", " ").title()
+        message = f"{name}: {mode}"
+        pieces = []
+        if current is not None:
+            pieces.append(f"{current}°")
+        if target is not None:
+            pieces.append(f"Set {target}°")
+        detail = " · ".join(pieces) or mode
+        icon = entity.icon or "mdi:thermostat"
+
+
+    elif domain == "sensor" and str(entity.device_class or "").casefold() in {
+        "temperature",
+        "humidity",
+    }:
+        device_class = str(entity.device_class or "").casefold()
+        measurement = "Humidity" if device_class == "humidity" else "Temperature"
+        raw_value = state.state
+        unit = str(entity.unit or attrs.get("unit_of_measurement") or "")
+        try:
+            numeric = float(raw_value)
+            value = str(int(round(numeric)))
+        except (TypeError, ValueError):
+            value = str(raw_value)
+        # Sensor precision belongs in HA's raw state. Home Status presents
+        # glanceable whole-number values and keeps the Home Device name as
+        # context instead of repeating it in the measurement title.
+        message = f"{value}{unit}"
+        detail = home_device.name
+        icon = entity.icon or (
+            "mdi:water-percent"
+            if device_class == "humidity"
+            else "mdi:thermometer"
+        )
+
+    if not message and home_device.metadata.get("manual_entity"):
+        # Selection is unrestricted, but interpretation remains authoritative.
+        # If a semantic interpreter owns this entity, an empty result means the
+        # current state is normal/quiet and MUST stay silent (for example a
+        # closed door, dry leak sensor, idle appliance, or normal alarm state).
+        if _has_semantic_owner(home_device, entity):
+            return []
+
+        # Only truly unknown entities use the generic fallback. This preserves
+        # the user's ability to monitor unusual/custom entities without leaking
+        # raw states from entity types Home Status already understands.
+        unit = str(entity.unit or attrs.get("unit_of_measurement") or "")
+        raw_value = str(state.state)
+        if domain == "sensor" and unit:
+            try:
+                numeric = float(raw_value)
+                value = str(int(round(numeric))) if numeric.is_integer() or abs(numeric) >= 10 else f"{numeric:g}"
+            except (TypeError, ValueError):
+                value = raw_value
+            message = f"{value}{unit}"
+        else:
+            message = raw_value.replace("_", " ").title()
+        detail = home_device.name
+
+    if not message:
+        return []
+
+    return [{
+        "id": f"home_status:{home_device.id}:{entity.entity_id}:awareness",
+        "home_device_id": home_device.id,
+        "home_device_name": home_device.name,
+        "entity_id": entity.entity_id,
+        "event_type": "awareness",
+        "title": message,
+        "message": message,
+        "summary": detail or message,
+        "detail": detail or message,
+        "category": "waste" if _waste_collection_kind(home_device, entity) is not None else home_device.kind,
+        "source": "home_device",
+        "priority": "normal",
+        "icon": icon,
+        "active": False,
+        "state": state.state,
+        "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
+        "ticker_eligible": True,
+    }]
+
+def interpret_appliance_home_device(
+    hass: HomeAssistant,
+    home_device: HomeDevice,
+) -> list[dict[str, Any]]:
+    """Interpret washer, dryer, and dishwasher activity with one compact contract.
+
+    Running is live activity. Leaving a running state (or an explicit end-of-cycle
+    signal) makes the coordinator resolve that activity into a recent Complete
+    event, which gives completion an accurate timestamp without keeping idle
+    appliances on screen.
+    """
+    state_entity = next(
+        (entity for entity in home_device.entities if _is_appliance_state_entity(entity)),
+        None,
+    )
+    if state_entity is None:
+        return []
+
+    state = hass.states.get(state_entity.entity_id)
+    if state is None:
+        return []
+
+    # An explicit end-of-cycle signal wins over a lagging machine-state sensor.
+    # Returning no active item here lets the coordinator resolve the prior Running
+    # item immediately into "<Appliance> Complete" with resolved_at = now.
+    end_entity = next(
+        (entity for entity in home_device.entities if _is_appliance_end_entity(entity)),
+        None,
+    )
+    if end_entity is not None:
+        end_state = hass.states.get(end_entity.entity_id)
+        if end_state and str(end_state.state or "").strip().casefold() in {
+            "on", "true", "1", "complete", "completed", "finished", "done", "end",
+        }:
+            return []
+
+    raw = str(state.state or "").strip().casefold()
+    if raw in {
+        "", "unknown", "unavailable", "off", "power_off", "power off",
+        "idle", "standby", "ready", "initial", "---",
+        "complete", "completed", "finished", "done", "end", "ended",
+    }:
+        return []
+
+    running_states = {
+        "run", "running", "washing", "drying", "cleaning", "active",
+        "working", "sensing", "soaking", "rinsing", "spinning",
+        "pause", "paused", "night_dry", "night dry",
+    }
+    if raw not in running_states:
+        return []
+
+    label = _appliance_label(home_device)
+    remaining_entity = _remaining_entity(home_device)
+    remaining = _remaining_minutes(hass, remaining_entity) if remaining_entity else None
+    phase = _appliance_phase(hass, home_device, state_entity, state)
+    detail = remaining or phase or "In progress"
+
+    item = _base(
+        home_device,
+        state_entity,
+        state,
+        event_type="appliance_cycle",
+        message=f"{label} Running",
+        detail=detail,
+        priority="activity",
+        active=True,
+        icon=_appliance_icon(label),
+    )
+    item["id"] = f"home_status:{home_device.id}:appliance_cycle"
+    item["appliance_name"] = label
+    if end_entity is not None:
+        item["completion_entity_id"] = end_entity.entity_id
+    return [item]
+
