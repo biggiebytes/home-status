@@ -13,7 +13,7 @@ from .home_device import HomeDevice
 from .interpreters import awareness_entity, interpret_appliance_home_device, interpret_entity
 from .source import HomeSource
 from .source_discovery import discover_sources
-from .source_interpreters import interpret_source
+from .source_interpreters import household_presence_item, interpret_source
 
 
 class HomeStatusEngine:
@@ -206,7 +206,14 @@ class HomeStatusEngine:
                 for entity in self._manual_appliance_context(selected).entities
             ),
             *(source.entity_id for source in self.selected_sources(options)),
+            *(self._household_person_ids(options) if options.get("household_presence_enabled", False) else ()),
         ]))
+
+    def _household_person_ids(self, options: dict[str, Any]) -> list[str]:
+        configured = options.get("household_presence_people", [])
+        if isinstance(configured, list) and configured:
+            return [str(entity_id) for entity_id in configured if str(entity_id).startswith("person.")]
+        return [source.entity_id for source in self.sources().values() if source.domain == "person"]
 
     def build_active_items(self, options: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -233,6 +240,7 @@ class HomeStatusEngine:
     def build_awareness_items(self, options: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         explicit_ids = set(self._selected_entity_ids(options))
+        household_people = set(self._household_person_ids(options)) if options.get("household_presence_enabled", False) else set()
         for selected in self.selected_entities(options):
             for entity in selected.entities:
                 items.extend(awareness_entity(self.hass, selected, entity))
@@ -242,7 +250,13 @@ class HomeStatusEngine:
                     continue
                 items.extend(awareness_entity(self.hass, home_device, entity))
         for source in self.selected_sources(options):
+            if source.domain == "person" and source.entity_id in household_people:
+                continue
             items.extend(interpret_source(self.hass, source))
+        if household_people:
+            household = household_presence_item(self.hass, sorted(household_people))
+            if household is not None:
+                items.append(household)
         return self._dedupe(items)
 
     @staticmethod

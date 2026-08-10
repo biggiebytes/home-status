@@ -7,10 +7,12 @@ never an eligibility gate.
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.data_entry_flow import section
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
@@ -20,6 +22,10 @@ from .const import DOMAIN
 from .discovery import discover_home_devices
 from .source_discovery import discover_sources
 from .presentation_config import DEFAULTS, DESTINATION_OPTIONS, PALETTE_OPTIONS
+from .presentation import NAVIGATION_KEYS
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _home_device_choices(hass):
@@ -36,6 +42,14 @@ def _source_choices(hass):
     return [
         {"value": item.id, "label": f"{item.name} · {item.kind.title()}"}
         for item in discover_sources(hass)
+    ]
+
+
+def _person_choices(hass):
+    return [
+        {"value": state.entity_id, "label": str(state.attributes.get("friendly_name") or state.entity_id)}
+        for state in sorted(hass.states.async_all("person"), key=lambda item: str(item.attributes.get("friendly_name") or item.entity_id).casefold())
+        if str(state.state).casefold() not in {"unknown", "unavailable"}
     ]
 
 
@@ -426,7 +440,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open information and visual source settings."""
         return self.async_show_menu(
             step_id="sources",
-            menu_options=["information_sources", "news_sources", "live_news_sources", "visual_sources", "back_to_init"],
+            menu_options=["information_sources", "household_presence", "news_sources", "live_news_sources", "visual_sources", "back_to_init"],
         )
 
     async def async_step_information_sources(self, user_input=None):
@@ -446,6 +460,27 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 )
+            }),
+        )
+
+    async def async_step_household_presence(self, user_input=None):
+        """Configure one grouped presence item instead of per-person items."""
+        options = self._options()
+        choices = _person_choices(self.hass)
+        current_people = options.get("household_presence_people", [])
+        if not isinstance(current_people, list):
+            current_people = []
+        if user_input is not None:
+            options["household_presence_enabled"] = bool(user_input.get("enabled", False))
+            options["household_presence_people"] = list(user_input.get("people", []))
+            return await self._save_options_and_return(options, "sources")
+        return self.async_show_form(
+            step_id="household_presence",
+            data_schema=vol.Schema({
+                vol.Optional("enabled", default=options.get("household_presence_enabled", False)): selector.BooleanSelector(),
+                vol.Optional("people", default=current_people): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=choices, multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)
+                ),
             }),
         )
 
@@ -785,7 +820,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open the user-facing presentation and behavior settings."""
         return self.async_show_menu(
             step_id="presentation",
-            menu_options=["layout_sizing", "routing_filters", "appearance", "visual_center", "names", "timing", "back_to_init"],
+            menu_options=["layout_sizing", "routing_filters", "navigation", "appearance", "visual_center", "names", "timing", "back_to_init"],
         )
 
     def _option_value(self, key):
@@ -793,6 +828,98 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         if key.startswith("route_"):
             return list(value) if isinstance(value, list) else list(DEFAULTS.get(key, []))
         return value
+
+    async def _dashboard_page_choices(self) -> list[dict[str, str]]:
+        """Return the user's existing dashboard views as friendly destinations."""
+        lovelace = self.hass.data.get(LOVELACE_DATA)
+        dashboards = getattr(lovelace, "dashboards", {}) if lovelace else {}
+        pages: dict[str, dict[str, str]] = {}
+        for dashboard_key, dashboard in (dashboards.items() if isinstance(dashboards, dict) else ()):
+            try:
+                metadata = getattr(dashboard, "config", None) or {}
+                dashboard_title = metadata.get("title") or (
+                    "Overview" if dashboard_key is None else str(dashboard_key).replace("-", " ").title()
+                )
+                dashboard_path = getattr(dashboard, "url_path", None) or dashboard_key or "lovelace"
+                config = await dashboard.async_load(False)
+                for index, view in enumerate(config.get("views", []) if isinstance(config, dict) else []):
+                    if not isinstance(view, dict):
+                        continue
+                    view_title = view.get("title") or f"View {index + 1}"
+                    route = view.get("path") if view.get("path") not in (None, "") else str(index)
+                    path = f"/{str(dashboard_path).strip('/')}/{str(route).strip('/')}"
+                    pages[path] = {"value": path, "label": f"{dashboard_title} → {view_title}"}
+            except Exception as err:  # A private dashboard must not block configuration.
+                _LOGGER.debug("Unable to read Home Assistant dashboard %s: %s", dashboard_key, err)
+        return sorted(pages.values(), key=lambda page: page["label"].casefold())
+
+    async def async_step_navigation(self, user_input=None):
+        """Configure optional page destinations for normal Home Status items."""
+        current = self._options()
+        pages = await self._dashboard_page_choices()
+        choices = [
+            *pages,
+            {"value": "entity", "label": "Open device details"},
+            {"value": "none", "label": "Do not open anything"},
+            {"value": "custom", "label": "Use custom page path below"},
+        ]
+        valid = {choice["value"] for choice in choices}
+
+        if user_input is not None:
+            options = self._options()
+            for value in user_input.values():
+                if isinstance(value, dict):
+                    options.update(value)
+            errors: dict[str, str] = {}
+            for key in NAVIGATION_KEYS:
+                target_key = f"navigation_{key}"
+                target = options.get(target_key, "none")
+                if target not in valid:
+                    options[target_key] = "none"
+                    target = "none"
+                if target == "custom":
+                    custom = str(options.get(f"navigation_custom_{key}", "")).strip()
+                    if not custom.startswith("/"):
+                        errors[target_key] = "custom_page_must_start_with_slash"
+                    else:
+                        options[f"navigation_custom_{key}"] = custom
+            if not errors:
+                options["navigation_enabled"] = bool(options.get("navigation_enabled", True))
+                return await self._save_options_and_return(options, "presentation")
+        else:
+            errors = {}
+
+        def destination(key: str):
+            saved = current.get(f"navigation_{key}", "none")
+            control = selector.SelectSelector(
+                selector.SelectSelectorConfig(options=choices, mode=selector.SelectSelectorMode.DROPDOWN)
+            )
+            return control, saved if saved in valid else "none"
+
+        def fields(keys, *, custom: bool = False):
+            schema = {}
+            for key in keys:
+                option_key = f"navigation_custom_{key}" if custom else f"navigation_{key}"
+                if custom:
+                    schema[vol.Optional(option_key, default=current.get(option_key, ""))] = selector.TextSelector()
+                else:
+                    control, default = destination(key)
+                    schema[vol.Optional(option_key, default=default)] = control
+            return vol.Schema(schema)
+
+        return self.async_show_form(
+            step_id="navigation",
+            data_schema=vol.Schema({
+                vol.Required("enable_navigation"): section(vol.Schema({
+                    vol.Optional("navigation_enabled", default=current.get("navigation_enabled", True)): selector.BooleanSelector(),
+                }), {"collapsed": False}),
+                vol.Required("contacts"): section(fields(("doors_open", "doors_closed", "windows_open", "windows_closed")), {"collapsed": True}),
+                vol.Required("activity"): section(fields(("appliances_running", "appliances_complete", "security")), {"collapsed": True}),
+                vol.Required("information"): section(fields(("weather", "climate", "waste", "calendar", "news", "irrigation", "location", "other")), {"collapsed": True}),
+                vol.Required("custom_paths"): section(fields(NAVIGATION_KEYS, custom=True), {"collapsed": True}),
+            }),
+            errors=errors,
+        )
 
     @staticmethod
     def _number(minimum, maximum, step=1):

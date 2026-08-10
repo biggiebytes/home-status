@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.5.0
+
+### Visual Center and live information
+
+- Added the provider-neutral Visual Center with image, camera, MP4/WebM video,
+  and Direct HTTPS HLS rendering. It appears only while a valid visual is
+  available and cleanly returns the card to its normal two-column layout.
+- Added configurable camera visual sources with trigger-state activation,
+  hold-after-trigger duration, priority, and resumable takeover behavior.
+- Added generic RSS/Atom news sources and an optional Visual Center bootstrap
+  for the newest image-backed article without replaying old feed entries.
+- Added rotating Live News HLS sources with one provider-wide sampling cadence,
+  persisted rotation, preemption by higher-priority visuals, and clean teardown.
+
+### Household and interaction
+
+- Added Household presence under Information sources. Selected people can now
+  be presented as one clear Everyone Home, Everyone Away, or mixed household
+  status instead of separate person entries.
+- Restored integration-level Tap destinations under Presentation & behavior.
+  Ordinary items can open chosen Home Assistant dashboard pages while linked
+  news headlines continue to open their original articles.
+
+### Reliable activity history
+
+- Added normalized alarm arm, disarm, and triggered history entries with the
+  same timestamp treatment used by resolved door activity.
+- Kept every alarm transition in Recent/history while limiting the ticker to
+  its newest retained alarm transition, preventing repeated arm/disarm cycles
+  from crowding or repeatedly restarting the marquee.
+- Introduced a shared semantic normalization boundary for appliances, contacts,
+  and safety/fault states so raw values such as `on` are interpreted using their
+  actual Home Assistant context.
+- Improved whole-device appliance handling, including stable identity,
+  remaining-time updates, and clear laundry door labels without exposed model
+  numbers.
+
 ## v0.4.0
 
 ### Highlights

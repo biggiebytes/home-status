@@ -105,6 +105,7 @@
         "description": "Manage the information Home Status can surface and the generic visual sources available to Visual Center.",
         "menu_options": {
           "information_sources": "Information sources",
+          "household_presence": "Household presence",
           "news_sources": "News sources",
           "live_news_sources": "Live News sources",
           "visual_sources": "Visual sources",
@@ -147,6 +148,12 @@
         "data_description": {
           "selected_sources": "Select the information feeds Home Status may use. What appears on the card can be controlled separately under Presentation & behavior."
         }
+      },
+      "household_presence": {
+        "title": "Household presence",
+        "description": "Show one household summary such as Everyone Home, Everyone Away, or 2 of 4 Home. Select the people who belong in the household. While this is enabled, those people are grouped into one Home Status item instead of appearing separately in the card and ticker.",
+        "data": {"enabled": "Show one household presence summary", "people": "People in this household"},
+        "data_description": {"enabled": "Turn this on to replace separate person/location items for the selected people with one combined household item.", "people": "Choose the Home Assistant person entities that should be counted together. Leave this empty to use all available person entities."}
       },
       "visual_sources": {
         "title": "Visual sources",
@@ -300,6 +307,7 @@
         "menu_options": {
           "layout_sizing": "Layout & sizing",
           "routing_filters": "Routing & filters",
+          "navigation": "Tap destinations",
           "appearance": "Appearance",
           "visual_center": "Visual Center",
           "names": "Names",
@@ -459,6 +467,17 @@
           }
         }
       },
+      "navigation": {
+        "title": "Tap destinations",
+        "description": "Choose what happens when someone taps an ordinary Home Status item in the main areas or bottom ticker. You can send each kind of information to one of your existing dashboard pages, open the item’s Home Assistant details, or leave it untouched. Feed headlines that already link to their article keep that article link.",
+        "sections": {
+          "enable_navigation": {"name": "Enable page navigation", "description": "Turn this off to leave ordinary Home Status items on their normal Home Assistant details behavior.", "data": {"navigation_enabled": "Open selected dashboard pages when items are tapped"}, "data_description": {"navigation_enabled": "When enabled, a configured destination opens for that kind of item. Items without a destination continue to open their usual Home Assistant details."}},
+          "contacts": {"name": "Doors & windows", "data": {"navigation_doors_open": "Open doors", "navigation_doors_closed": "Recently closed doors", "navigation_windows_open": "Open windows", "navigation_windows_closed": "Recently closed windows"}},
+          "activity": {"name": "Appliances & security", "data": {"navigation_appliances_running": "Running appliances", "navigation_appliances_complete": "Completed appliances", "navigation_security": "Security"}},
+          "information": {"name": "Information", "data": {"navigation_weather": "Weather", "navigation_climate": "Climate & measurements", "navigation_waste": "Waste collection", "navigation_calendar": "Calendar", "navigation_news": "News", "navigation_irrigation": "Sprinklers & irrigation", "navigation_location": "Location", "navigation_other": "Other information"}},
+          "custom_paths": {"name": "Custom page paths", "description": "Only used for categories set to Use custom page path above. Enter a Home Assistant path beginning with /, for example /dashboard-tablet/security.", "data": {"navigation_custom_doors_open": "Open doors custom path", "navigation_custom_doors_closed": "Closed doors custom path", "navigation_custom_windows_open": "Open windows custom path", "navigation_custom_windows_closed": "Closed windows custom path", "navigation_custom_appliances_running": "Running appliances custom path", "navigation_custom_appliances_complete": "Completed appliances custom path", "navigation_custom_security": "Security custom path", "navigation_custom_weather": "Weather custom path", "navigation_custom_climate": "Climate custom path", "navigation_custom_waste": "Waste collection custom path", "navigation_custom_calendar": "Calendar custom path", "navigation_custom_news": "News custom path", "navigation_custom_irrigation": "Irrigation custom path", "navigation_custom_location": "Location custom path", "navigation_custom_other": "Other information custom path"}}
+        }
+      },
       "appearance": {
         "title": "Appearance",
         "description": "Choose how Home Status uses icon colors to distinguish categories and important states at a glance. These settings affect icons, not text or card backgrounds.",
@@ -538,7 +557,8 @@
     },
     "error": {
       "confirm_remove": "Check the confirmation box before removing this item.",
-      "invalid_hls_url": "Enter a direct HTTPS HLS URL ending in .m3u8."
+      "invalid_hls_url": "Enter a direct HTTPS HLS URL ending in .m3u8.",
+      "custom_page_must_start_with_slash": "Custom page paths must begin with /."
     },
     "abort": {
       "no_selected_items": "Home Status is not monitoring anything yet. Add something first, then you can change its name."

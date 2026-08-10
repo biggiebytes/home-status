@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from custom_components.home_status.presentation import select_visual
+from custom_components.home_status.presentation import apply_navigation, select_visual
 
 
 NOW = datetime(2026, 8, 9, 12, 0, tzinfo=timezone.utc)
@@ -74,3 +74,35 @@ def test_selector_preserves_renderer_metadata_without_selecting_on_it():
     assert visual["transport"] == "hls"
     assert visual["title"] == "Channel"
     assert visual["mute"] is True
+
+
+def test_configured_navigation_follows_an_item_into_any_card_area():
+    item = {
+        "id": "front-door", "event_type": "contact", "active": True,
+        "title": "Front Door Open", "category": "security",
+    }
+
+    result = apply_navigation([item], {"navigation_doors_open": "/tablet/security"})
+
+    assert result[0]["navigation"] == "/tablet/security"
+    assert "navigation" not in item
+
+
+def test_provider_link_is_not_replaced_by_a_configured_destination():
+    article = {
+        "id": "article", "category": "news", "navigation": "https://example.test/article",
+    }
+
+    result = apply_navigation([article], {"navigation_news": "/tablet/news"})
+
+    assert result[0]["navigation"] == "https://example.test/article"
+
+
+def test_custom_navigation_path_is_used_only_when_selected():
+    item = {"id": "weather", "category": "weather"}
+    result = apply_navigation([item], {
+        "navigation_weather": "custom",
+        "navigation_custom_weather": "/tablet/weather",
+    })
+
+    assert result[0]["navigation"] == "/tablet/weather"

@@ -14,6 +14,16 @@ from .presentation_config import ROUTING_DEFAULTS, option
 _PRIORITY = {"critical": 0, "attention": 1, "activity": 2, "normal": 3}
 _VISUAL_TYPES = {"image", "video", "camera", "map"}
 
+# These keys deliberately match the presentation routing categories. A person's
+# tap destination should follow an item wherever that category is shown, rather
+# than being tied to a particular area of the card.
+NAVIGATION_KEYS = (
+    "doors_open", "doors_closed", "windows_open", "windows_closed",
+    "appliances_running", "appliances_complete", "security", "weather",
+    "climate", "waste", "calendar", "news", "irrigation", "location",
+    "other",
+)
+
 
 def _sort(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
@@ -68,6 +78,36 @@ def _destinations(item: dict[str, Any], options: dict[str, Any]) -> list[str]:
     if isinstance(value, list):
         return [str(destination) for destination in value if str(destination) in {"left", "right", "bottom"}]
     return list(ROUTING_DEFAULTS.get(key, ROUTING_DEFAULTS["other"]))
+
+
+def apply_navigation(
+    items: list[dict[str, Any]], options: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Attach configured Home Assistant page destinations to normal items.
+
+    Provider-supplied actions, such as an RSS article link, remain authoritative.
+    This keeps a news headline opening its article while allowing ordinary Home
+    Status information to open a user-selected dashboard page.
+    """
+    options = options or {}
+    if not bool(options.get("navigation_enabled", True)):
+        return [dict(item) for item in items]
+
+    result: list[dict[str, Any]] = []
+    for original in items:
+        item = dict(original)
+        if item.get("navigation") or item.get("action"):
+            result.append(item)
+            continue
+
+        key = _routing_key(item)
+        target = options.get(f"navigation_{key}", "none")
+        if target == "custom":
+            target = options.get(f"navigation_custom_{key}", "")
+        if isinstance(target, str) and target.startswith("/"):
+            item["navigation"] = target
+        result.append(item)
+    return result
 
 
 def place_items(

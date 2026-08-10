@@ -61,6 +61,60 @@ def _item(
     }
 
 
+def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[str, Any] | None:
+    """Build one household-level presence summary from selected people."""
+    people = []
+    for entity_id in person_ids:
+        state = hass.states.get(entity_id)
+        if state is None or str(state.state).casefold() in {"unknown", "unavailable"}:
+            continue
+        name = str(state.attributes.get("friendly_name") or entity_id.split(".", 1)[-1].replace("_", " ").title())
+        people.append((name, str(state.state).casefold(), state))
+    if not people:
+        return None
+
+    home = [name for name, location, _state in people if location == "home"]
+    away = [name for name, location, _state in people if location != "home"]
+    if len(home) == len(people):
+        title = "Everyone Home"
+        detail = ", ".join(home)
+        icon = "mdi:home-account"
+    elif not home:
+        title = "Everyone Away"
+        detail = ", ".join(away)
+        icon = "mdi:map-marker-account"
+    else:
+        title = f"{len(home)} of {len(people)} Home"
+        detail = f"{', '.join(home)} home · {', '.join(away)} away"
+        icon = "mdi:map-marker-account"
+
+    changed = max(
+        (state.last_changed for _name, _location, state in people if state.last_changed),
+        default=None,
+    )
+    return {
+        "id": "home_status:household_presence:awareness",
+        "source_id": "household_presence",
+        "source_name": "Household presence",
+        "entity_id": None,
+        "event_type": "awareness",
+        "title": title,
+        "message": title,
+        "summary": detail,
+        "detail": detail,
+        "category": "location",
+        "source": "household_presence",
+        "source_kind": "location",
+        "priority": "normal",
+        "icon": icon,
+        "active": False,
+        "state": "home" if len(home) == len(people) else "away" if not home else "mixed",
+        "created_at": changed.isoformat() if changed else _now(),
+        "ticker_eligible": True,
+        "person_ids": [state.entity_id for _name, _location, state in people],
+    }
+
+
 def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, Any]]:
     """Return the current useful awareness item for one selected Source."""
     state = hass.states.get(source.entity_id)

@@ -22,7 +22,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .engine import HomeStatusEngine
-from .presentation import place_items, select_visual
+from .presentation import apply_navigation, place_items, select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
 from .normalization import normalize_semantic_state
@@ -314,9 +314,13 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._apply_current_display_name(item) for item in self.history
         ])
 
-        active = self._sorted(list(self.active.values()))
-        recent = self._recent_for_bottom(self.history)
-        awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
+        active = apply_navigation(self._sorted(list(self.active.values())), self.options)
+        history = apply_navigation(self.history, self.options)
+        recent = self._recent_for_bottom(history)
+        awareness = apply_navigation(
+            [*self.engine.build_awareness_items(self.options), *self.news_articles],
+            self.options,
+        )
 
         left, right, bottom = place_items(active, recent, awareness, self.options)
         visual = self._select_current_visual(active, recent, awareness, visual_source_items, self.live_news_items)
@@ -329,7 +333,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "priority": priority,
             "active_count": len(active),
             "active": active,
-            "recent": self.history,
+            "recent": history,
             "left": left,
             "right": right,
             "bottom": bottom,
