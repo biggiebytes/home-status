@@ -1465,6 +1465,7 @@ class HomeStatusCard extends HTMLElement {
     const completedApplianceEvent = ['appliance_cycle', 'appliance_complete'].includes(eventType)
       && /\b(?:washer|dryer|dishwasher)\b/.test(text)
       && /\b(?:complete|completed|finished|done|cycle end)\b/.test(text);
+    if (eventType === 'alarm_transition') return true;
     if (contactEvent) return settings.contacts !== false;
     if (completedApplianceEvent) return settings.appliance_complete !== false;
     return settings.other === true;
@@ -1493,6 +1494,7 @@ class HomeStatusCard extends HTMLElement {
       source_kind: item.source_kind,
       _category: item._category,
       entity_id: item.entity_id,
+      event_type: item.event_type,
       active: item.active,
       state: item.state,
       created_at: item.created_at,
@@ -1538,7 +1540,19 @@ class HomeStatusCard extends HTMLElement {
   _buildFooterStream(data) {
     if (!this._config.home_status_visibility.bottom) return [];
     const authoritativeBottom = Array.isArray(data.bottom) ? data.bottom : [];
-    const items = authoritativeBottom
+    const newestAlarmTransition = authoritativeBottom
+      .filter(item => String(item?.event_type || '').toLowerCase() === 'alarm_transition')
+      .reduce((newest, item) => {
+        if (!newest) return item;
+        const newestTime = this._date(this._timestampValue(newest))?.getTime() || 0;
+        const itemTime = this._date(this._timestampValue(item))?.getTime() || 0;
+        return itemTime > newestTime ? item : newest;
+      }, null);
+    const footerItems = authoritativeBottom.filter(item => (
+      String(item?.event_type || '').toLowerCase() !== 'alarm_transition'
+      || item === newestAlarmTransition
+    ));
+    const items = footerItems
       .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _category: this._categoryFor(item) }));
     return this._footerFilters(data).group_contact_closures === true
       ? this._groupFooterContactClosures(items)
@@ -1753,6 +1767,9 @@ class HomeStatusCard extends HTMLElement {
     if (item.active === false && item.resolved_at) {
       summary = '';
     }
+    if (relativeStamp && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
+      summary = '';
+    }
     return {
       title: String(title).replace(/\s+/g, ' ').trim().slice(0, 60),
       summary: String(summary).replace(/\s+/g, ' ').trim().slice(0, 48),
@@ -1788,6 +1805,7 @@ class HomeStatusCard extends HTMLElement {
       this._refreshFooterRelativeTimes();
       return;
     }
+    const previousPhase = this._footerMarqueePhase(target);
     this._footerSignature = signature;
     this._footerSignatureParts = signatureParts;
     if (this._footerResizeObserver) {
@@ -1815,7 +1833,10 @@ class HomeStatusCard extends HTMLElement {
     const trackElement = target.querySelector('.footer-marquee-track');
     const firstSequence = target.querySelector('.footer-sequence');
     if (!singleItem && trackElement && firstSequence) {
-      this._updateFooterMarqueeMetrics(target);
+      const metrics = this._updateFooterMarqueeMetrics(target);
+      if (previousPhase !== null && metrics) {
+        trackElement.style.animationDelay = `-${previousPhase * metrics.duration}s`;
+      }
       if (typeof ResizeObserver !== 'undefined') {
         this._footerResizeObserver = new ResizeObserver(() => {
           this._updateFooterMarqueeMetrics(target);
@@ -1827,6 +1848,18 @@ class HomeStatusCard extends HTMLElement {
     this._bindStreamItems();
   }
 
+  _footerMarqueePhase(target) {
+    const track = target?.querySelector('.footer-marquee-track');
+    const sequence = target?.querySelector('.footer-sequence');
+    if (!track || !sequence) return null;
+    const distance = sequence.getBoundingClientRect().width;
+    const transform = getComputedStyle(track).transform;
+    const match = /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,([^,]+),/.exec(transform);
+    const offset = match ? Number(match[1]) : NaN;
+    if (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(offset)) return null;
+    return ((-offset % distance) + distance) % distance / distance;
+  }
+
   _updateFooterMarqueeMetrics(target) {
     const track = target?.querySelector('.footer-marquee-track');
     const firstSequence = target?.querySelector('.footer-sequence');
@@ -1836,6 +1869,7 @@ class HomeStatusCard extends HTMLElement {
     const duration = Math.max(8, distance / this._config.bottom_speed);
     track.style.setProperty('--marquee-distance', `${distance}px`);
     track.style.setProperty('--marquee-duration', `${duration}s`);
+    return { distance, duration };
   }
 
   _categoryFor(item) {
@@ -1875,6 +1909,9 @@ class HomeStatusCard extends HTMLElement {
     const relative = !currentWeather && !indoorTemperature && !scheduled && this._showsRelativeAge(item, category, title)
       ? this._relative(this._timestampValue(item))
       : '';
+    if (relative && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
+      summary = '';
+    }
     if (relative) {
       summary = [summary, relative].filter(Boolean).join(' — ');
     }

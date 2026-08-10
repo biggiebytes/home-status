@@ -61,6 +61,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._visual_source_lifetimes: dict[str, dict[str, datetime]] = {}
         self._visual_source_preemptions: dict[str, datetime] = {}
         self._current_visual_source_activation: tuple[str, datetime] | None = None
+        self._alarm_states: dict[str, str] = {}
 
     async def async_setup(self) -> None:
         stored = await self.store.async_load() or {}
@@ -117,6 +118,16 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_state()
             self._unsub_state = None
         self._observed = observed
+        alarm_ids = {entity_id for entity_id in observed if entity_id.startswith("alarm_control_panel.")}
+        self._alarm_states = {
+            entity_id: state for entity_id, state in self._alarm_states.items()
+            if entity_id in alarm_ids
+        }
+        for entity_id in alarm_ids:
+            if entity_id not in self._alarm_states:
+                state = self.hass.states.get(entity_id)
+                # Baseline only: configuration/reload never creates history.
+                self._alarm_states[entity_id] = str(state.state or "").casefold() if state else ""
         if observed:
             self._unsub_state = async_track_state_change_event(
                 self.hass, list(observed), self._state_changed
@@ -214,8 +225,63 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {"type":"image", "url":article["image"], "article_url":article["url"], "title":article["title"], "source":str(feed.get("name") or "News"), "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
 
     @callback
-    def _state_changed(self, _event: Event) -> None:
+    def _state_changed(self, event: Event) -> None:
+        self._record_alarm_transition(event)
         self._publish()
+
+    def _record_alarm_transition(self, event: Event) -> None:
+        """Append a normal history item for a real configured-alarm transition."""
+        entity_id = str(event.data.get("entity_id") or "")
+        if entity_id not in self._alarm_states:
+            return
+        state = event.data.get("new_state")
+        if not isinstance(state, State):
+            return
+        current = str(state.state or "").casefold()
+        previous = self._alarm_states.get(entity_id, "")
+        if current in {"", "unknown", "unavailable", "arming", "pending"}:
+            return
+        if not previous or previous == current:
+            self._alarm_states[entity_id] = current
+            return
+        self._alarm_states[entity_id] = current
+
+        armed = {"armed_home", "armed_away", "armed_night"}
+        if current in armed:
+            message = {
+                "armed_home": "Alarm Armed Home",
+                "armed_away": "Alarm Armed Away",
+                "armed_night": "Alarm Armed Night",
+            }[current]
+        elif current == "disarmed" and (previous in armed or previous == "triggered"):
+            message = "Alarm Disarmed"
+        elif current == "triggered" and (previous in armed or previous == "disarmed"):
+            message = "Alarm Triggered"
+        else:
+            return
+
+        stamp = state.last_changed.isoformat() if state.last_changed else self._now()
+        item = {
+            "id": f"home_status:alarm:{entity_id}:{previous}:{current}:{stamp}",
+            "entity_id": entity_id,
+            "entity_name": "Alarm",
+            "event_type": "alarm_transition",
+            "message": message,
+            "summary": message,
+            "detail": message,
+            "category": "security",
+            "source": "home_device",
+            "behavior": "security",
+            "priority": "critical" if current == "triggered" else "normal",
+            "icon": "mdi:shield-alert" if current == "triggered" else "mdi:shield-check",
+            "active": False,
+            "created_at": stamp,
+            "ticker_eligible": True,
+            "raw_from": previous,
+            "raw_to": current,
+        }
+        self.history = self._retained_history([item, *self.history])
+        self.hass.async_create_task(self.store.async_save(self._store_data()))
 
     def _publish(self) -> None:
         new_items = self.engine.build_active_items(self.options)
