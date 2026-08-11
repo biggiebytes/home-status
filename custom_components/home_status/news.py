@@ -27,6 +27,14 @@ def _image_url(value: object) -> str:
     return url if urlparse(url).path.casefold().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")) else ""
 
 
+def _video_url(value: object) -> str:
+    """Return a directly playable video URL, never an article page."""
+    url = str(value or "").strip()
+    if not valid_url(url):
+        return ""
+    return url if urlparse(url).path.casefold().endswith((".mp4", ".webm", ".m3u8")) else ""
+
+
 def parse_feed(raw: bytes, feed_id: str) -> list[dict[str, str]]:
     root = ET.fromstring(raw)
     entries = root.findall(".//item")
@@ -47,8 +55,15 @@ def parse_feed(raw: bytes, feed_id: str) -> list[dict[str, str]]:
         image = next((str(node.get("url") or node.get("href") or "").strip() for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content", "enclosure"} and str(node.get("type") or "").casefold().startswith("image/")), "")
         if not image:
             image = next((candidate for node in entry.iter() if node.tag.rsplit("}", 1)[-1] in {"thumbnail", "content"} and (candidate := _image_url(node.get("url") or node.get("href")))), "")
+        video = next((
+            str(node.get("url") or node.get("href") or "").strip()
+            for node in entry.iter()
+            if node.tag.rsplit("}", 1)[-1] in {"content", "enclosure"}
+            and str(node.get("type") or "").casefold().startswith("video/")
+            and _video_url(node.get("url") or node.get("href"))
+        ), "")
         if title and valid_url(link):
-            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else ""})
+            result.append({"id": article_id(feed_id, guid, link, title, published), "title": title, "summary": summary, "url": link, "published": published, "image": image if valid_url(image) else "", "video": video})
     return result
 
 

@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
     async_track_point_in_time,
     async_track_state_change_event,
@@ -19,13 +19,14 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.components.recorder import get_instance
 
 from .const import DOMAIN
 from .engine import HomeStatusEngine
-from .presentation import apply_navigation, place_items, select_visual
+from .ha_native import async_recent_transitions, current_states, transition_entity_ids
+from .presentation import select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
-from .normalization import normalize_semantic_state
 from .providers.live_news import LiveNewsProvider
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,8 +45,6 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.engine = HomeStatusEngine(hass)
         self.store = Store(hass, _STORE_VERSION, _STORE_KEY)
 
-        self.active: dict[str, dict[str, Any]] = {}
-        self.history: list[dict[str, Any]] = []
         self.news_articles: list[dict[str, Any]] = []
         self.news_seen: dict[str, list[str]] = {}
         self.news_visuals: dict[str, dict[str, Any]] = {}
@@ -61,12 +60,13 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._visual_source_lifetimes: dict[str, dict[str, datetime]] = {}
         self._visual_source_preemptions: dict[str, datetime] = {}
         self._current_visual_source_activation: tuple[str, datetime] | None = None
-        self._alarm_states: dict[str, str] = {}
+        # This is a disposable Recorder read cache, not Home Status history.
+        # It is never written to Store and is reconstructed from HA on setup.
+        self._native_recent: list[dict[str, Any]] = []
+        self._native_history_refresh_pending = False
 
     async def async_setup(self) -> None:
         stored = await self.store.async_load() or {}
-        events = stored.get("events", [])
-        self.history = self._retained_history(events if isinstance(events, list) else [])
         self.news_seen = stored.get("news_seen", {}) if isinstance(stored.get("news_seen", {}), dict) else {}
         self.news_visuals = stored.get("news_visuals", {}) if isinstance(stored.get("news_visuals", {}), dict) else {}
         self.news_initialized = stored.get("news_initialized", {}) if isinstance(stored.get("news_initialized", {}), dict) else {}
@@ -118,16 +118,6 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_state()
             self._unsub_state = None
         self._observed = observed
-        alarm_ids = {entity_id for entity_id in observed if entity_id.startswith("alarm_control_panel.")}
-        self._alarm_states = {
-            entity_id: state for entity_id, state in self._alarm_states.items()
-            if entity_id in alarm_ids
-        }
-        for entity_id in alarm_ids:
-            if entity_id not in self._alarm_states:
-                state = self.hass.states.get(entity_id)
-                # Baseline only: configuration/reload never creates history.
-                self._alarm_states[entity_id] = str(state.state or "").casefold() if state else ""
         if observed:
             self._unsub_state = async_track_state_change_event(
                 self.hass, list(observed), self._state_changed
@@ -137,12 +127,13 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.options = {**self.entry.data, **self.entry.options}
         self._reconfigure_subscription()
         await self._refresh_news()
+        if self.hass.is_running:
+            await self._refresh_native_history()
         self._refresh_live_news()
         self._publish()
 
     def _store_data(self) -> dict[str, Any]:
         return {
-            "events": self.history,
             "news_seen": self.news_seen,
             "news_visuals": self.news_visuals,
             "news_initialized": self.news_initialized,
@@ -214,7 +205,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     started = now_iso()
                     visual = self._news_visual(article, feed, started)
                     self.news_visuals[article["id"]] = visual
-                articles.append({"id":article["id"], "source_id":f"news:{feed_id}", "source_name":str(feed.get("name") or "News"), "source_kind":"news", "event_type":"news_article", "title":article["title"], "message":article["title"], "summary":article.get("summary") or str(feed.get("name") or "News"), "detail":article.get("summary") or "", "category":"news", "priority":str(feed.get("priority") or "normal"), "icon":"mdi:newspaper", "active":False, "created_at":article.get("published") or now_iso(), "navigation":article["url"], "action":article["url"], **({"visual":visual} if visual else {})})
+                media_url = str(article.get("video") or article.get("image") or "")
+                media_type = "video" if article.get("video") else "image"
+                articles.append({"id":article["id"], "source_id":f"news:{feed_id}", "source_name":str(feed.get("name") or "News"), "source_kind":"news", "event_type":"news_article", "title":article["title"], "message":article["title"], "summary":article.get("summary") or str(feed.get("name") or "News"), "detail":article.get("summary") or "", "category":"news", "priority":str(feed.get("priority") or "normal"), "icon":"mdi:newspaper", "active":False, "created_at":article.get("published") or now_iso(), "navigation":article["url"], "action":article["url"], "article_url":article["url"], **({"media_url":media_url, "media_type":media_type} if media_url else {}), **({"image_url":article["image"]} if article.get("image") else {}), **({"visual":visual} if visual else {})})
                 seen.add(article["id"])
             self.news_seen[feed_id] = list(seen)[-200:]
         self.news_articles = articles
@@ -226,122 +219,90 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _state_changed(self, event: Event) -> None:
-        self._record_alarm_transition(event)
         self._publish()
+        # Home Assistant emits a burst of state changes while restoring at
+        # startup. Recorder history is not needed to render current truth, and
+        # querying it for each restored entity delays the rest of startup.
+        if self.hass.is_running:
+            self._schedule_native_history_refresh()
 
-    def _record_alarm_transition(self, event: Event) -> None:
-        """Append a normal history item for a real configured-alarm transition."""
-        entity_id = str(event.data.get("entity_id") or "")
-        if entity_id not in self._alarm_states:
+    def _schedule_native_history_refresh(self) -> None:
+        """Coalesce live changes into one post-commit Recorder refresh."""
+        if self._native_history_refresh_pending:
             return
-        state = event.data.get("new_state")
-        if not isinstance(state, State):
-            return
-        current = str(state.state or "").casefold()
-        previous = self._alarm_states.get(entity_id, "")
-        if current in {"", "unknown", "unavailable", "arming", "pending"}:
-            return
-        if not previous or previous == current:
-            self._alarm_states[entity_id] = current
-            return
-        self._alarm_states[entity_id] = current
-
-        armed = {"armed_home", "armed_away", "armed_night"}
-        if current in armed:
-            message = {
-                "armed_home": "Alarm Armed Home",
-                "armed_away": "Alarm Armed Away",
-                "armed_night": "Alarm Armed Night",
-            }[current]
-        elif current == "disarmed" and (previous in armed or previous == "triggered"):
-            message = "Alarm Disarmed"
-        elif current == "triggered" and (previous in armed or previous == "disarmed"):
-            message = "Alarm Triggered"
-        else:
-            return
-
-        stamp = state.last_changed.isoformat() if state.last_changed else self._now()
-        item = {
-            "id": f"home_status:alarm:{entity_id}:{previous}:{current}:{stamp}",
-            "entity_id": entity_id,
-            "entity_name": "Alarm",
-            "event_type": "alarm_transition",
-            "message": message,
-            "summary": message,
-            "detail": message,
-            "category": "security",
-            "source": "home_device",
-            "behavior": "security",
-            "priority": "critical" if current == "triggered" else "normal",
-            "icon": "mdi:shield-alert" if current == "triggered" else "mdi:shield-check",
-            "active": False,
-            "created_at": stamp,
-            "ticker_eligible": True,
-            "raw_from": previous,
-            "raw_to": current,
-        }
-        self.history = self._retained_history([item, *self.history])
-        self.hass.async_create_task(self.store.async_save(self._store_data()))
-
-    def _publish(self) -> None:
-        new_items = self.engine.build_active_items(self.options)
-        visual_source_items = self._configured_visual_items()
-        new_active = {str(item["id"]): item for item in new_items if item.get("active")}
-        previous = self.active
-
-        # Preserve the original start time while an event remains active.
-        for item_id, item in new_active.items():
-            old = previous.get(item_id)
-            if old:
-                item["created_at"] = old.get("created_at", item.get("created_at"))
-
-        resolved: list[dict[str, Any]] = []
-        for item_id, old in previous.items():
-            if item_id in new_active:
-                continue
-            item = self._resolve(old)
-            if item is not None:
-                resolved.append(item)
-
-        if resolved:
-            self.history = self._retained_history([*resolved, *self.history])
-            self.hass.async_create_task(
-                self.store.async_save(self._store_data())
-            )
-
-        self.active = new_active
-        self.history = self._retained_history([
-            self._apply_current_display_name(item) for item in self.history
-        ])
-
-        active = apply_navigation(self._sorted(list(self.active.values())), self.options)
-        history = apply_navigation(self.history, self.options)
-        recent = self._recent_for_bottom(history)
-        awareness = apply_navigation(
-            [*self.engine.build_awareness_items(self.options), *self.news_articles],
-            self.options,
+        self._native_history_refresh_pending = True
+        async_track_point_in_time(
+            self.hass,
+            self._run_scheduled_native_history_refresh,
+            datetime.now(timezone.utc) + timedelta(seconds=2),
         )
 
-        left, right, bottom = place_items(active, recent, awareness, self.options)
-        visual = self._select_current_visual(active, recent, awareness, visual_source_items, self.live_news_items)
+    async def _run_scheduled_native_history_refresh(self, _now) -> None:
+        self._native_history_refresh_pending = False
+        await self._refresh_native_history_after_commit()
 
-        priority = self._priority(active)
+    async def _refresh_native_history_after_commit(self) -> None:
+        """Refresh after Recorder accepts the live state_changed event."""
+        recorder = get_instance(self.hass)
+        commit_future = getattr(recorder, "async_get_commit_future", None)
+        if callable(commit_future):
+            try:
+                if future := commit_future():
+                    await future
+            except Exception:
+                pass
+        await self._refresh_native_history()
+        self._publish()
+
+    async def _refresh_native_history(self) -> None:
+        """Read recent HA transitions; never persist or synthesize them."""
+        try:
+            minutes = max(
+                1,
+                int(self.options.get(
+                    "native_history_minutes",
+                    self.options.get("ticker_event_minutes", 10),
+                )),
+            )
+        except (TypeError, ValueError):
+            minutes = 10
+        self._native_recent = await async_recent_transitions(
+            self.hass,
+            transition_entity_ids(self.hass, self._observed),
+            datetime.now(timezone.utc) - timedelta(minutes=minutes),
+            self._native_name_for_entity,
+        )
+
+    def _publish(self) -> None:
+        # Current interpreter output remains available to Visual Center only.
+        # It is not retained, resolved, published as entity history, or routed.
+        active = self.engine.build_active_items(self.options)
+        visual_source_items = self._configured_visual_items()
+        awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
+        native_current = current_states(
+            self.hass, self._observed, self._native_name_for_entity
+        )
+        # RSS media follows the article currently shown by the card.  It is not
+        # independently selected here, so Visual Center has one normal-source
+        # fallback when no displayed news item carries media.
+        non_news_awareness = [
+            item for item in awareness if item.get("source_kind") != "news"
+        ]
+        visual = self._select_current_visual(
+            active, [], non_news_awareness, visual_source_items, self.live_news_items
+        )
+        priority = self._native_priority(native_current)
         weather_effect = self._weather_visual_effect(awareness)
 
         self.async_set_updated_data({
+            "native": {
+                "current": native_current,
+                "recent": self._native_recent,
+                "awareness": awareness,
+            },
             "health": priority,
             "priority": priority,
-            "active_count": len(active),
-            "active": active,
-            "recent": history,
-            "left": left,
-            "right": right,
-            "bottom": bottom,
             "visual": visual,
-            # Temporary aliases for the current card only.
-            "hero": left,
-            "sidebar": right,
-            "footer": bottom,
             "weather_visual_effect": weather_effect,
             "display": {
                 "rotation_seconds": self._int_option("rotation_seconds", 6, minimum=1),
@@ -351,6 +312,12 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_updated": self._now(),
         })
         self._schedule_visual_expiry()
+
+    def _native_name_for_entity(self, entity_id: str) -> str | None:
+        """Apply existing Home Status naming choices at the native boundary."""
+        return self.engine.display_name_for_item(
+            self.options, {"entity_id": entity_id}
+        )
 
     def _select_current_visual(
         self,
@@ -524,291 +491,14 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TypeError, ValueError):
             return 30
 
-    def _resolve(self, old: dict[str, Any]) -> dict[str, Any] | None:
-        """Turn one active HomeDevice event into one recent event."""
-        event_type = str(old.get("event_type") or "")
-        entity_id = str(old.get("entity_id") or "")
-        state = self.hass.states.get(entity_id)
-        name = (
-            old.get("entity_name")
-            or self.engine.display_name_for_item(self.options, old)
-            or self._friendly_name(entity_id, state, old)
-        )
-
-        # Motion ending is intentionally silent.
-        if event_type == "presence":
-            return None
-
-        item = dict(old)
-        item.update({
-            "active": False,
-            "priority": "normal",
-            "resolved_at": self._now(),
-        })
-        self._renormalize_lifecycle_item(item, state)
-
-        if event_type == "contact":
-            display_state = str(item.get("display_state") or "Closed")
-            item.update({
-                "message": f"{name} {display_state}",
-                "summary": f"{name} is {display_state.casefold()}",
-                "detail": f"{name} is {display_state.casefold()}",
-                "icon": "mdi:door-closed",
-            })
-        elif event_type == "lock":
-            display_state = str(item.get("display_state") or "Locked")
-            item.update({
-                "message": f"{name} {display_state}",
-                "summary": f"{name} is {display_state.casefold()}",
-                "detail": f"{name} is {display_state.casefold()}",
-                "icon": "mdi:lock",
-            })
-        elif event_type == "connectivity":
-            item.update({
-                "message": f"{name} Back Online",
-                "summary": f"{name} is available again",
-                "detail": f"{name} is available again",
-                "icon": "mdi:lan-connect",
-            })
-        elif event_type == "safety":
-            display_state = str(item.get("display_state") or "Clear")
-            item.update({
-                "message": f"{name} {display_state}",
-                "summary": f"{name} returned to normal",
-                "detail": f"{name} returned to normal",
-                "icon": "mdi:check-circle-outline",
-            })
-        elif event_type == "appliance_cycle":
-            # Only turn a vanished Running item into Complete when the appliance
-            # actually reached an end/idle state or an explicit end-of-cycle
-            # entity fired. Temporary unknown/unavailable/error states stay silent
-            # instead of producing a false completion.
-            completion_signal = False
-            completion_entity_id = str(old.get("completion_entity_id") or "")
-            if completion_entity_id:
-                completion_state = self.hass.states.get(completion_entity_id)
-                completion_signal = bool(
-                    completion_state
-                    and str(completion_state.state or "").strip().casefold() in {
-                        "on", "true", "1", "complete", "completed", "finished", "done", "end",
-                    }
-                )
-
-            current_state = str(state.state or "").strip().casefold() if state else "unavailable"
-            completion_states = {
-                "off", "power_off", "power off", "idle", "standby", "ready",
-                "complete", "completed", "finished", "done", "end", "ended",
-            }
-            if not completion_signal and current_state not in completion_states:
-                return None
-
-            appliance_name = old.get("appliance_name") or old.get("home_device_name") or name
-            item.update({
-                "message": f"{appliance_name} Complete",
-                "summary": f"{appliance_name} is ready",
-                "detail": f"{appliance_name} is ready",
-                "icon": "mdi:check-circle-outline",
-            })
-        elif event_type == "appliance_complete":
-            # Completion is already the useful event; retain it as recent.
-            pass
-        elif event_type == "security":
-            # Arming is a transient state. Reaching an armed state is not a
-            # "Security Normal" event and should not leave stale/conflicting
-            # activity in the bottom stream. Only a real alert/delay clearing
-            # becomes recent history.
-            previous_state = str(old.get("state") or "").casefold()
-            if previous_state == "arming":
-                return None
-            if previous_state in {"pending", "triggered"}:
-                item.update({
-                    "message": "Security Cleared",
-                    "summary": "Home security alert cleared",
-                    "detail": "Home security alert cleared",
-                    "icon": "mdi:shield-check",
-                })
-            else:
-                return None
-        else:
-            return None
-
-        return self._sync_normalized_presentation(item)
-
-    def _renormalize_lifecycle_item(self, item: dict[str, Any], state: State | None) -> None:
-        """Re-evaluate a normalized active event when its live state clears."""
-        previous = item.get("normalized")
-        if not isinstance(previous, dict):
-            return
-        source = previous.get("source") if isinstance(previous.get("source"), dict) else {}
-        raw_state = state.state if state is not None else "off"
-        normalized = normalize_semantic_state(
-            raw_state,
-            entity_id=str(source.get("entity_id") or item.get("entity_id") or "") or None,
-            domain=str(source.get("domain") or "") or None,
-            device_class=str(source.get("device_class") or "") or None,
-            capability=str(item.get("capability") or previous.get("capability") or "") or None,
-            provider=str(source.get("provider") or "") or None,
-            device_role=str(source.get("device_role") or "") or None,
-        )
-        label = str(
-            (previous.get("presentation") or {}).get("label")
-            or item.get("entity_name")
-            or item.get("home_device_name")
-            or ""
-        )
-        normalized["presentation"]["label"] = label
-        item.update({
-            "raw_state": normalized["raw_state"],
-            "state": normalized["state"],
-            "display_state": normalized["display_state"],
-            "semantic": normalized["semantic"],
-            "presentation": normalized["presentation"],
-            "normalized": normalized,
-        })
-
     @staticmethod
-    def _sync_normalized_presentation(item: dict[str, Any]) -> dict[str, Any]:
-        """Keep legacy-facing text synchronized with the authoritative contract."""
-        normalized = item.get("normalized")
-        presentation = item.get("presentation")
-        if not isinstance(normalized, dict) or not isinstance(presentation, dict):
-            return item
-        updated_presentation = dict(presentation)
-        updated_presentation["message"] = str(item.get("message") or "")
-        normalized = dict(normalized)
-        normalized["presentation"] = updated_presentation
-        item.update({"presentation": updated_presentation, "normalized": normalized})
-        return item
-
-    def _apply_current_display_name(self, old: dict[str, Any]) -> dict[str, Any]:
-        """Re-label stored history from the current Device/Source name override."""
-        name = self.engine.display_name_for_item(self.options, old)
-        if not name:
-            return old
-
-        item = dict(old)
-        if item.get("home_device_id"):
-            item["home_device_name"] = name
-            if str(item.get("home_device_id") or "").startswith("entity:"):
-                item["entity_name"] = name
-        if item.get("source_id"):
-            item["source_name"] = name
-
-        event_type = str(item.get("event_type") or "")
-        active = item.get("active") is not False
-
-        if event_type == "contact":
-            contact_name = str(item.get("entity_name") or name)
-            suffix = "Open" if active else "Closed"
-            item.update(message=f"{contact_name} {suffix}", summary=f"{contact_name} is {suffix.casefold()}", detail=f"{contact_name} is {suffix.casefold()}")
-        elif event_type == "lock":
-            lock_name = str(item.get("entity_name") or name)
-            suffix = "Unlocked" if active else "Locked"
-            item.update(message=f"{lock_name} {suffix}", summary=f"{lock_name} is {suffix.casefold()}", detail=f"{lock_name} is {suffix.casefold()}")
-        elif event_type == "connectivity" and not active:
-            item.update(message=f"{name} Back Online", summary=f"{name} is available again", detail=f"{name} is available again")
-        elif event_type == "safety" and not active:
-            item.update(message=f"{name} Clear", summary=f"{name} returned to normal", detail=f"{name} returned to normal")
-        elif event_type in {"appliance_cycle", "appliance_complete"}:
-            appliance_name = str(item.get("appliance_name") or name)
-            if active and event_type == "appliance_cycle":
-                # Keep live remaining-time detail if the active record supplied it.
-                display_state = str(item.get("display_state") or "Running")
-                item.update(message=f"{appliance_name} {display_state}")
-            else:
-                item.update(message=f"{appliance_name} Complete", summary=f"{appliance_name} is ready", detail=f"{appliance_name} is ready")
-
-        return self._sync_normalized_presentation(item)
-
-    def _recent_for_bottom(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        try:
-            minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
-        except (TypeError, ValueError):
-            minutes = 10
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-        result = []
-        recent_appliance_completions: set[str] = set()
-        for item in events:
-            # Suppress stale security-normal records created by older builds.
-            # They remain in retained history but never compete with the current
-            # alarm state in the live bottom stream.
-            if (
-                str(item.get("event_type") or "") == "security"
-                and str(item.get("message") or "").casefold() == "security normal"
-            ):
-                continue
-            stamp = item.get("resolved_at") or item.get("created_at")
-            try:
-                when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone(timezone.utc)
-            except (TypeError, ValueError):
-                continue
-            if when >= cutoff:
-                event_type = str(item.get("event_type") or "")
-                message = str(item.get("message") or "")
-                if event_type in {"appliance_cycle", "appliance_complete"} and message.endswith(" Complete"):
-                    # Older builds could create one completion record per manually
-                    # selected sibling entity. They all point back to the same
-                    # physical appliance state entity. Keep only the newest one in
-                    # the live bottom stream while preserving full retained history.
-                    appliance_key = str(item.get("entity_id") or item.get("appliance_name") or message)
-                    if appliance_key in recent_appliance_completions:
-                        continue
-                    recent_appliance_completions.add(appliance_key)
-                result.append(item)
-        return result
-
-    def _retained_history(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        try:
-            days = max(1, int(self.options.get("history_retention_days", 7)))
-        except (TypeError, ValueError):
-            days = 7
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        retained = []
-        for item in events:
-            if not isinstance(item, dict):
-                continue
-            stamp = item.get("resolved_at") or item.get("created_at")
-            try:
-                when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone(timezone.utc)
-            except (TypeError, ValueError):
-                when = datetime.now(timezone.utc)
-            if when >= cutoff:
-                retained.append(item)
-        try:
-            limit = max(0, int(self.options.get("history_max_events", 200)))
-        except (TypeError, ValueError):
-            limit = 200
-        return retained[:limit] if limit else retained
-
-    @staticmethod
-    def _sorted(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        order = {"critical": 0, "attention": 1, "activity": 2, "normal": 3}
-        return sorted(
-            items,
-            key=lambda item: (
-                order.get(str(item.get("priority") or "normal"), 3),
-                str(item.get("created_at") or ""),
-            ),
-        )
-
-    @staticmethod
-    def _priority(active: list[dict[str, Any]]) -> str:
-        priorities = {str(item.get("priority") or "normal") for item in active}
+    def _native_priority(current: list[dict[str, Any]]) -> str:
+        priorities = {str(item.get("attention") or "none") for item in current}
         if "critical" in priorities:
             return "critical"
         if "attention" in priorities:
             return "attention"
-        if "activity" in priorities:
-            return "activity"
         return "normal"
-
-    @staticmethod
-    def _friendly_name(entity_id: str, state: State | None, old: dict[str, Any]) -> str:
-        if state:
-            friendly = state.attributes.get("friendly_name")
-            if friendly:
-                return str(friendly)
-        return str(old.get("home_device_name") or old.get("message") or entity_id)
 
     @staticmethod
     def _weather_visual_effect(awareness: list[dict[str, Any]]) -> str | None:

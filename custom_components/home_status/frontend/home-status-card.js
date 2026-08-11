@@ -606,6 +606,8 @@ class HomeStatusCard extends HTMLElement {
     this._zoneRenderGenerations = { left: 0, right: 0 };
     this._zoneIndexes = { left: 0, right: 0 };
     this._zoneIds = { left: null, right: null };
+    this._displayedZoneItems = { left: null, right: null };
+    this._baseVisual = null;
     this._zoneSignatures = { left: '', right: '' };
     this._footerSignature = '';
     this._footerSignatureParts = [];
@@ -767,14 +769,17 @@ class HomeStatusCard extends HTMLElement {
     return ['on', 'open', 'opening', 'triggered', 'wet', 'moisture', 'detected', 'unlocked'].includes(value);
   }
 
-  _updateQuickStatus(previousHass, hass) {
-    const signature = this._buildQuickStatusSignature(hass);
-    if (signature === this._quickStatusSignature) return;
-    this._quickStatusSignature = signature;
+  _updateQuickStatus(previousHass, hass, data = this._getRuntimeData()) {
+    const active = Array.isArray(data?.active) ? data.active : [];
+    const signature = active.map(item => [
+      item.id, item.entity_id, item.message, item.summary, item.icon, item.priority, item.state
+    ].join('|')).join('||');
     const lane = this.shadowRoot.querySelector('.live-state-host');
     if (!lane) return;
+    if (signature === this._quickStatusSignature && lane.innerHTML) return;
+    this._quickStatusSignature = signature;
     const ticker = this.shadowRoot.querySelector('.ticker');
-    const markup = this._liveStateMarkup();
+    const markup = this._liveStateMarkup(active);
     ticker?.classList.toggle('has-live-state', Boolean(markup));
     if (!markup) {
       lane.classList.remove('active');
@@ -789,7 +794,7 @@ class HomeStatusCard extends HTMLElement {
       const panel = lane.querySelector('.live-state-banner');
       if (panel) void panel.offsetHeight;
       requestAnimationFrame(() => {
-        if (this._buildQuickStatusSignature(this._hass) === this._quickStatusSignature) {
+        if (signature === this._quickStatusSignature) {
           lane.classList.add('active');
         }
       });
@@ -1061,49 +1066,136 @@ class HomeStatusCard extends HTMLElement {
     return collapsed;
   }
 
+  _nativeCategory(item) {
+    const domain = String(item?.domain || '').toLowerCase();
+    const deviceClass = String(item?.device_class || '').toLowerCase();
+    if (domain === 'alarm_control_panel' || domain === 'lock' || ['door', 'window', 'opening', 'garage_door', 'smoke', 'gas', 'carbon_monoxide', 'moisture'].includes(deviceClass)) return 'security';
+    return 'activity';
+  }
+
+  _nativeIcon(item) {
+    const deviceClass = String(item?.device_class || '').toLowerCase();
+    const state = String(item?.state ?? item?.to ?? '').toLowerCase();
+    const open = ['on', 'open', 'opened'].includes(state);
+    if (deviceClass === 'door' || deviceClass === 'garage_door') return open ? 'mdi:door-open' : 'mdi:door-closed';
+    if (deviceClass === 'window' || deviceClass === 'opening') return open ? 'mdi:window-open-variant' : 'mdi:window-closed-variant';
+    if (deviceClass === 'moisture') return 'mdi:water-alert';
+    if (deviceClass === 'smoke') return 'mdi:smoke-detector-alert';
+    if (String(item?.domain) === 'lock') return state === 'unlocked' ? 'mdi:lock-open-variant' : 'mdi:lock';
+    if (String(item?.domain) === 'alarm_control_panel') return state === 'triggered' ? 'mdi:shield-alert' : 'mdi:shield-check';
+    return 'mdi:information-outline';
+  }
+
+  _nativeStateLabel(item, transition = false) {
+    const state = String(item?.state ?? item?.to ?? '').replace(/[_-]+/g, ' ').trim();
+    const deviceClass = String(item?.device_class || '').toLowerCase();
+    if (['door', 'window', 'opening', 'garage_door'].includes(deviceClass)) {
+      if (['on', 'open', 'opened'].includes(state.toLowerCase())) return transition ? 'Opened' : 'Open';
+      if (['off', 'closed'].includes(state.toLowerCase())) return 'Closed';
+    }
+    if (String(item?.domain) === 'lock') {
+      if (state === 'unlocked') return 'Unlocked';
+      if (state === 'locked') return 'Locked';
+    }
+    return state.replace(/\b\w/g, character => character.toUpperCase());
+  }
+
+  _nativeCurrentItems(items) {
+    return (Array.isArray(items) ? items : [])
+      .filter(item => item?.attention && item.attention !== 'none')
+      .map(item => {
+        const label = this._nativeStateLabel(item);
+        return {
+          id: `native:current:${item.entity_id}`,
+          entity_id: item.entity_id,
+          entity_name: item.entity_name,
+          message: `${item.entity_name} ${label}`,
+          summary: label,
+          icon: this._nativeIcon(item),
+          category: this._nativeCategory(item),
+          priority: item.attention,
+          active: true,
+          state: item.state,
+          created_at: item.changed_at,
+          event_type: 'native_current'
+        };
+      });
+  }
+
+  _nativeRecentItems(items) {
+    return (Array.isArray(items) ? items : []).map(item => {
+      const label = this._nativeStateLabel(item, true);
+      return {
+        id: `native:recent:${item.entity_id}:${item.changed_at}`,
+        entity_id: item.entity_id,
+        entity_name: item.entity_name,
+        message: `${item.entity_name} ${label}`,
+        summary: '',
+        icon: this._nativeIcon(item),
+        category: this._nativeCategory(item),
+        priority: 'activity',
+        active: false,
+        state: item.to,
+        created_at: item.changed_at,
+        event_type: 'native_transition',
+        source: 'home_assistant'
+      };
+    });
+  }
+
+  _nativeAwarenessZones(items) {
+    const left = [];
+    const right = [];
+    (Array.isArray(items) ? items : []).forEach((item, index) => {
+      if (!item || typeof item !== 'object') return;
+      const category = String(item.category || '').toLowerCase();
+      const target = ['schedule', 'calendar', 'waste', 'irrigation'].includes(category)
+        ? left
+        : right;
+      target.push({
+        ...item,
+        id: item.id || `native:awareness:${item.entity_id || category}:${index}`,
+        event_type: 'native_awareness',
+        active: false,
+        priority: item.priority || 'normal'
+      });
+    });
+    return { left, right };
+  }
+
   _data() {
     const source = this._state(this._config.entity);
     const attrs = source?.attributes || {};
-    const left = Array.isArray(attrs.left) ? attrs.left : (Array.isArray(attrs.sidebar) ? attrs.sidebar : []);
-    const right = Array.isArray(attrs.right) ? attrs.right : (Array.isArray(attrs.hero) ? attrs.hero : []);
-    const bottom = Array.isArray(attrs.bottom) ? attrs.bottom : (Array.isArray(attrs.footer) ? attrs.footer : []);
-    const active = Array.isArray(attrs.active) ? attrs.active : [];
-    const recent = Array.isArray(attrs.recent) ? attrs.recent : [];
-    const priority = attrs.priority || attrs.health || 'normal';
-    const count = Number(attrs.active_count || 0);
     const display = attrs.display && typeof attrs.display === 'object' ? attrs.display : {};
     const presentation = attrs.presentation && typeof attrs.presentation === 'object' ? attrs.presentation : {};
-    return { left, right, bottom, active, recent, priority, count, display, presentation, visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
+    const native = attrs.native && typeof attrs.native === 'object' ? attrs.native : null;
+    if (native) {
+      const active = this._nativeCurrentItems(native.current);
+      const recent = this._nativeRecentItems(native.recent);
+      const awareness = this._nativeAwarenessZones(native.awareness);
+      const priority = active.some(item => item.priority === 'critical') ? 'critical'
+        : active.some(item => item.priority === 'attention') ? 'attention'
+          : 'normal';
+      return {
+        left: awareness.left,
+        right: awareness.right,
+        bottom: recent,
+        active,
+        recent,
+        priority,
+        count: active.length,
+        display,
+        presentation,
+        visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null,
+        weather_visual_effect: attrs.weather_visual_effect || '',
+        unavailable: !source || ['unknown', 'unavailable'].includes(source.state)
+      };
+    }
+    return { left: [], right: [], bottom: [], active: [], recent: [], priority: 'normal', count: 0, display, presentation, visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
   }
 
   _getRuntimeData() {
-    const data = this._data();
-    return data;
-
-    const active = this._directActiveItems;
-    const priority = active.some(item => item.priority === 'critical')
-      ? 'critical'
-      : active.some(item => item.priority === 'attention')
-        ? 'attention'
-        : active.some(item => item.priority === 'activity')
-          ? 'activity'
-          : 'normal';
-
-    return {
-      active,
-      ticker: active,
-      recent: this._directRecentItems,
-      current: active,
-      upcoming: [],
-      insights: this._directRecentItems,
-      status: [],
-      left: [],
-      right: [],
-      bottom: [],
-      count: active.length,
-      priority,
-      unavailable: false
-    };
+    return this._data();
   }
 
   _visualFromData(value) {
@@ -1164,6 +1256,24 @@ class HomeStatusCard extends HTMLElement {
     center.setAttribute('aria-label', `Home Status visual: ${visual.type}`);
     center.onclick = visual.article_url ? event => { event.stopPropagation(); window.open(visual.article_url, '_blank', 'noopener,noreferrer'); } : null;
     this._renderVisualCenter(center, visual);
+  }
+
+  _awarenessVisual(item) {
+    if (!item || item.source_kind !== 'news') return null;
+    const url = String(item.media_url || '').trim();
+    if (!url) return null;
+    return {
+      type: String(item.media_type || 'image').toLowerCase().startsWith('video') ? 'video' : 'image',
+      url,
+      article_url: String(item.article_url || item.navigation || '').trim(),
+      mute: true
+    };
+  }
+
+  _syncDisplayedVisual() {
+    this._syncVisualCenter(
+      this._awarenessVisual(this._displayedZoneItems.right) || this._baseVisual
+    );
   }
 
   _renderVisualCenter(center, visual) {
@@ -1327,6 +1437,9 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _presentationColorKey(item) {
+    // Historical Recorder transitions are neutral regardless of their entity
+    // category or words in their label. Current attention owns alert color.
+    if (item?.event_type === 'native_transition') return '';
     const category = this._categoryFor(item);
     const priority = String(item?.priority || '').toLowerCase();
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
@@ -1413,6 +1526,9 @@ class HomeStatusCard extends HTMLElement {
 
   _iconSemanticClass(item) {
     if (this._presentationPreferences?.appearance?.semantic_colors === false) return 'semantic-white';
+    // A Recorder transition is historical information. Its category must not
+    // inherit the current-alert color for a door, lock, leak, or alarm.
+    if (item?.event_type === 'native_transition') return 'semantic-white';
     const category = this._categoryFor(item);
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     const priority = String(item?.priority || '').toLowerCase();
@@ -1466,6 +1582,7 @@ class HomeStatusCard extends HTMLElement {
       && /\b(?:washer|dryer|dishwasher)\b/.test(text)
       && /\b(?:complete|completed|finished|done|cycle end)\b/.test(text);
     if (eventType === 'alarm_transition') return true;
+    if (eventType === 'native_transition') return true;
     if (contactEvent) return settings.contacts !== false;
     if (completedApplianceEvent) return settings.appliance_complete !== false;
     return settings.other === true;
@@ -1522,7 +1639,7 @@ class HomeStatusCard extends HTMLElement {
     if (!this._mediaEnabled) return null;
     const url = String(item?.media_url || item?.media?.url || item?.image_url || '').trim();
     const type = String(item?.media_type || item?.media?.type || (url ? 'image' : '')).toLowerCase();
-    return url && (!type || type.startsWith('image')) ? { url, type: 'image' } : null;
+    return url ? { url, type: type || 'image' } : null;
   }
 
   _formatDateTime(value) {
@@ -1917,8 +2034,9 @@ class HomeStatusCard extends HTMLElement {
     }
     const brief = `${title} ${summary}`.trim().length <= 42;
     const measurementValue = /^-?\d+(?:\.\d+)?(?:%|°[CF])$/i.test(String(title).trim());
-    const media = this._heroMedia(item);
-    const mediaMarkup = media ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true"><span class="hero-media-overlay"></span></span>` : '';
+    const isNews = item.source_kind === 'news' || item.event_type === 'news_article';
+    const media = isNews ? null : this._heroMedia(item);
+    const mediaMarkup = media ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true">${media.type.startsWith('video') ? '<span class="hero-media-play"><ha-icon icon="mdi:play"></ha-icon></span>' : ''}<span class="hero-media-overlay"></span></span>` : '';
     const content = `<span class="hero-content"><span class="zone-title"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"${this._iconStyle(item)}></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
     return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''}${brief ? ' is-brief' : ''}${currentWeather ? ' is-current-weather' : ''}${indoorTemperature ? ' is-indoor-temperature' : ''}${measurementValue ? ' is-measurement' : ''}${scheduled ? ' is-scheduled' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
   }
@@ -1975,6 +2093,8 @@ class HomeStatusCard extends HTMLElement {
       if (currentId !== intendedId) return;
       delete this._zoneRenderTimers[zone];
       target.innerHTML = this._zoneMarkup(item, emptyLabel);
+      this._displayedZoneItems[zone] = item || null;
+      if (zone === 'right') this._syncDisplayedVisual();
       this._bindHeroMedia(target);
       target.classList.remove('zone-changing');
       this._bindStreamItems();
@@ -2706,13 +2826,15 @@ class HomeStatusCard extends HTMLElement {
     }
     const utilityMarkup = this._utilityHeaderMarkup();
     const visualEffect = this._weatherVisualEffect(data);
-    this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
+    this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="live-state-host"></span><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
     this._renderPhoneStatus(data);
     this._weatherRenderer.mount(this.shadowRoot.querySelector('.ticker'));
     this._weatherRenderer.setEffect(visualEffect);
     this._weatherRenderer.setVisible(this._ambientVisible);
-    this._syncVisualCenter(data.visual);
+    this._baseVisual = data.visual;
+    this._updateQuickStatus(null, null, data);
     this._startZoneRotations(data);
+    this._syncDisplayedVisual();
     this._renderFooterStream(this._buildFooterStream(data));
     this._updateDrawer(data);
     this._bind();
@@ -2736,7 +2858,30 @@ class HomeStatusCard extends HTMLElement {
     return data.weather_visual_effect || weather?.visual_effect || 'none';
   }
 
-  _liveStateMarkup() {
+  _liveStateMarkup(nativeCurrent = null) {
+    if (Array.isArray(nativeCurrent)) {
+      if (!nativeCurrent.length) return '';
+      const cards = nativeCurrent.slice(0, 3).map(item => ({
+        title: this._label(item),
+        icon: item.icon || 'mdi:alert-circle-outline',
+        severity: item.priority === 'critical' ? 'critical' : 'attention',
+        entities: item.entity_id ? [item.entity_id] : [],
+        secondary: item.priority === 'critical'
+          ? 'Immediate attention required'
+          : 'Tap to view details'
+      }));
+      const summary = cards.map(card => {
+        const entityData = card.entities.length === 1
+          ? `data-entity="${this._escape(card.entities[0])}"`
+          : '';
+        return `<span class="live-banner-condition" role="button" tabindex="0" ${entityData}>${this._escape(card.title)}</span>`;
+      }).join('<span class="live-banner-separator" aria-hidden="true"> â€¢ </span>');
+      const details = cards.map(card => card.entities.map(entity =>
+        `<span class="live-banner-detail" role="button" tabindex="0" data-entity="${this._escape(entity)}"><ha-icon icon="${this._escape(card.icon)}"></ha-icon><span>${this._escape(card.title)}</span></span>`
+      ).join('')).join('');
+      const bannerSeverity = cards.some(card => card.severity === 'critical') ? 'critical' : 'attention';
+      return `<section class="live-state-banner severity-${bannerSeverity}" aria-label="Live home alerts"><div class="live-banner-summary">${summary}</div><div class="live-banner-details" hidden>${details}</div></section>`;
+    }
     const activeStates = this._quickStatusEntities.map(item => {
       const state = this._state(item.entity);
       const active = this._isQuickStatusActive(item, state);
@@ -2939,9 +3084,11 @@ class HomeStatusCard extends HTMLElement {
     this._weatherRenderer.mount(tickerButton);
     this._weatherRenderer.setEffect(visualEffect);
     this._weatherRenderer.setVisible(this._ambientVisible);
-    this._syncVisualCenter(data.visual);
+    this._baseVisual = data.visual;
     this._updateUtilityHeader();
+    this._updateQuickStatus(null, null, data);
     this._startZoneRotations(data);
+    this._syncDisplayedVisual();
     this._renderFooterStream(this._buildFooterStream(data));
 
     this._updateDrawer(data);

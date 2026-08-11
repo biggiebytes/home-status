@@ -43,19 +43,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
-            # The coordinator has already applied the user's source, filter,
-            # and item-limit choices. Do not impose a second hidden cap while
-            # publishing those collections to the card.
-            "active": self._compact_items(data.get("active"), None),
-            "recent": self._compact_items(data.get("recent"), None),
-            # New presentation contract.
-            "left": self._compact_items(data.get("left", data.get("hero")), None),
-            "right": self._compact_items(data.get("right", data.get("sidebar")), None),
-            "bottom": self._compact_items(data.get("bottom", data.get("footer")), None),
-            # Temporary aliases keep the existing frontend working during migration.
-            "hero": self._compact_items(data.get("left", data.get("hero")), None),
-            "sidebar": self._compact_items(data.get("right", data.get("sidebar")), None),
-            "footer": self._compact_items(data.get("bottom", data.get("footer")), None),
+            "native": self._compact_native(data.get("native")),
         }
 
     @staticmethod
@@ -86,6 +74,32 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         }
 
     @staticmethod
+    def _compact_native(value):
+        if not isinstance(value, dict):
+            return {"current": [], "recent": [], "awareness": []}
+
+        def compact(items, fields):
+            if not isinstance(items, list):
+                return []
+            return [
+                {key: item[key] for key in fields if key in item}
+                for item in items
+                if isinstance(item, dict)
+            ]
+
+        return {
+            "current": compact(
+                value.get("current"),
+                ("entity_id", "entity_name", "domain", "device_class", "state", "changed_at", "attention"),
+            ),
+            "recent": compact(
+                value.get("recent"),
+                ("entity_id", "entity_name", "domain", "device_class", "from", "to", "changed_at"),
+            ),
+            "awareness": HomeStatusSensor._compact_items(value.get("awareness"), None),
+        }
+
+    @staticmethod
     def _compact_items(value, limit):
         if not isinstance(value, list):
             return []
@@ -93,7 +107,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "id", "title", "message", "summary", "detail", "category",
             "icon", "priority", "active", "source", "created_at", "updated_at",
             "occurred_at", "resolved_at", "expires_at", "scheduled_at", "all_day",
-            "timestamp", "entity_id", "media_url", "media_type", "navigation",
+            "timestamp", "entity_id", "image_url", "media_url", "media_type", "article_url", "navigation",
             "subtitle", "body", "visual_effect", "action", "source_id", "source_name", "source_kind", "home_device_id", "home_device_name", "entity_name", "event_type", "behavior", "state", "raw_state", "display_state", "capability", "stage", "raw_stage", "display_stage", "semantic", "presentation",
         )
         items = []
