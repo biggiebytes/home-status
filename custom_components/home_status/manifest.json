@@ -1,6 +1,9 @@
 {
   "domain": "home_status",
   "name": "Home Status",
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@biggiebytes"
   ],
@@ -9,9 +12,6 @@
     "frontend",
     "http",
     "lovelace"
-  ],
-  "after_dependencies": [
-    "recorder"
   ],
   "documentation": "https://github.com/biggiebytes/home-status",
   "integration_type": "service",
