@@ -1,9 +1,4 @@
-"""User-configurable presentation defaults for Home Status.
-
-These options are deliberately presentation-oriented. The runtime still produces
-normalized Home Status items; this module only describes how those items should
-be routed and rendered.
-"""
+"""Card-facing appearance and sizing defaults for Home Status."""
 
 from __future__ import annotations
 
@@ -45,32 +40,6 @@ PALETTE_OPTIONS = [
     )
 ]
 
-DESTINATION_OPTIONS = [
-    {"value": "left", "label": "Left"},
-    {"value": "right", "label": "Right"},
-    {"value": "bottom", "label": "Bottom"},
-]
-
-# These defaults match the current v0.3.24 live presentation rather than
-# pretending there is an automatic routing engine. Users can override each one.
-ROUTING_DEFAULTS: dict[str, list[str]] = {
-    "doors_open": ["left", "bottom"],
-    "doors_closed": ["bottom"],
-    "windows_open": ["left", "bottom"],
-    "windows_closed": ["bottom"],
-    "appliances_running": ["left", "bottom"],
-    "appliances_complete": ["bottom"],
-    "security": ["left", "bottom"],
-    "weather": ["right", "bottom"],
-    "climate": ["right", "bottom"],
-    "waste": ["right", "bottom"],
-    "calendar": ["right", "bottom"],
-    "news": ["left", "bottom"],
-    "irrigation": ["right", "bottom"],
-    "location": ["right", "bottom"],
-    "other": ["right", "bottom"],
-}
-
 DEFAULTS: dict[str, Any] = {
     # Card dimensions and text/icon sizing. These are the current v0.3.24
     # values that were visually validated on the live tablet/desktop layout.
@@ -107,30 +76,17 @@ DEFAULTS: dict[str, Any] = {
     "color_success": "green",
     # Timestamp behavior.
     "timestamp_contacts": True,
-    "timestamp_appliance_complete": True,
     "timestamp_other": False,
-    # Existing history/timing values.
+    # Recorder-backed recent-history window.
     "ticker_event_minutes": 10,
-    "history_retention_days": 7,
-    # Explicit behavior: when left has nothing routed to it, preserve the
-    # current v0.3.24 fallback that promotes one useful awareness item.
-    "fill_empty_left": True,
     # Visual Center remains absent until a valid visual is available. This
     # option only controls whether the presentation layer may show a winner.
     "visual_center_enabled": True,
 }
 
-for _route_key, _destinations in ROUTING_DEFAULTS.items():
-    DEFAULTS[f"route_{_route_key}"] = list(_destinations)
-
-
 def option(options: dict[str, Any], key: str) -> Any:
     """Return a presentation option with its factory default."""
     value = options.get(key, DEFAULTS.get(key))
-    if key.startswith("route_"):
-        if not isinstance(value, list):
-            return list(DEFAULTS.get(key, []))
-        return [str(item) for item in value if str(item) in {"left", "right", "bottom"}]
     return value
 
 
@@ -190,7 +146,6 @@ def presentation_preferences(options: dict[str, Any]) -> dict[str, Any]:
         },
         "timestamps": {
             "contacts": bool(option(options, "timestamp_contacts")),
-            "appliance_complete": bool(option(options, "timestamp_appliance_complete")),
             "other": bool(option(options, "timestamp_other")),
         },
     }

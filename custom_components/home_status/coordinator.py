@@ -266,12 +266,13 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (TypeError, ValueError):
             minutes = 10
-        self._native_recent = await async_recent_transitions(
+        transitions = await async_recent_transitions(
             self.hass,
-            transition_entity_ids(self.hass, self._observed),
+            transition_entity_ids(self.hass, self.engine.recent_entity_ids(self.options)),
             datetime.now(timezone.utc) - timedelta(minutes=minutes),
             self._native_name_for_entity,
         )
+        self._native_recent = self.engine.native_recent_facts(self.options, transitions)
 
     def _publish(self) -> None:
         # Current interpreter output remains available to Visual Center only.
@@ -279,9 +280,16 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         active = self.engine.build_active_items(self.options)
         visual_source_items = self._configured_visual_items()
         awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
-        native_current = current_states(
-            self.hass, self._observed, self._native_name_for_entity
-        )
+        appliance_current = self.engine.native_current_facts(self.options)
+        appliance_entity_ids = self.engine.appliance_owned_entity_ids(self.options)
+        native_current = [
+            *current_states(
+                self.hass,
+                tuple(entity_id for entity_id in self._observed if entity_id not in appliance_entity_ids),
+                self._native_name_for_entity,
+            ),
+            *appliance_current,
+        ]
         # RSS media follows the article currently shown by the card.  It is not
         # independently selected here, so Visual Center has one normal-source
         # fallback when no displayed news item carries media.

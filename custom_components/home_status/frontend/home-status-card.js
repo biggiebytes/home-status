@@ -1,87 +1,3 @@
-const DoorHandler = {
-  isActive(state) {
-    return state.available &&
-      new Set(['on', 'open', 'opening']).has(String(state.state || '').toLowerCase());
-  },
-
-  buildItem(state) {
-    const current = String(state.state || '').toLowerCase();
-    const suffix = current === 'opening' ? 'Opening' : 'Open';
-
-    return {
-      id: `direct:${state.entity}`,
-      entity_id: state.entity,
-      message: `${state.name} ${suffix}`,
-      category: state.group,
-      detail: `${state.name} is open`,
-      priority: 'attention',
-      icon: 'mdi:door-open',
-      created_at: state.last_changed,
-      active: true,
-      persistent: false
-    };
-  }
-};
-
-const LeakHandler = {
-  isActive(state) {
-    return state.available &&
-      new Set(['on', 'wet', 'moisture', 'detected']).has(String(state.state || '').toLowerCase());
-  },
-
-  buildItem(state) {
-    return {
-      id: `direct:${state.entity}`,
-      entity_id: state.entity,
-      message: `${state.name || 'Water'} Leak`,
-      category: state.group,
-      detail: 'Water detected',
-      priority: 'critical',
-      icon: 'mdi:water-alert',
-      created_at: state.last_changed,
-      active: true,
-      persistent: false
-    };
-  }
-};
-
-const LaundryHandler = {
-  isActive(state) {
-    return state.available &&
-      new Set(['on', 'complete', 'completed', 'finished', 'done'])
-        .has(String(state.state || '').toLowerCase());
-  },
-
-  buildItem(state) {
-    const name = String(state.name || 'Laundry');
-    const lowerName = name.toLowerCase();
-    const icon = lowerName.includes('washer')
-      ? 'mdi:washing-machine'
-      : lowerName.includes('dryer')
-        ? 'mdi:tumble-dryer'
-        : 'mdi:washing-machine';
-
-    return {
-      id: `direct:${state.entity}`,
-      entity_id: state.entity,
-      message: `${name} Complete`,
-      category: 'laundry',
-      detail: `${name} cycle is complete`,
-      priority: 'activity',
-      icon,
-      created_at: state.last_changed,
-      active: true,
-      persistent: false
-    };
-  }
-};
-
-const ENTITY_HANDLERS = {
-  doors: DoorHandler,
-  leaks: LeakHandler,
-  laundry: LaundryHandler
-};
-
 const BACKEND_CATEGORY_ALIASES = Object.freeze({
   calendar: 'schedule',
   sprinklers: 'schedule',
@@ -536,10 +452,10 @@ const HOME_STATUS_CARD_PROFILES = {
 const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
   'show_active_count', 'pause_on_hover',
-  'utility_header', 'quick_status', 'left', 'right', 'bottom', 'hero', 'sidebar', 'footer',
+  'utility_header', 'left', 'right', 'bottom', 'hero', 'sidebar', 'footer',
   'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
   'weather_effect', 'time_entity',
-  'recent_drawer_limit', 'rotation_seconds', 'footer_speed', 'entities', 'mode'
+  'recent_drawer_limit', 'rotation_seconds', 'footer_speed'
 ]);
 
 function homeStatusClone(value) {
@@ -688,14 +604,6 @@ class HomeStatusCard extends HTMLElement {
       recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
       rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
     };
-    this._quickStatusEntities = Array.isArray(config.quick_status?.entities)
-      ? config.quick_status.entities
-          .map(item => typeof item === 'string' ? { entity: item } : item)
-          .filter(item => item?.entity)
-          .map(item => ({ ...item, group: item.group || 'status' }))
-      : [];
-    this._directEntities = this._normalizeDirectEntities(config.entities);
-    this._mode = config.mode === 'direct' ? 'direct' : 'backend';
     this.setAttribute('data-profile', profile);
     this.setAttribute('data-layout', this._config.layout);
     this.setAttribute('data-animation', this._config.animation.level);
@@ -753,55 +661,6 @@ class HomeStatusCard extends HTMLElement {
 
   _state(entity) { return this._hass?.states?.[entity]; }
 
-  _buildQuickStatusSignature(hass) {
-    return this._quickStatusEntities.map(config => {
-      const state = hass?.states?.[config.entity];
-      return [config.entity, state?.state ?? 'missing', state?.attributes?.friendly_name ?? ''].join('|');
-    }).join('||');
-  }
-
-  _isQuickStatusActive(item, state) {
-    if (!state || ['unknown', 'unavailable'].includes(String(state.state).toLowerCase())) return false;
-    const value = String(state.state).toLowerCase();
-    if (item.entity.startsWith('alarm_control_panel.')) {
-      return ['armed_home', 'armed_away', 'armed_night', 'arming', 'pending', 'triggered'].includes(value);
-    }
-    return ['on', 'open', 'opening', 'triggered', 'wet', 'moisture', 'detected', 'unlocked'].includes(value);
-  }
-
-  _updateQuickStatus(previousHass, hass, data = this._getRuntimeData()) {
-    const active = Array.isArray(data?.active) ? data.active : [];
-    const signature = active.map(item => [
-      item.id, item.entity_id, item.message, item.summary, item.icon, item.priority, item.state
-    ].join('|')).join('||');
-    const lane = this.shadowRoot.querySelector('.live-state-host');
-    if (!lane) return;
-    if (signature === this._quickStatusSignature && lane.innerHTML) return;
-    this._quickStatusSignature = signature;
-    const ticker = this.shadowRoot.querySelector('.ticker');
-    const markup = this._liveStateMarkup(active);
-    ticker?.classList.toggle('has-live-state', Boolean(markup));
-    if (!markup) {
-      lane.classList.remove('active');
-    } else {
-      const wasActive = lane.classList.contains('active');
-      if (!wasActive) lane.classList.remove('active');
-      lane.innerHTML = markup;
-      if (wasActive) {
-        this._bindEventsOnly();
-        return;
-      }
-      const panel = lane.querySelector('.live-state-banner');
-      if (panel) void panel.offsetHeight;
-      requestAnimationFrame(() => {
-        if (signature === this._quickStatusSignature) {
-          lane.classList.add('active');
-        }
-      });
-    }
-    this._bindEventsOnly();
-  }
-
   _plainEntityName(entity, value) {
     let raw = String(value || String(entity || '').split('.').pop() || 'Home item')
       .replace(/[_-]+/g, ' ')
@@ -820,125 +679,6 @@ class HomeStatusCard extends HTMLElement {
       const lower = word.toLowerCase();
       return acronyms[lower] || (index && minorWords.has(lower) ? lower : `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`);
     }).join(' ');
-  }
-
-  _normalizeDirectEntities(groups) {
-    if (groups === undefined || groups === null) return [];
-    if (typeof groups !== 'object' || Array.isArray(groups)) {
-      console.warn('[HomeStatusCard] entities must be grouped arrays');
-      return [];
-    }
-
-    const normalized = [];
-
-    Object.entries(groups).forEach(([group, entries]) => {
-      if (!Array.isArray(entries)) {
-        console.warn(`[HomeStatusCard] entities.${group} must be an array; skipped`);
-        return;
-      }
-
-      entries.forEach((entry, index) => {
-        const entity = typeof entry === 'string'
-          ? entry.trim()
-          : entry && typeof entry === 'object' && typeof entry.entity === 'string'
-            ? entry.entity.trim()
-            : '';
-
-        if (!entity) {
-          console.warn(`[HomeStatusCard] invalid entities.${group}[${index}]; skipped`);
-          return;
-        }
-
-        const name = this._plainEntityName(
-          entity,
-          typeof entry === 'object' && entry.name ? entry.name : ''
-        );
-
-        normalized.push({ entity, name, group });
-      });
-    });
-
-    return normalized;
-  }
-
-  _updateDirectState() {
-    this._directState = this._directEntities.map(item => {
-      const state = this._hass?.states?.[item.entity];
-      const available = Boolean(
-        state &&
-        !['unknown', 'unavailable'].includes(state.state)
-      );
-
-      return {
-        entity: item.entity,
-        group: item.group,
-        name: item.name,
-        state: state?.state || 'unknown',
-        last_changed: state?.last_changed || null,
-        attributes: state?.attributes || {},
-        available
-      };
-    });
-    const nextActiveItems = this._buildDirectActiveItems();
-
-    if (this._mode === 'direct' && this._directHistoryInitialized) {
-      const currentByEntity = new Map(
-        this._directState.map(state => [state.entity, state])
-      );
-      const activeIds = new Set(nextActiveItems.map(item => item.id));
-
-      for (const previous of this._previousDirectActiveItems) {
-        if (activeIds.has(previous.id)) continue;
-
-        const current = currentByEntity.get(previous.entity_id);
-        if (!current || !current.available) continue;
-
-        const resolved = {
-          ...previous,
-          active: false,
-          resolved_at: new Date().toISOString()
-        };
-
-        const duplicate = this._directRecentItems.some(item =>
-          item.id === resolved.id &&
-          item.created_at === resolved.created_at
-        );
-
-        if (!duplicate) this._directRecentItems.unshift(resolved);
-      }
-
-      const retention = Math.max(
-        Number(this._config.recent_drawer_limit) || 10,
-        Number(this._config.recent_drawer_limit) || 10
-      );
-      this._directRecentItems = this._directRecentItems.slice(0, retention);
-    }
-
-    this._directActiveItems = nextActiveItems;
-    this._previousDirectActiveItems = nextActiveItems.map(item => ({ ...item }));
-    this._directHistoryInitialized = true;
-  }
-
-  _buildDirectActiveItems() {
-    if (this._mode !== 'direct') return [];
-
-    const activeItems = [];
-
-    for (const state of this._directState) {
-      const handler = ENTITY_HANDLERS[state.group];
-
-      if (!handler) {
-        if (!this._warnedUnsupportedGroups.has(state.group)) {
-          console.warn(`[HomeStatusCard] unsupported direct entity group: ${state.group}`);
-          this._warnedUnsupportedGroups.add(state.group);
-        }
-        continue;
-      }
-
-      if (handler.isActive(state)) activeItems.push(handler.buildItem(state));
-    }
-
-    return activeItems;
   }
 
   _updateCard() {
@@ -1039,7 +779,6 @@ class HomeStatusCard extends HTMLElement {
     );
 
     const timestampOf = item => this._date(
-      item?.resolved_at ||
       item?.created_at ||
       item?.timestamp
     )?.getTime() || null;
@@ -1105,11 +844,12 @@ class HomeStatusCard extends HTMLElement {
       .filter(item => item?.attention && item.attention !== 'none')
       .map(item => {
         const label = this._nativeStateLabel(item);
+        const alarm = String(item?.domain) === 'alarm_control_panel';
         return {
           id: `native:current:${item.entity_id}`,
           entity_id: item.entity_id,
           entity_name: item.entity_name,
-          message: `${item.entity_name} ${label}`,
+          message: alarm ? label : `${item.entity_name} ${label}`,
           summary: label,
           icon: this._nativeIcon(item),
           category: this._nativeCategory(item),
@@ -1125,11 +865,12 @@ class HomeStatusCard extends HTMLElement {
   _nativeRecentItems(items) {
     return (Array.isArray(items) ? items : []).map(item => {
       const label = this._nativeStateLabel(item, true);
+      const alarm = String(item?.domain) === 'alarm_control_panel';
       return {
         id: `native:recent:${item.entity_id}:${item.changed_at}`,
         entity_id: item.entity_id,
         entity_name: item.entity_name,
-        message: `${item.entity_name} ${label}`,
+        message: alarm ? label : `${item.entity_name} ${label}`,
         summary: '',
         icon: this._nativeIcon(item),
         category: this._nativeCategory(item),
@@ -1444,8 +1185,7 @@ class HomeStatusCard extends HTMLElement {
     const priority = String(item?.priority || '').toLowerCase();
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     const state = String(item?.state || '').toLowerCase();
-    const resolved = state === 'resolved' || (item?.active === false && Boolean(item?.resolved_at));
-    if (resolved || /complete|completed|finished|resolved|healthy/.test(text)) return 'success';
+    if (/complete|completed|finished|resolved|healthy/.test(text)) return 'success';
     if (priority === 'critical') return 'security';
     if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'attention';
     if (/recycl/.test(text)) return 'recycling';
@@ -1533,12 +1273,6 @@ class HomeStatusCard extends HTMLElement {
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     const priority = String(item?.priority || '').toLowerCase();
     const state = String(item?.state || '').toLowerCase();
-    const resolved = state === 'resolved'
-      || (item?.active === false && Boolean(item?.resolved_at));
-    // Resolution is a successful transition regardless of the category that
-    // raised the original alert. Evaluate it before security keywords so a
-    // closed door or cleared smoke alarm cannot retain its alert color.
-    if (resolved) return 'semantic-green';
     if (priority === 'critical' || /active leak|smoke|alarm|security|severe/.test(text)) return 'semantic-red';
     if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'semantic-orange';
     if (/complete|completed|finished|resolved|healthy/.test(text)) return 'semantic-green';
@@ -1560,15 +1294,12 @@ class HomeStatusCard extends HTMLElement {
 
   _timestamp(item, active) {
     return this._date(
-      item?.resolved_at ||
-      (active
-        ? (item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp)
-        : (item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp))
+      item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp
     );
   }
 
-  _timestampValue(item, active = item?.active !== false) {
-    return item?.resolved_at || item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '';
+  _timestampValue(item) {
+    return item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '';
   }
 
   _showsRelativeAge(item, category = this._categoryFor(item), title = this._label(item)) {
@@ -1578,19 +1309,15 @@ class HomeStatusCard extends HTMLElement {
     const contactEvent = eventType === 'contact' || (
       category === 'security' && /\b(?:doors?|windows?)\b/.test(text)
     );
-    const completedApplianceEvent = ['appliance_cycle', 'appliance_complete'].includes(eventType)
-      && /\b(?:washer|dryer|dishwasher)\b/.test(text)
-      && /\b(?:complete|completed|finished|done|cycle end)\b/.test(text);
     if (eventType === 'alarm_transition') return true;
     if (eventType === 'native_transition') return true;
     if (contactEvent) return settings.contacts !== false;
-    if (completedApplianceEvent) return settings.appliance_complete !== false;
     return settings.other === true;
   }
 
   _streamAsTicker(item, fallback = 'No new information') {
     if (!item) return { id: `empty:${fallback}`, message: fallback, secondary: 'Tap for its actions', detail: '', priority: 'normal', category: 'Home Status' };
-    let title = (item.title || item.message || 'Home Status').replace(/Alarmo/gi, 'Home Security');
+    let title = item.title || item.message || 'Home Status';
     title = title.replace(/^(?:alarm|security)\s+(?:(?:door|window|contact|lock|leak|water|moisture|smoke|carbon monoxide|co)\s+)?sensors?\s+/i, '');
     if (/door/i.test(title)) {
       title = title.replace(/\s+Active$/i, ' Open');
@@ -1669,11 +1396,8 @@ class HomeStatusCard extends HTMLElement {
       String(item?.event_type || '').toLowerCase() !== 'alarm_transition'
       || item === newestAlarmTransition
     ));
-    const items = footerItems
+    return footerItems
       .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _category: this._categoryFor(item) }));
-    return this._footerFilters(data).group_contact_closures === true
-      ? this._groupFooterContactClosures(items)
-      : items;
   }
 
   _phonePriorityRank(item) {
@@ -1750,91 +1474,6 @@ class HomeStatusCard extends HTMLElement {
     this._bindStreamItems();
   }
 
-  _groupFooterContactClosures(items) {
-    const result = [];
-    const consumed = new Set();
-    const stampOf = item => this._date(item.resolved_at || item.created_at || item.timestamp)?.getTime() || 0;
-    const contactSearchText = item =>
-      `${String(item.entity_id || '').replace(/[_.-]+/g, ' ')} ${item.title || ''} ${item.message || ''}`.toLowerCase();
-    const isClosure = item => {
-      const text = contactSearchText(item);
-      return item.source === 'direct_history'
-        && item._category === 'security'
-        && /\bclosed\b/.test(text)
-        && /\b(?:doors?|windows?|openings?|garage)\b/.test(text);
-    };
-    const contactName = item => {
-      const raw = String(item.title || item.message || item.entity_id || '')
-        .replace(/\s+(?:is\s+)?closed$/i, '')
-        .replace(/\s+closed\b.*$/i, '');
-      return this._plainEntityName(item.entity_id, raw);
-    };
-    items.forEach((item, index) => {
-      if (consumed.has(index) || !isClosure(item)) {
-        if (!consumed.has(index)) result.push(item);
-        return;
-      }
-      const stamp = stampOf(item);
-      const grouped = items
-        .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
-        .filter(({ candidate, candidateIndex }) =>
-          !consumed.has(candidateIndex)
-          && isClosure(candidate)
-          && Math.abs(stampOf(candidate) - stamp) <= 120000
-        );
-      if (grouped.length < 2) {
-        result.push(item);
-        return;
-      }
-      grouped.forEach(({ candidateIndex }) => consumed.add(candidateIndex));
-      const labels = grouped.map(({ candidate }) => contactName(candidate));
-      const windows = grouped.filter(({ candidate }) =>
-        /\bwindow/i.test(contactSearchText(candidate))
-      ).length;
-      const doors = grouped.length - windows;
-      const title = windows === grouped.length
-        ? `${grouped.length} Windows Closed`
-        : doors === grouped.length
-          ? `${grouped.length} Doors Closed`
-          : `${grouped.length} Doors and Windows Closed`;
-      const newest = grouped.reduce((latest, entry) =>
-        stampOf(entry.candidate) > stampOf(latest.candidate) ? entry : latest
-      );
-      result.push({
-        ...newest.candidate,
-        id: `grouped-contact-closures:${grouped.map(({ candidate }) => candidate.entity_id || candidate.id).sort().join('|')}:${Math.floor(stamp / 120000)}`,
-        title,
-        message: title,
-        summary: '',
-        icon: windows === grouped.length ? 'mdi:window-closed-variant' : 'mdi:door-closed',
-        entity_id: '',
-        navigation: '',
-        grouped_contact_labels: labels
-      });
-    });
-    const groups = result.filter(item =>
-      Array.isArray(item.grouped_contact_labels)
-      && item.grouped_contact_labels.length > 1
-    );
-    if (!groups.length) return result;
-    const isAnyContactClosure = item => {
-      const text = contactSearchText(item);
-      return /\bclosed\b/.test(text)
-        && /\b(?:doors?|windows?|openings?|garage)\b/.test(text);
-    };
-    return result.filter(item => {
-      if (Array.isArray(item.grouped_contact_labels) || !isAnyContactClosure(item)) return true;
-      const stamp = stampOf(item);
-      const name = contactName(item).toLowerCase();
-      return !groups.some(group => {
-        if (Math.abs(stampOf(group) - stamp) > 120000) return false;
-        return group.grouped_contact_labels.some(label =>
-          String(label || '').toLowerCase() === name
-        );
-      });
-    });
-  }
-
   _formatFooterItem(item) {
     const category = item._category || this._categoryFor(item);
     const id = String(item.id || '');
@@ -1881,9 +1520,6 @@ class HomeStatusCard extends HTMLElement {
     } else if (category === 'cameras') {
       icon = item.icon || 'mdi:camera';
     }
-    if (item.active === false && item.resolved_at) {
-      summary = '';
-    }
     if (relativeStamp && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
       summary = '';
     }
@@ -1914,7 +1550,7 @@ class HomeStatusCard extends HTMLElement {
         title: display.title,
         summary: display.summary,
         icon: display.icon,
-        value: `${index}|${display.title}|${display.summary}|${display.icon}|${display.relativeStamp}|${(item.grouped_contact_labels || []).join('|')}`
+        value: `${index}|${display.title}|${display.summary}|${display.icon}|${display.relativeStamp}`
       };
     });
     const signature = signatureParts.map(part => part.value).join('||');
@@ -1935,10 +1571,7 @@ class HomeStatusCard extends HTMLElement {
       const secondary = display.summary || relative
         ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? `<span data-footer-time="${this._escape(display.relativeStamp)}">${this._escape(relative)}</span>` : ''}</small>`
         : '';
-      const groupedLabels = Array.isArray(item.grouped_contact_labels)
-        ? ` data-footer-group-labels="${this._escape(JSON.stringify(item.grouped_contact_labels))}" data-footer-group-title="${this._escape(display.title)}"`
-        : '';
-      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupedLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"${this._iconStyle(item)}></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
+      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"${this._iconStyle(item)}></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
     }).join('');
     const sequence = items.length ? renderSequence() : '';
     const singleItem = items.length === 1;
@@ -2200,13 +1833,13 @@ class HomeStatusCard extends HTMLElement {
     const entity = this._config.utility_header.security_entity;
     const value = String(this._state(entity)?.state || 'unavailable').toLowerCase();
     const states = {
-      disarmed: ['Disarmed', 'mdi:shield-off-outline', 'neutral'],
-      armed_home: ['Armed Home', 'mdi:shield-home', 'success'],
-      armed_away: ['Armed Away', 'mdi:shield-lock', 'success'],
-      armed_night: ['Armed Night', 'mdi:shield-moon', 'success'],
-      arming: ['Arming', 'mdi:shield-sync', 'attention'],
+      disarmed: ['Alarm off', 'mdi:shield-off-outline', 'neutral'],
+      armed_home: ['Alarm armed home', 'mdi:shield-home', 'success'],
+      armed_away: ['Alarm armed away', 'mdi:shield-lock', 'success'],
+      armed_night: ['Alarm armed night', 'mdi:shield-moon', 'success'],
+      arming: ['Alarm arming', 'mdi:shield-sync', 'attention'],
       pending: ['Entry Delay', 'mdi:shield-alert', 'critical'],
-      triggered: ['Triggered', 'mdi:shield-alert', 'critical']
+      triggered: ['Alarm triggered', 'mdi:shield-alert', 'critical']
     };
     const [state, icon, tone] = states[value] || ['Unavailable', 'mdi:shield-off-outline', 'neutral'];
     return { entity, state, icon, tone };
@@ -2433,13 +2066,13 @@ class HomeStatusCard extends HTMLElement {
         || this._config.utility_header.security_entity;
       const value = String(this._state(entity)?.state || 'unavailable').toLowerCase();
       const states = {
-        disarmed: ['Disarmed', 'mdi:shield-off-outline', 'neutral'],
-        armed_home: ['Armed Home', 'mdi:shield-home', 'success'],
-        armed_away: ['Armed Away', 'mdi:shield-lock', 'success'],
-        armed_night: ['Armed Night', 'mdi:shield-moon', 'success'],
-        arming: ['Arming', 'mdi:shield-sync', 'attention'],
+        disarmed: ['Alarm off', 'mdi:shield-off-outline', 'neutral'],
+        armed_home: ['Alarm armed home', 'mdi:shield-home', 'success'],
+        armed_away: ['Alarm armed away', 'mdi:shield-lock', 'success'],
+        armed_night: ['Alarm armed night', 'mdi:shield-moon', 'success'],
+        arming: ['Alarm arming', 'mdi:shield-sync', 'attention'],
         pending: ['Entry Delay', 'mdi:shield-alert', 'critical'],
-        triggered: ['Triggered', 'mdi:shield-alert', 'critical']
+        triggered: ['Alarm triggered', 'mdi:shield-alert', 'critical']
       };
       const [state, icon, tone] = states[value] || ['Unavailable', 'mdi:shield-off-outline', 'neutral'];
       return { state, icon, tone, active: tone !== 'neutral' };
@@ -2709,12 +2342,6 @@ class HomeStatusCard extends HTMLElement {
   height:var(--hs-card-body-height,380px) !important;
   min-height:var(--hs-card-body-height,380px) !important;
 }
-:host([data-profile="auto"]) .ticker:has(.live-banner-details:not([hidden])),
-:host([data-profile="tablet"]) .ticker:has(.live-banner-details:not([hidden])),
-:host([data-profile="desktop"]) .ticker:has(.live-banner-details:not([hidden])) {
-  height:var(--hs-card-live-height,424px) !important;
-  min-height:var(--hs-card-live-height,424px) !important;
-}
 :host([data-profile="auto"]) .ticker-zone,
 :host([data-profile="tablet"]) .ticker-zone,
 :host([data-profile="desktop"]) .ticker-zone,
@@ -2826,13 +2453,12 @@ class HomeStatusCard extends HTMLElement {
     }
     const utilityMarkup = this._utilityHeaderMarkup();
     const visualEffect = this._weatherVisualEffect(data);
-    this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="live-state-host"></span><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
+    this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
     this._renderPhoneStatus(data);
     this._weatherRenderer.mount(this.shadowRoot.querySelector('.ticker'));
     this._weatherRenderer.setEffect(visualEffect);
     this._weatherRenderer.setVisible(this._ambientVisible);
     this._baseVisual = data.visual;
-    this._updateQuickStatus(null, null, data);
     this._startZoneRotations(data);
     this._syncDisplayedVisual();
     this._renderFooterStream(this._buildFooterStream(data));
@@ -2856,119 +2482,6 @@ class HomeStatusCard extends HTMLElement {
     const items = [...(data.left || []), ...(data.right || []), ...(data.bottom || [])];
     const weather = items.find(item => item?.category === 'weather' && item?.visual_effect);
     return data.weather_visual_effect || weather?.visual_effect || 'none';
-  }
-
-  _liveStateMarkup(nativeCurrent = null) {
-    if (Array.isArray(nativeCurrent)) {
-      if (!nativeCurrent.length) return '';
-      const cards = nativeCurrent.slice(0, 3).map(item => ({
-        title: this._label(item),
-        icon: item.icon || 'mdi:alert-circle-outline',
-        severity: item.priority === 'critical' ? 'critical' : 'attention',
-        entities: item.entity_id ? [item.entity_id] : [],
-        secondary: item.priority === 'critical'
-          ? 'Immediate attention required'
-          : 'Tap to view details'
-      }));
-      const summary = cards.map(card => {
-        const entityData = card.entities.length === 1
-          ? `data-entity="${this._escape(card.entities[0])}"`
-          : '';
-        return `<span class="live-banner-condition" role="button" tabindex="0" ${entityData}>${this._escape(card.title)}</span>`;
-      }).join('<span class="live-banner-separator" aria-hidden="true"> â€¢ </span>');
-      const details = cards.map(card => card.entities.map(entity =>
-        `<span class="live-banner-detail" role="button" tabindex="0" data-entity="${this._escape(entity)}"><ha-icon icon="${this._escape(card.icon)}"></ha-icon><span>${this._escape(card.title)}</span></span>`
-      ).join('')).join('');
-      const bannerSeverity = cards.some(card => card.severity === 'critical') ? 'critical' : 'attention';
-      return `<section class="live-state-banner severity-${bannerSeverity}" aria-label="Live home alerts"><div class="live-banner-summary">${summary}</div><div class="live-banner-details" hidden>${details}</div></section>`;
-    }
-    const activeStates = this._quickStatusEntities.map(item => {
-      const state = this._state(item.entity);
-      const active = this._isQuickStatusActive(item, state);
-      return active ? { item, state } : null;
-    }).filter(Boolean);
-    if (!activeStates.length) return '';
-    const groups = new Map();
-    activeStates.forEach(({ item, state }) => {
-      const name = this._plainEntityName(
-        item.entity,
-        item.name || state.attributes?.friendly_name
-      );
-      const groupText = `${item.group} ${name} ${item.entity}`;
-      const key = /window/i.test(groupText)
-        ? 'windows'
-        : /leak|water|moisture/i.test(groupText)
-          ? 'leaks'
-          : item.entity;
-      const existing = groups.get(key);
-      if (existing) existing.entities.push(item.entity);
-      else groups.set(key, { item, state, name, entities: [item.entity] });
-    });
-    const order = value => {
-      const text = `${value.item.group} ${value.name} ${value.item.entity}`.toLowerCase();
-      if (value.item.entity.startsWith('alarm_control_panel.') || /smoke|carbon|co\b/.test(text)) return 0;
-      if (/leak|water|moisture/.test(text)) return 2;
-      if (/door/.test(text)) return 3;
-      if (/window/.test(text)) return 4;
-      if (/lock/.test(text)) return 5;
-      return 6;
-    };
-    const cards = [...groups.values()].sort((a, b) => order(a) - order(b)).map(({ item, state, name, entities }) => {
-      const stateValue = String(state.state).toLowerCase();
-      const text = `${item.group} ${name} ${item.entity}`.toLowerCase();
-      const isAlarm = item.entity.startsWith('alarm_control_panel.');
-      const severity = isAlarm || /smoke|carbon|co\b|leak|water|moisture/.test(text) ? 'critical' : /door|window|lock/.test(text) ? 'attention' : 'activity';
-      const icon = isAlarm ? 'mdi:shield-alert' : /smoke|carbon|co\b/.test(text) ? 'mdi:smoke-detector-alert' : /leak|water|moisture/.test(text) ? 'mdi:water-alert' : /window/.test(text) ? 'mdi:window-open-variant' : /lock/.test(text) ? 'mdi:lock-open-alert' : 'mdi:door-open';
-      const alarmState = stateValue.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase());
-      const title = entities.length > 1
-        ? (/leak|water|moisture/.test(text)
-          ? `${entities.length} Water Leaks`
-          : `${entities.length} Windows Open`)
-        : isAlarm
-          ? `${name} ${alarmState}`
-          : /leak|water|moisture/.test(text)
-            ? (/leak$/i.test(name) ? name : `${name} Leak`)
-            : /smoke|carbon|co\b/.test(text)
-              ? `${name} Detected`
-              : /lock/.test(text)
-                ? `${name} Unlocked`
-                : `${name} ${stateValue === 'opening' ? 'Opening' : 'Open'}`;
-      return { title, icon, severity, entities, secondary: severity === 'critical' ? 'Immediate attention required' : 'Tap to view details' };
-    });
-    const summaryCards = cards.length > 3
-      ? [
-          ...cards.slice(0, 2),
-          {
-            title: `${cards.length - 2} More Alerts`,
-            entities: cards.flatMap(card => card.entities),
-            summary: true
-          }
-        ]
-      : cards;
-    const summary = summaryCards.map(card => {
-      const entityData = card.entities.length === 1 && !card.summary
-        ? `data-entity="${this._escape(card.entities[0])}"`
-        : `data-entities="${this._escape(JSON.stringify(card.entities))}"`;
-      return `<span class="live-banner-condition" role="button" tabindex="0" ${entityData}>${this._escape(card.title)}</span>`;
-    }).join('<span class="live-banner-separator" aria-hidden="true"> • </span>');
-    const details = cards.map(card => card.entities.map(entity => {
-      const config = this._quickStatusEntities.find(item => item.entity === entity);
-      const state = this._state(entity);
-      const name = this._plainEntityName(entity, config?.name || state?.attributes?.friendly_name);
-      const text = `${config?.group || ''} ${name} ${entity}`.toLowerCase();
-      const title = card.entities.length > 1
-        ? (/leak|water|moisture/.test(text)
-          ? (/leak$/i.test(name) ? name : `${name} Leak`)
-          : `${name} Open`)
-        : card.title;
-      return `<span class="live-banner-detail" role="button" tabindex="0" data-entity="${this._escape(entity)}"><ha-icon icon="${this._escape(card.icon)}"></ha-icon><span>${this._escape(title)}</span></span>`;
-    }).join('')).join('');
-    const bannerSeverity = cards.some(card => card.severity === 'critical')
-      ? 'critical'
-      : cards.some(card => card.severity === 'attention')
-        ? 'attention'
-        : 'activity';
-    return `<section class="live-state-banner severity-${bannerSeverity}" aria-label="Live home alerts"><div class="live-banner-summary">${summary}</div><div class="live-banner-details" hidden>${details}</div></section>`;
   }
 
   _updateDrawer(data = this._getRuntimeData()) {
@@ -3086,7 +2599,6 @@ class HomeStatusCard extends HTMLElement {
     this._weatherRenderer.setVisible(this._ambientVisible);
     this._baseVisual = data.visual;
     this._updateUtilityHeader();
-    this._updateQuickStatus(null, null, data);
     this._startZoneRotations(data);
     this._syncDisplayedVisual();
     this._renderFooterStream(this._buildFooterStream(data));
@@ -3192,24 +2704,6 @@ class HomeStatusCard extends HTMLElement {
         });
       });
     }
-    this.shadowRoot.querySelectorAll('.live-banner-condition, .live-banner-detail').forEach(button => {
-      if (button.dataset.bound) return;
-      button.dataset.bound = 'true';
-      button.addEventListener('click', event => {
-        event.stopPropagation();
-        if (button.dataset.entities) {
-          const details = button.closest('.live-state-banner')?.querySelector('.live-banner-details');
-          if (details) details.hidden = !details.hidden;
-          return;
-        }
-        this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: button.dataset.entity } }));
-      });
-      button.addEventListener('keydown', event => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        button.click();
-      });
-    });
     const ticker = this.shadowRoot.querySelector('.ticker');
     if (ticker && !ticker.dataset.bound) {
       ticker.dataset.bound = 'true';
@@ -3731,8 +3225,8 @@ class HomeStatusCardEditor extends HTMLElement {
 }
 
 const CSS = `
-.utility-header { display:grid; grid-template-columns:minmax(220px,.2fr) minmax(230px,.22fr) minmax(540px,.58fr); align-items:stretch; width:100%; height:122px; min-height:122px; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.085); border-radius:23px 23px 0 0; background:linear-gradient(135deg,rgba(31,37,44,.82),rgba(15,19,24,.78)); box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.035); }
-.utility-header + .ticker { border-top:0; border-radius:0 0 23px 23px; }
+.utility-header { display:grid; grid-template-columns:minmax(220px,.2fr) minmax(230px,.22fr) minmax(540px,.58fr); align-items:stretch; width:100%; height:122px; min-height:122px; margin:0; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.085); border-radius:23px 23px 0 0; background:linear-gradient(135deg,rgba(31,37,44,.82),rgba(15,19,24,.78)); box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.035); }
+.utility-header ~ .ticker { margin:0; border-top:0; border-radius:0 0 23px 23px; }
 .utility-clock { display:flex; flex-direction:column; justify-content:center; min-width:0; padding:0 24px; }
 .utility-time { display:flex; align-items:flex-start; color:rgba(255,255,255,.96); line-height:1; white-space:nowrap; }
 .utility-time strong { font-size:56px; font-weight:700; letter-spacing:-2px; }
@@ -3785,23 +3279,8 @@ const CSS = `
 .music-source select { width:100%; min-width:0; height:32px; padding:0 28px 0 10px; border:1px solid rgba(255,255,255,.09); border-radius:9px; background:rgba(255,255,255,.06); color:rgba(255,255,255,.88); font:inherit; font-size:13px; outline:none; }
 .music-source select:focus { border-color:rgba(102,187,106,.45); }
 .music-source select:disabled { opacity:.4; }
-.live-state-host { position:absolute; z-index:5; top:0; left:0; right:0; overflow:hidden; pointer-events:none; }
 .ticker { position:relative; }
-.live-state-host.active { pointer-events:auto; }
-.live-state-banner { transform:translateY(-100%); opacity:1; transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); border-radius:0 0 16px 16px; background:rgba(20,24,29,.93); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.1); border-top:0; box-shadow:0 8px 20px rgba(0,0,0,.34), 0 2px 0 rgba(255,255,255,.08); overflow:hidden; }
-.live-state-host.active .live-state-banner { transform:translateY(0); opacity:1; transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); }
-.live-state-banner.severity-critical { border-bottom-color:rgba(239,83,80,.55); box-shadow:0 8px 20px rgba(0,0,0,.34),0 2px 0 rgba(239,83,80,.18); }
-.live-state-banner.severity-attention { border-bottom-color:rgba(255,152,0,.5); box-shadow:0 8px 20px rgba(0,0,0,.34),0 2px 0 rgba(255,152,0,.16); }
-.live-state-banner.severity-activity { border-bottom-color:rgba(66,165,245,.42); box-shadow:0 8px 20px rgba(0,0,0,.34),0 2px 0 rgba(66,165,245,.14); }
-.live-banner-summary { display:flex; flex-wrap:nowrap; align-items:center; min-height:42px; gap:0; padding:0 18px; box-sizing:border-box; overflow:hidden; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; white-space:nowrap; }
-.live-banner-condition,.live-banner-detail { cursor:pointer; }
-.live-banner-condition:hover,.live-banner-condition:focus-visible,.live-banner-detail:hover,.live-banner-detail:focus-visible { color:#fff; text-decoration:underline; outline:none; }
-.live-banner-separator { padding:0 7px; color:var(--secondary-text-color); }
-.live-banner-details { display:flex; align-items:center; min-height:42px; gap:18px; padding:0 18px; box-sizing:border-box; overflow-x:auto; border-top:1px solid rgba(255,255,255,.08); scrollbar-width:none; }
-.live-banner-details::-webkit-scrollbar { display:none; }
-.live-banner-detail { display:flex; flex:0 0 auto; align-items:center; gap:7px; color:rgba(255,255,255,.78); font-size:12px; white-space:nowrap; }
-.live-banner-detail ha-icon { width:17px; height:17px; color:#ffb74d; }
-@media (prefers-reduced-motion: reduce) { .live-state-banner, .drawer-host .context-bar, .drawer-host.drawer-active .context-bar { transition:none; } }
+@media (prefers-reduced-motion: reduce) { .drawer-host .context-bar, .drawer-host.drawer-active .context-bar { transition:none; } }
 :host { display:block; width:100%; container-type:inline-size; }
 :host([data-drawer-open]) { width:var(--home-status-drawer-inline-size) !important; min-width:var(--home-status-drawer-inline-size) !important; max-width:var(--home-status-drawer-inline-size) !important; }
 .home-status-unavailable { min-height:132px; }
@@ -3814,14 +3293,13 @@ const CSS = `
 :host, ha-card { display:block; overflow:hidden; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family, sans-serif); }
 .phone-status-host { display:none; }
 .ticker { height:380px !important; min-height:380px !important; }
-.ticker.has-live-state .ticker-zones { padding-top:44px; box-sizing:border-box; }
-.ticker:has(.live-banner-details:not([hidden])) { height:424px !important; min-height:424px !important; }
-.ticker:has(.live-banner-details:not([hidden])) .ticker-zones { padding-top:88px; }
 .primary-zone:has(.has-hero-media) { height:176px; } .hero-zone-item.has-hero-media { height:176px; } .primary-zone .zone-title { font-size:31px !important; } .primary-zone .zone-summary { font-size:18px !important; line-height:1.45; }
 .primary-zone .zone-title ha-icon { width:31px !important; height:31px !important; } .secondary-zone .zone-title ha-icon { width:31px !important; height:31px !important; }
 .primary-zone .zone-title ha-icon, .secondary-zone .zone-title ha-icon { width:34px !important; height:34px !important; }
 .ticker-footer { min-height:80px !important; padding-top:16px !important; } .footer-marquee { height:80px !important; } .footer-marquee-item { gap:12px !important; } .footer-marquee-item ha-icon { width:30px !important; height:30px !important; } .footer-marquee-copy strong { line-height:1.2; } .footer-marquee-copy small { margin-top:5px; } .primary-zone .zone-title ha-icon { width:26px !important; height:26px !important; } .primary-zone .zone-title { font-size:28px !important; } .primary-zone .zone-summary { font-size:17px !important; } .secondary-zone .zone-title ha-icon { width:26px !important; height:26px !important; } .secondary-zone .zone-title { font-size:21px !important; } .secondary-zone .zone-summary { font-size:15px !important; }
-.ticker { display:flex; flex-direction:column; justify-content:space-between; width:100%; max-width:none; height:235px; min-height:235px; padding:20px 22px 16px; box-sizing:border-box; border:1px solid rgba(255,255,255,.085); border-radius:23px; background:linear-gradient(135deg,rgba(31,37,44,.78),rgba(15,19,24,.72)); color:var(--primary-text-color); box-shadow:0 8px 24px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.035); cursor:pointer; text-align:left; }
+.ticker { display:flex; flex-direction:column; justify-content:space-between; width:100%; max-width:none; height:235px; min-height:235px; margin:0; padding:20px 22px 16px; box-sizing:border-box; border:1px solid rgba(255,255,255,.085); border-radius:23px; background:linear-gradient(135deg,rgba(31,37,44,.78),rgba(15,19,24,.72)); color:var(--primary-text-color); box-shadow:0 8px 24px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.035); cursor:pointer; text-align:left; }
+.utility-header ~ .ticker { border-radius:0 0 23px 23px; }
+:host([data-drawer-open]) .ticker { border-bottom-left-radius:0; border-bottom-right-radius:0; }
 .footer-glyph { display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center; width:27px; height:27px; font-size:24px; line-height:1; }
 .footer-marquee-item ha-icon { flex:0 0 auto; width:27px; height:27px; } .semantic-red { color:#ef5350; } .semantic-cyan { color:#26c6da; } .semantic-sky { color:#4fc3f7; } .semantic-green { color:#66bb6a; } .semantic-teal { color:#26a69a; } .semantic-purple { color:#ab47bc; } .semantic-orange { color:#ff9800; } .semantic-amber { color:#ffc107; } .semantic-yellow { color:#fdd835; } .semantic-blue { color:#42a5f5; } .semantic-lime { color:#cddc39; } .semantic-white { color:rgba(255,255,255,.86); }
 .ticker-footer { min-height:80px; } .footer-marquee { height:80px; }
@@ -3852,10 +3330,10 @@ const CSS = `
 .footer-marquee.single-item .footer-marquee-track { animation:none !important; transform:none !important; }
 .footer-marquee.group-details-open .footer-marquee-track { animation-play-state:paused; } [data-footer-group-labels] { cursor:pointer; } [data-footer-group-labels].footer-group-expanded .footer-marquee-copy strong { color:#90caf9; }
 .drawer { margin-top:0; max-height:min(58vh,560px); overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 24px 24px; background:linear-gradient(145deg,rgba(31,37,44,.94),rgba(14,18,23,.94)); }
-.drawer-host { overflow:hidden; }
+.drawer-host { width:100%; margin:0; overflow:hidden; box-sizing:border-box; }
 .drawer-host .context-bar { transform:translateY(-100%); transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); }
 .drawer-host.drawer-active .context-bar { transform:translateY(0); transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); }
-.context-bar { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); grid-template-rows:repeat(2,58px); align-items:stretch; gap:10px; width:100%; height:146px; min-height:146px; padding:10px 16px; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 18px 18px; background:rgba(18,23,28,.96); }
+.context-bar { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); grid-template-rows:repeat(2,58px); align-items:stretch; gap:10px; width:100%; height:146px; min-height:146px; margin:0; padding:10px 16px; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 23px 23px; background:rgba(18,23,28,.96); }
 .context-action { display:flex; grid-column:span 2; align-items:center; justify-content:flex-start; gap:11px; min-width:0; height:58px; padding:0 14px; border:1px solid rgba(255,255,255,.08); border-radius:13px; background:rgba(255,255,255,.045); color:rgba(255,255,255,.8); font:inherit; cursor:pointer; transition:border-color 180ms ease,background 180ms ease,color 180ms ease; } .context-action:nth-child(6) { grid-column:2 / span 2; } .context-action:hover { background:rgba(255,255,255,.1); color:#fff; } .context-action ha-icon { flex:0 0 auto; width:24px; height:24px; } .context-action-copy { display:flex; flex-direction:column; min-width:0; text-align:left; } .context-action-copy strong,.context-action-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .context-action-copy strong { color:rgba(255,255,255,.96); font-size:17px; font-weight:680; line-height:21px; } .context-action-copy small { margin-top:3px; color:rgba(220,226,229,.72); font-size:14px; font-weight:520; line-height:17px; }
 .context-action.tone-information { border-color:rgba(66,165,245,.3); background:linear-gradient(135deg,rgba(66,165,245,.15),rgba(255,255,255,.035)); } .context-action.tone-information ha-icon { color:#42a5f5; }
 .context-action.tone-success { border-color:rgba(102,187,106,.3); background:linear-gradient(135deg,rgba(102,187,106,.15),rgba(255,255,255,.035)); } .context-action.tone-success ha-icon { color:#66bb6a; }
@@ -3875,7 +3353,7 @@ const CSS = `
 .drawer h2 { display:flex; align-items:center; gap:8px; margin:0; padding:15px 20px 12px; font-size:22px; } .section-title { padding:9px 20px 7px; color:var(--secondary-text-color); font-size:10px; font-weight:650; letter-spacing:1px; } .recent-title { margin-top:12px; border-top:1px solid rgba(255,255,255,.07); padding-top:13px; }
 .active-list { padding:0 16px; } .recent-list { max-height:calc(min(58vh,560px) - 160px); overflow-y:auto; padding:0 16px 18px; scrollbar-width:thin; overscroll-behavior:contain; touch-action:pan-y; }
 .event { margin:0 0 7px; border:1px solid rgba(255,255,255,.055); border-left:3px solid var(--event-color); border-radius:16px; background:rgba(255,255,255,.025); overflow:hidden; } .event-head { display:grid; grid-template-columns:34px minmax(0,1fr) 20px; gap:10px; align-items:center; width:100%; min-height:52px; padding:8px 11px; border:0; background:none; color:inherit; cursor:pointer; text-align:left; } .event-icon { display:grid; place-items:center; width:30px; height:30px; border-radius:10px; color:var(--event-color); background:color-mix(in srgb,var(--event-color) 12%,transparent); } .event-copy { display:flex; flex-direction:column; min-width:0; } .event-copy strong,.event-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .event-copy strong { font-size:15px; } .event-copy small { color:var(--secondary-text-color); font-size:12px; } .chevron { transition:transform 180ms ease; } .expanded .chevron { transform:rotate(90deg); } .event-details { display:none; padding:0 14px 12px; border-top:1px solid rgba(255,255,255,.045); } .expanded .event-details { display:block; } .field { display:flex; flex-direction:column; margin-top:9px; } .field small { color:var(--secondary-text-color); font-size:10px; text-transform:uppercase; letter-spacing:.55px; } .field span { font-size:12px; line-height:16px; } .open-device { display:inline-flex; align-items:center; gap:7px; margin-top:12px; padding:7px 10px; border:1px solid rgba(255,255,255,.075); border-radius:11px; background:rgba(255,255,255,.035); color:inherit; cursor:pointer; } .empty { min-height:52px; padding:8px 11px; color:var(--secondary-text-color); font-size:13px; }
- @media (prefers-reduced-motion:reduce) { .zone-item { transition:none; } .utility-security.tone-critical,.utility-security.tone-success::before { animation:none; } } @container (max-width:760px) { .utility-header { grid-template-columns:1fr 1fr; grid-template-rows:72px 92px; height:164px; min-height:164px; border-radius:19px 19px 0 0; } .utility-clock { padding:0 16px; } .utility-time strong { font-size:35px; } .utility-clock-seconds { font-size:16px; } .utility-time small { font-size:13px; } .utility-date { margin-top:4px; font-size:11px; } .utility-security { padding:0 12px; } .utility-security ha-icon { width:28px; height:28px; } .utility-music { grid-column:1 / -1; grid-template-columns:minmax(150px,.8fr) minmax(230px,1.2fr); border-top:1px solid rgba(255,255,255,.09); border-left:0; } .utility-music-controls { padding-right:14px; } } @container (max-width:600px) { .ticker,.ticker:has(.live-banner-details:not([hidden])) { width:100%; height:194px !important; min-height:194px !important; padding:13px 15px 11px; border-radius:19px; } .utility-header + .ticker,.utility-header + .ticker:has(.live-banner-details:not([hidden])) { border-radius:0 0 19px 19px; } .ticker.has-live-state .ticker-zones { padding-top:42px; } .ticker:has(.live-banner-details:not([hidden])) .ticker-zones { padding-top:84px; } .ticker-zones { grid-template-columns:minmax(0,1fr) 30px; gap:8px; } .secondary-zone { display:none; } .ticker-zone { height:58px; } .primary-zone .zone-title { font-size:19px; } .primary-zone .zone-summary { font-size:12px; } .primary-zone .zone-title ha-icon { width:19px; height:19px; } .ticker-footer { padding-top:7px; font-size:9px; gap:7px; } .footer-action { display:none; } .context-bar { grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,52px); height:176px; min-height:176px; padding:7px 9px; gap:6px; } .context-action,.context-action:nth-child(6) { grid-column:auto; height:52px; padding:0 9px; gap:7px; } .context-action ha-icon { width:20px; height:20px; } .context-action-copy strong { font-size:14px; line-height:17px; } .context-action-copy small { font-size:11px; line-height:13px; } }
+@media (prefers-reduced-motion:reduce) { .zone-item { transition:none; } .utility-security.tone-critical,.utility-security.tone-success::before { animation:none; } } @container (max-width:760px) { .utility-header { grid-template-columns:1fr 1fr; grid-template-rows:72px 92px; height:164px; min-height:164px; border-radius:19px 19px 0 0; } .utility-clock { padding:0 16px; } .utility-time strong { font-size:35px; } .utility-clock-seconds { font-size:16px; } .utility-time small { font-size:13px; } .utility-date { margin-top:4px; font-size:11px; } .utility-security { padding:0 12px; } .utility-security ha-icon { width:28px; height:28px; } .utility-music { grid-column:1 / -1; grid-template-columns:minmax(150px,.8fr) minmax(230px,1.2fr); border-top:1px solid rgba(255,255,255,.09); border-left:0; } .utility-music-controls { padding-right:14px; } } @container (max-width:600px) { .ticker { width:100%; height:194px !important; min-height:194px !important; padding:13px 15px 11px; border-radius:19px; } .utility-header ~ .ticker { border-radius:0 0 19px 19px; } .ticker-zones { grid-template-columns:minmax(0,1fr) 30px; gap:8px; } .secondary-zone { display:none; } .ticker-zone { height:58px; } .primary-zone .zone-title { font-size:19px; } .primary-zone .zone-summary { font-size:12px; } .primary-zone .zone-title ha-icon { width:19px; height:19px; } .ticker-footer { padding-top:7px; font-size:9px; gap:7px; } .footer-action { display:none; } .context-bar { grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,52px); height:176px; min-height:176px; padding:7px 9px; gap:6px; } .context-action,.context-action:nth-child(6) { grid-column:auto; height:52px; padding:0 9px; gap:7px; } .context-action ha-icon { width:20px; height:20px; } .context-action-copy strong { font-size:14px; line-height:17px; } .context-action-copy small { font-size:11px; line-height:13px; } }
 .primary-zone .zone-title, .secondary-zone .zone-title { font-size:23px; font-weight:700; }
 .primary-zone .zone-summary, .secondary-zone .zone-summary { font-size:15px; }
 .zone-title { gap:10px; }

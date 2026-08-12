@@ -11,11 +11,7 @@ async def async_get_config_entry_diagnostics(
 ) -> dict:
     coordinator = entry.runtime_data
     data = coordinator.data or {}
-    normalized_items = [
-        item["normalized"]
-        for item in [*data.get("active", []), *data.get("recent", [])]
-        if isinstance(item, dict) and item.get("normalized")
-    ]
+    native = data.get("native", {}) if isinstance(data.get("native"), dict) else {}
     return {
         "selected_entities": list(
             entry.options.get("selected_entities", entry.data.get("selected_entities", []))
@@ -29,11 +25,8 @@ async def async_get_config_entry_diagnostics(
         "name_override_count": len(entry.options.get("name_overrides", {})),
         "entity_name_override_count": len(entry.options.get("entity_name_overrides", {})),
         "observed_entity_count": len(getattr(coordinator, "_observed", ())),
-        "active_count": data.get("active_count", 0),
+        "native_current_count": len(native.get("current", [])),
+        "native_recent_count": len(native.get("recent", [])),
+        "native_awareness_count": len(native.get("awareness", [])),
         "health": data.get("health", "normal"),
-        "left_count": len(data.get("left", [])),
-        "right_count": len(data.get("right", [])),
-        "bottom_count": len(data.get("bottom", [])),
-        "recent_count": len(data.get("recent", [])),
-        "normalization": normalized_items,
     }

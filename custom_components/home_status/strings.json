@@ -226,25 +226,21 @@
             "description": "Choose which kinds of information should show an age. Relative time is useful for events such as a door closing or an appliance completing, but can make continuously valid information look stale, so each group can be controlled separately.",
             "data": {
               "timestamp_contacts": "Doors & windows",
-              "timestamp_appliance_complete": "Completed appliances",
               "timestamp_other": "Other current information"
             },
             "data_description": {
               "timestamp_contacts": "Show relative time on door/window activity so people can see how recently the contact changed.",
-              "timestamp_appliance_complete": "Show relative time on completed appliance events, such as “Dryer Complete · 5 min ago.” Running appliance countdowns are separate.",
               "timestamp_other": "Show relative time on other current/status information. Leave this off if you do not want ongoing values such as schedules or climate information to look stale."
             }
           },
           "retention": {
             "name": "Retention",
             "data": {
-              "ticker_event_minutes": "Keep recent activity visible for (minutes)",
-              "history_retention_days": "Keep Home Status history for (days)"
+              "ticker_event_minutes": "Recorder recent activity window (minutes)"
             },
             "description": "Set how long recent completed activity remains available for display and how many days of Home Status event history are kept.",
             "data_description": {
-              "ticker_event_minutes": "How long recent completed events remain eligible for the bottom ticker before aging out of recent activity.",
-              "history_retention_days": "How many days Home Status keeps its own event history for Home Status features and diagnostics."
+              "ticker_event_minutes": "How far back Home Status reads Recorder transitions for recent activity."
             }
           }
         }

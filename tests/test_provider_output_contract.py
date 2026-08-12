@@ -136,7 +136,6 @@ def test_waste_collection_dates_within_the_default_window_stay_visible():
 def test_provider_methods_are_split_from_coordinator():
     expected_modules = {
         "_build_weather_item": "providers.weather",
-        "_build_direct_history_event": "providers.security",
         "_build_filter_maintenance_item": "providers.maintenance",
         "_build_appliance_cycle_item": "providers.laundry",
         "_build_hvac_diagnostic_item": "providers.climate",

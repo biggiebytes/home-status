@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.data_entry_flow import section
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
@@ -21,8 +20,7 @@ from homeassistant.helpers import selector
 from .const import DOMAIN
 from .discovery import discover_home_devices
 from .source_discovery import discover_sources
-from .presentation_config import DEFAULTS, DESTINATION_OPTIONS, PALETTE_OPTIONS
-from .presentation import NAVIGATION_KEYS
+from .presentation_config import DEFAULTS, PALETTE_OPTIONS
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -820,106 +818,12 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open the user-facing presentation and behavior settings."""
         return self.async_show_menu(
             step_id="presentation",
-            menu_options=["layout_sizing", "routing_filters", "navigation", "appearance", "visual_center", "names", "timing", "back_to_init"],
+            menu_options=["layout_sizing", "appearance", "visual_center", "names", "timing", "back_to_init"],
         )
 
     def _option_value(self, key):
         value = self.entry.options.get(key, DEFAULTS.get(key))
-        if key.startswith("route_"):
-            return list(value) if isinstance(value, list) else list(DEFAULTS.get(key, []))
         return value
-
-    async def _dashboard_page_choices(self) -> list[dict[str, str]]:
-        """Return the user's existing dashboard views as friendly destinations."""
-        lovelace = self.hass.data.get(LOVELACE_DATA)
-        dashboards = getattr(lovelace, "dashboards", {}) if lovelace else {}
-        pages: dict[str, dict[str, str]] = {}
-        for dashboard_key, dashboard in (dashboards.items() if isinstance(dashboards, dict) else ()):
-            try:
-                metadata = getattr(dashboard, "config", None) or {}
-                dashboard_title = metadata.get("title") or (
-                    "Overview" if dashboard_key is None else str(dashboard_key).replace("-", " ").title()
-                )
-                dashboard_path = getattr(dashboard, "url_path", None) or dashboard_key or "lovelace"
-                config = await dashboard.async_load(False)
-                for index, view in enumerate(config.get("views", []) if isinstance(config, dict) else []):
-                    if not isinstance(view, dict):
-                        continue
-                    view_title = view.get("title") or f"View {index + 1}"
-                    route = view.get("path") if view.get("path") not in (None, "") else str(index)
-                    path = f"/{str(dashboard_path).strip('/')}/{str(route).strip('/')}"
-                    pages[path] = {"value": path, "label": f"{dashboard_title} → {view_title}"}
-            except Exception as err:  # A private dashboard must not block configuration.
-                _LOGGER.debug("Unable to read Home Assistant dashboard %s: %s", dashboard_key, err)
-        return sorted(pages.values(), key=lambda page: page["label"].casefold())
-
-    async def async_step_navigation(self, user_input=None):
-        """Configure optional page destinations for normal Home Status items."""
-        current = self._options()
-        pages = await self._dashboard_page_choices()
-        choices = [
-            *pages,
-            {"value": "entity", "label": "Open device details"},
-            {"value": "none", "label": "Do not open anything"},
-            {"value": "custom", "label": "Use custom page path below"},
-        ]
-        valid = {choice["value"] for choice in choices}
-
-        if user_input is not None:
-            options = self._options()
-            for value in user_input.values():
-                if isinstance(value, dict):
-                    options.update(value)
-            errors: dict[str, str] = {}
-            for key in NAVIGATION_KEYS:
-                target_key = f"navigation_{key}"
-                target = options.get(target_key, "none")
-                if target not in valid:
-                    options[target_key] = "none"
-                    target = "none"
-                if target == "custom":
-                    custom = str(options.get(f"navigation_custom_{key}", "")).strip()
-                    if not custom.startswith("/"):
-                        errors[target_key] = "custom_page_must_start_with_slash"
-                    else:
-                        options[f"navigation_custom_{key}"] = custom
-            if not errors:
-                options["navigation_enabled"] = bool(options.get("navigation_enabled", True))
-                return await self._save_options_and_return(options, "presentation")
-        else:
-            errors = {}
-
-        def destination(key: str):
-            saved = current.get(f"navigation_{key}", "none")
-            control = selector.SelectSelector(
-                selector.SelectSelectorConfig(options=choices, mode=selector.SelectSelectorMode.DROPDOWN)
-            )
-            return control, saved if saved in valid else "none"
-
-        def fields(keys, *, custom: bool = False):
-            schema = {}
-            for key in keys:
-                option_key = f"navigation_custom_{key}" if custom else f"navigation_{key}"
-                if custom:
-                    schema[vol.Optional(option_key, default=current.get(option_key, ""))] = selector.TextSelector()
-                else:
-                    control, default = destination(key)
-                    schema[vol.Optional(option_key, default=default)] = control
-            return vol.Schema(schema)
-
-        return self.async_show_form(
-            step_id="navigation",
-            data_schema=vol.Schema({
-                vol.Required("enable_navigation"): section(vol.Schema({
-                    vol.Optional("navigation_enabled", default=current.get("navigation_enabled", True)): selector.BooleanSelector(),
-                }), {"collapsed": False}),
-                vol.Required("contacts"): section(fields(("doors_open", "doors_closed", "windows_open", "windows_closed")), {"collapsed": True}),
-                vol.Required("activity"): section(fields(("appliances_running", "appliances_complete", "security")), {"collapsed": True}),
-                vol.Required("information"): section(fields(("weather", "climate", "waste", "calendar", "news", "irrigation", "location", "other")), {"collapsed": True}),
-                vol.Required("custom_paths"): section(fields(NAVIGATION_KEYS, custom=True), {"collapsed": True}),
-            }),
-            errors=errors,
-        )
 
     @staticmethod
     def _number(minimum, maximum, step=1):
@@ -979,66 +883,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                         vol.Optional("right_measurement_size", default=self._option_value("right_measurement_size")): self._number(18, 100),
                         vol.Optional("right_weather_size", default=self._option_value("right_weather_size")): self._number(18, 90),
                         vol.Optional("bottom_measurement_size", default=self._option_value("bottom_measurement_size")): self._number(14, 72),
-                    }),
-                    {"collapsed": True},
-                ),
-            }),
-        )
-
-    async def async_step_routing_filters(self, user_input=None):
-        """Configure which Home Status area receives each information type."""
-        if user_input is not None:
-            options = self._options()
-            for value in user_input.values():
-                if isinstance(value, dict):
-                    options.update(value)
-            return await self._save_options_and_return(options, "presentation")
-
-        def destinations(key):
-            return selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=DESTINATION_OPTIONS,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-
-        return self.async_show_form(
-            step_id="routing_filters",
-            data_schema=vol.Schema({
-                vol.Required("contacts"): section(
-                    vol.Schema({
-                        vol.Optional("route_doors_open", default=self._option_value("route_doors_open")): destinations("route_doors_open"),
-                        vol.Optional("route_doors_closed", default=self._option_value("route_doors_closed")): destinations("route_doors_closed"),
-                        vol.Optional("route_windows_open", default=self._option_value("route_windows_open")): destinations("route_windows_open"),
-                        vol.Optional("route_windows_closed", default=self._option_value("route_windows_closed")): destinations("route_windows_closed"),
-                    }),
-                    {"collapsed": False},
-                ),
-                vol.Required("appliances_and_security"): section(
-                    vol.Schema({
-                        vol.Optional("route_appliances_running", default=self._option_value("route_appliances_running")): destinations("route_appliances_running"),
-                        vol.Optional("route_appliances_complete", default=self._option_value("route_appliances_complete")): destinations("route_appliances_complete"),
-                        vol.Optional("route_security", default=self._option_value("route_security")): destinations("route_security"),
-                    }),
-                    {"collapsed": True},
-                ),
-                vol.Required("information"): section(
-                    vol.Schema({
-                        vol.Optional("route_weather", default=self._option_value("route_weather")): destinations("route_weather"),
-                        vol.Optional("route_climate", default=self._option_value("route_climate")): destinations("route_climate"),
-                        vol.Optional("route_waste", default=self._option_value("route_waste")): destinations("route_waste"),
-                        vol.Optional("route_calendar", default=self._option_value("route_calendar")): destinations("route_calendar"),
-                        vol.Optional("route_news", default=self._option_value("route_news")): destinations("route_news"),
-                        vol.Optional("route_irrigation", default=self._option_value("route_irrigation")): destinations("route_irrigation"),
-                        vol.Optional("route_location", default=self._option_value("route_location")): destinations("route_location"),
-                        vol.Optional("route_other", default=self._option_value("route_other")): destinations("route_other"),
-                    }),
-                    {"collapsed": True},
-                ),
-                vol.Required("empty_area_behavior"): section(
-                    vol.Schema({
-                        vol.Optional("fill_empty_left", default=self._option_value("fill_empty_left")): selector.BooleanSelector(),
                     }),
                     {"collapsed": True},
                 ),
@@ -1109,7 +953,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_timing(self, user_input=None):
-        """Configure relative timestamps plus recent/history retention."""
+        """Configure relative timestamps and the Recorder recent window."""
         if user_input is not None:
             options = self._options()
             for value in user_input.values():
@@ -1122,7 +966,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("timestamps"): section(
                     vol.Schema({
                         vol.Optional("timestamp_contacts", default=self._option_value("timestamp_contacts")): selector.BooleanSelector(),
-                        vol.Optional("timestamp_appliance_complete", default=self._option_value("timestamp_appliance_complete")): selector.BooleanSelector(),
                         vol.Optional("timestamp_other", default=self._option_value("timestamp_other")): selector.BooleanSelector(),
                     }),
                     {"collapsed": False},
@@ -1130,7 +973,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("retention"): section(
                     vol.Schema({
                         vol.Optional("ticker_event_minutes", default=self._option_value("ticker_event_minutes")): self._number(1, 120),
-                        vol.Optional("history_retention_days", default=self._option_value("history_retention_days")): self._number(1, 30),
                     }),
                     {"collapsed": False},
                 ),

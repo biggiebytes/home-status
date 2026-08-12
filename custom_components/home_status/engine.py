@@ -10,7 +10,15 @@ from homeassistant.helpers import entity_registry as er
 
 from .discovery import discover_home_devices, manual_home_device_for_entity
 from .home_device import HomeDevice
-from .interpreters import awareness_entity, interpret_appliance_home_device, interpret_entity
+from .interpreters import (
+    appliance_current_fact,
+    appliance_recent_entity_ids,
+    appliance_transition_fact,
+    awareness_entity,
+    has_appliance_recent_capability,
+    interpret_appliance_home_device,
+    interpret_entity,
+)
 from .source import HomeSource
 from .source_discovery import discover_sources
 from .source_interpreters import household_presence_item, interpret_source
@@ -184,6 +192,13 @@ class HomeStatusEngine:
                 if home_device.id == home_device_id:
                     return home_device.name
 
+        # Native facts carry an entity id, not the old interpreted item with a
+        # Home Device id. Recover the same selected Home Device identity here so
+        # current facts and Recorder transitions share one naming authority.
+        for home_device in self.selected_home_devices(options):
+            if any(entity.entity_id == entity_id for entity in home_device.entities):
+                return home_device.name
+
         source_id = str(item.get("source_id") or "")
         if source_id:
             for source in self.selected_sources(options):
@@ -208,6 +223,77 @@ class HomeStatusEngine:
             *(source.entity_id for source in self.selected_sources(options)),
             *(self._household_person_ids(options) if options.get("household_presence_enabled", False) else ()),
         ]))
+
+    def recent_entity_ids(self, options: dict[str, Any]) -> tuple[str, ...]:
+        """Return selected entities eligible for a Recorder recent read."""
+        entity_ids: list[str] = []
+        seen_appliance_ids: set[str] = set()
+        selected = [*self.selected_home_devices(options), *self.selected_entities(options)]
+        for home_device in selected:
+            context = self._manual_appliance_context(home_device)
+            if not has_appliance_recent_capability(context):
+                entity_ids.extend(home_device.entity_ids)
+                continue
+            if context.id in seen_appliance_ids:
+                continue
+            seen_appliance_ids.add(context.id)
+            entity_ids.extend(appliance_recent_entity_ids(self.hass, context))
+        return tuple(dict.fromkeys(entity_ids))
+
+    def appliance_context_for_entity(
+        self, options: dict[str, Any], entity_id: str
+    ) -> HomeDevice | None:
+        """Return the selected semantic appliance context owning an entity."""
+        seen: set[str] = set()
+        for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            context = self._manual_appliance_context(selected)
+            if context.id in seen or not has_appliance_recent_capability(context):
+                continue
+            seen.add(context.id)
+            if any(entity.entity_id == entity_id for entity in context.entities):
+                return context
+        return None
+
+    def native_current_facts(self, options: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return semantic appliance current facts for the HA-native contract."""
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            context = self._manual_appliance_context(selected)
+            if context.id in seen or not has_appliance_recent_capability(context):
+                continue
+            seen.add(context.id)
+            if fact := appliance_current_fact(self.hass, context):
+                result.append(fact)
+        return result
+
+    def appliance_owned_entity_ids(self, options: dict[str, Any]) -> set[str]:
+        """Return raw entities replaced by one semantic appliance fact."""
+        entity_ids: set[str] = set()
+        seen: set[str] = set()
+        for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            context = self._manual_appliance_context(selected)
+            if context.id in seen or not has_appliance_recent_capability(context):
+                continue
+            seen.add(context.id)
+            entity_ids.update(context.entity_ids)
+        return entity_ids
+
+    def native_recent_facts(
+        self, options: dict[str, Any], transitions: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Apply appliance meaning to Recorder rows, leaving other rows intact."""
+        result: list[dict[str, Any]] = []
+        for transition in transitions:
+            context = self.appliance_context_for_entity(
+                options, str(transition.get("entity_id") or "")
+            )
+            if context is None:
+                result.append(transition)
+                continue
+            if fact := appliance_transition_fact(self.hass, context, transition):
+                result.append(fact)
+        return result
 
     def _household_person_ids(self, options: dict[str, Any]) -> list[str]:
         configured = options.get("household_presence_people", [])

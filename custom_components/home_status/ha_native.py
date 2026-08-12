@@ -104,7 +104,18 @@ async def async_recent_transitions(
                     _transition_fact(entity_id, previous, state, current, name_for_entity)
                 )
             previous = state
-    return sorted(transitions, key=lambda item: item["changed_at"], reverse=True)
+    ordered = sorted(transitions, key=lambda item: item["changed_at"], reverse=True)
+    # Recorder remains the authority for the facts. The ticker needs the newest
+    # fact for each entity, not a replay of one entity's entire state sequence.
+    latest: list[dict[str, Any]] = []
+    seen_entity_ids: set[str] = set()
+    for item in ordered:
+        entity_id = item["entity_id"]
+        if entity_id in seen_entity_ids:
+            continue
+        seen_entity_ids.add(entity_id)
+        latest.append(item)
+    return latest
 
 
 def _is_meaningful_transition(
@@ -210,9 +221,9 @@ def _state_label(
         return {"locked": "Locked", "unlocked": "Unlocked"}.get(canonical, _humanize(raw))
     if domain == "alarm_control_panel":
         return {
-            "disarmed": "Disarmed", "armed_away": "Armed Away",
-            "armed_home": "Armed Home", "armed_night": "Armed Night",
-            "arming": "Arming", "pending": "Pending", "triggered": "Triggered",
+            "disarmed": "Alarm off", "armed_away": "Alarm armed away",
+            "armed_home": "Alarm armed home", "armed_night": "Alarm armed night",
+            "arming": "Alarm arming", "pending": "Pending", "triggered": "Alarm triggered",
         }.get(canonical, _humanize(raw))
     return _humanize(raw)
 

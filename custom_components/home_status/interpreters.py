@@ -389,7 +389,7 @@ def _waste_collection_date(value: Any) -> str | None:
     if days == 1:
         return "Tomorrow"
     if 2 <= days <= 7:
-        return parsed_date.strftime("%A")
+        return f"{parsed_date.strftime('%a, %b')} {parsed_date.day}"
     return f"{parsed_date.strftime('%a, %b')} {parsed_date.day}"
 
 def _has_semantic_owner(home_device: HomeDevice, entity: HomeDeviceEntity) -> bool:
@@ -450,13 +450,13 @@ def interpret_entity(
 
     if domain == "alarm_control_panel":
         labels = {
-            "disarmed": ("Alarm Off", "Home security is disarmed", "normal", False),
-            "armed_home": ("Alarm On", "Home security is armed", "normal", False),
-            "armed_away": ("Alarm On", "Home security is armed", "normal", False),
-            "armed_night": ("Alarm On", "Home security is armed", "normal", False),
-            "arming": ("Alarm Arming", "Security countdown is active", "attention", True),
+            "disarmed": ("Alarm off", "Home security is disarmed", "normal", False),
+            "armed_home": ("Alarm armed home", "Home security is armed", "normal", False),
+            "armed_away": ("Alarm armed away", "Home security is armed", "normal", False),
+            "armed_night": ("Alarm armed night", "Home security is armed", "normal", False),
+            "arming": ("Alarm arming", "Security countdown is active", "attention", True),
             "pending": ("Entry Delay", "Security entry delay is active", "critical", True),
-            "triggered": ("Security Alert", "Alarm has been triggered", "critical", True),
+            "triggered": ("Alarm triggered", "Alarm has been triggered", "critical", True),
         }
         if raw in labels:
             message, detail, priority, active = labels[raw]
@@ -825,10 +825,9 @@ def interpret_appliance_home_device(
 ) -> list[dict[str, Any]]:
     """Interpret washer, dryer, and dishwasher activity with one compact contract.
 
-    Running is live activity. Leaving a running state (or an explicit end-of-cycle
-    signal) makes the coordinator resolve that activity into a recent Complete
-    event, which gives completion an accurate timestamp without keeping idle
-    appliances on screen.
+    Running is a live HA fact. Explicit end-of-cycle signals suppress that live
+    fact; their Recorder activation is independently interpreted as Completed.
+    No appliance lifecycle is retained or resolved by Home Status.
     """
     state_entity = next(
         (entity for entity in home_device.entities if _is_appliance_state_entity(entity)),
@@ -921,3 +920,114 @@ def interpret_appliance_home_device(
     if end_entity is not None:
         item["completion_entity_id"] = end_entity.entity_id
     return [item]
+
+
+def appliance_recent_entity_ids(
+    hass: HomeAssistant, home_device: HomeDevice
+) -> tuple[str, ...]:
+    """Return Recorder candidates represented by the appliance semantics.
+
+    Appliance devices expose many controls and enum sensors. Running belongs to
+    the current-state contract; Recorder recent activity is limited to explicit
+    completion and genuine safety/fault signals. This only limits the Recorder
+    query; it retains no Home Status history and manufactures no lifecycle.
+    """
+    # A machine door is not household door activity.  An appliance shares a
+    # physical HA device with it, but appliance history is about the cycle and
+    # genuine safety/fault conditions only.
+    structural_classes = {
+        "smoke", "carbon_monoxide", "gas", "moisture", "problem", "safety",
+    }
+    entity_ids = {
+        entity.entity_id
+        for entity in home_device.entities
+        if entity.domain in {"lock", "alarm_control_panel"}
+        or str(entity.device_class or "").casefold() in structural_classes
+    }
+    entity_ids.update(
+        entity.entity_id
+        for entity in home_device.entities
+        if _is_appliance_end_entity(entity)
+    )
+    return tuple(sorted(entity_ids))
+
+
+def has_appliance_recent_capability(home_device: HomeDevice) -> bool:
+    """Whether existing appliance semantics own recent activity for a device."""
+    return any(
+        _is_appliance_state_entity(entity) or _is_appliance_end_entity(entity)
+        for entity in home_device.entities
+    )
+
+
+def appliance_current_fact(
+    hass: HomeAssistant, home_device: HomeDevice
+) -> dict[str, Any] | None:
+    """Return the one current appliance fact owned by the semantic interpreter.
+
+    This is a compact HA-native fact, not a retained active record.  It keeps
+    the established appliance interpretation (including time remaining) while
+    HA remains the source of the state and timestamp.
+    """
+    items = interpret_appliance_home_device(hass, home_device)
+    if not items:
+        return None
+    item = items[0]
+    return {
+        "entity_id": item["entity_id"],
+        "entity_name": item["appliance_name"],
+        "domain": item["entity_id"].split(".", 1)[0],
+        "device_class": None,
+        "state": item["display_state"],
+        "changed_at": item["created_at"],
+        "attention": "none",
+        "detail": item["detail"],
+        "capability": "appliance_cycle",
+    }
+
+
+def appliance_transition_fact(
+    hass: HomeAssistant,
+    home_device: HomeDevice,
+    transition: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Interpret one Recorder transition without creating lifecycle state.
+
+    Only an explicit end-of-cycle activation or a real fault/safety activation
+    is a household event. Running belongs to ``native.current``. Resets to
+    ``off`` and unavailable/error churn remain Recorder facts but are
+    deliberately not Home Status recent items.
+    """
+    entity_id = str(transition.get("entity_id") or "")
+    entity = next((item for item in home_device.entities if item.entity_id == entity_id), None)
+    if entity is None:
+        return None
+    before = str(transition.get("from") or "").strip().casefold()
+    after = str(transition.get("to") or "").strip().casefold()
+    if {before, after} & {"", "unknown", "unavailable", "error", "none"}:
+        return None
+
+    label = _appliance_label(home_device)
+    if _is_appliance_end_entity(entity):
+        if after not in {"on", "true", "1", "complete", "completed", "finished", "done", "end"}:
+            return None
+        display = "Completed"
+    elif str(entity.device_class or "").casefold() in {
+        "smoke", "carbon_monoxide", "gas", "moisture", "problem", "safety",
+    }:
+        if after not in {"on", "true", "1", "problem", "detected"}:
+            return None
+        display = "Fault" if str(entity.device_class or "").casefold() in {"problem", "safety"} else "Alert"
+    else:
+        return None
+
+    return {
+        "entity_id": entity_id,
+        "entity_name": label,
+        "domain": entity.domain,
+        "device_class": entity.device_class,
+        "from": str(transition.get("from") or ""),
+        "to": display,
+        "changed_at": transition["changed_at"],
+        "capability": "appliance_cycle",
+    }

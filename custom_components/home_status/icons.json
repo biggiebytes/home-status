@@ -10,14 +10,6 @@
           "value_emphasis": "mdi:numeric"
         }
       },
-      "routing_filters": {
-        "sections": {
-          "contacts": "mdi:door",
-          "appliances_and_security": "mdi:washing-machine",
-          "information": "mdi:information-outline",
-          "empty_area_behavior": "mdi:view-dashboard-outline"
-        }
-      },
       "appearance": {
         "sections": {
           "color_behavior": "mdi:palette-outline",
