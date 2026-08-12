@@ -289,12 +289,12 @@
       },
       "monitoring_devices": {
         "title": "Whole devices",
-        "description": "Select whole devices when related entities should be interpreted together. This is useful for appliances and other devices that expose separate state, remaining-time, completion, fault, or measurement entities.",
+        "description": "Select whole devices when related entities should be interpreted together. For a washer, dryer, dishwasher, or similar appliance, select the whole appliance device here—Home Status will use its operating state, time remaining, completion, and fault entities automatically.",
         "data": {
           "selected_devices": "Devices"
         },
         "data_description": {
-          "selected_devices": "Choose devices whose related entities should be interpreted together by Home Status."
+          "selected_devices": "For appliances, choose the whole washer, dryer, dishwasher, or similar device—not an individual timer or cycle sensor. Home Status then finds the operating state, time remaining, completion, and fault entities from that device."
         }
       },
       "presentation": {

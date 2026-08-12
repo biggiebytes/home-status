@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 
+import json
+
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -35,7 +37,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         # The coordinator retains the complete working snapshot in memory, but
         # publishing every intermediate collection (and diagnostic duplicates)
         # can exceed Recorder's 16 KiB attribute limit.
-        return {
+        attributes = {
             "health": data.get("health", "normal"),
             "priority": data.get("priority", "normal"),
             "weather_visual_effect": data.get("weather_visual_effect"),
@@ -45,6 +47,10 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "presentation": self._compact_presentation(data.get("presentation")),
             "native": self._compact_native(data.get("native")),
         }
+        # Recorder rejects attributes above 16 KiB. Keep a margin below that
+        # limit so normal changes in labels or URLs cannot make this entity
+        # noisy or create avoidable database work.
+        return self._fit_attribute_budget(attributes)
 
     @staticmethod
     def _compact_display(value):
@@ -90,25 +96,34 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         return {
             "current": compact(
                 value.get("current"),
-                ("entity_id", "entity_name", "domain", "device_class", "state", "changed_at", "attention"),
-            ),
+                (
+                    "entity_id", "entity_name", "domain", "device_class",
+                    "state", "changed_at", "attention", "capability", "detail",
+                ),
+            )[:8],
             "recent": compact(
                 value.get("recent"),
-                ("entity_id", "entity_name", "domain", "device_class", "from", "to", "changed_at"),
-            ),
-            "awareness": HomeStatusSensor._compact_items(value.get("awareness"), None),
+                (
+                    "entity_id", "entity_name", "domain", "device_class",
+                    "from", "to", "changed_at", "capability",
+                ),
+            )[:16],
+            "awareness": HomeStatusSensor._compact_items(value.get("awareness"), 8),
         }
 
     @staticmethod
     def _compact_items(value, limit):
         if not isinstance(value, list):
             return []
+        # These are the presentation fields the card consumes.  Excluding
+        # upstream/raw duplicates prevents calendars, news, and media feeds
+        # from repeatedly inflating the Recorder state payload.
         fields = (
             "id", "title", "message", "summary", "detail", "category",
             "icon", "priority", "active", "source", "created_at", "updated_at",
-            "occurred_at", "resolved_at", "expires_at", "scheduled_at", "all_day",
-            "timestamp", "entity_id", "image_url", "media_url", "media_type", "article_url", "navigation",
-            "subtitle", "body", "visual_effect", "action", "source_id", "source_name", "source_kind", "home_device_id", "home_device_name", "entity_name", "event_type", "behavior", "state", "raw_state", "display_state", "capability", "stage", "raw_stage", "display_stage", "semantic", "presentation",
+            "occurred_at", "expires_at", "scheduled_at", "all_day", "timestamp",
+            "entity_id", "image_url", "media_url", "media_type", "article_url",
+            "navigation", "subtitle", "body", "visual_effect", "action", "state",
         )
         items = []
         selected = value if limit is None else value[:limit]
@@ -121,7 +136,25 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 if current is None:
                     continue
                 if isinstance(current, str):
-                    current = current[:240]
+                    current = current[:160]
                 compact[key] = current
             items.append(compact)
         return items
+
+    @staticmethod
+    def _fit_attribute_budget(attributes):
+        """Keep the published state safely below Recorder's 16 KiB limit."""
+        def size(value):
+            return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+        # Keep live appliance/current state intact. Older ticker and awareness
+        # items are presentation history, so trim those first when a feed has
+        # unusually verbose data.
+        native = attributes.get("native")
+        if not isinstance(native, dict):
+            return attributes
+        while size(attributes) > 12_000 and native.get("awareness"):
+            native["awareness"].pop()
+        while size(attributes) > 12_000 and len(native.get("recent", [])) > 8:
+            native["recent"].pop()
+        return attributes
