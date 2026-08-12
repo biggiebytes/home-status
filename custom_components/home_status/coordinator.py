@@ -333,13 +333,14 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         recent: list[dict[str, Any]],
         awareness: list[dict[str, Any]],
         visual_source_items: list[dict[str, Any]],
-        live_news_items: list[dict[str, Any]],
+        live_news_items: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         """Select a visual and retire a shown non-resumable source on takeover."""
         if not bool(self.options.get("visual_center_enabled", True)):
             self._current_visual_source_activation = None
             self._current_visual_is_live_news = False
             return None
+        live_news_items = live_news_items or []
         visual = select_visual([*active, *visual_source_items, *live_news_items], recent, awareness)
         if visual is None:
             self._current_visual_source_activation = None
@@ -347,7 +348,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
         is_live_news = any(item.get("visual") == visual for item in live_news_items)
-        if self._current_visual_is_live_news and not is_live_news:
+        if getattr(self, "_current_visual_is_live_news", False) and not is_live_news:
             self.live_news.stop_active_after_preemption(datetime.now(timezone.utc))
             self.live_news_items = []
             self._save_state()

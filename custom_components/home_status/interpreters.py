@@ -994,9 +994,10 @@ def appliance_transition_fact(
     """Interpret one Recorder transition without creating lifecycle state.
 
     Only an explicit end-of-cycle activation or a real fault/safety activation
-    is a household event. Running belongs to ``native.current``. Resets to
-    ``off`` and unavailable/error churn remain Recorder facts but are
-    deliberately not Home Status recent items.
+    is a household event. Running belongs to ``native.current``. Some
+    appliances pulse their end-of-cycle signal and immediately reset it to
+    ``off``; that reset still represents the just-completed cycle when it
+    directly follows an active completion state.
     """
     entity_id = str(transition.get("entity_id") or "")
     entity = next((item for item in home_device.entities if item.entity_id == entity_id), None)
@@ -1009,7 +1010,8 @@ def appliance_transition_fact(
 
     label = _appliance_label(home_device)
     if _is_appliance_end_entity(entity):
-        if after not in {"on", "true", "1", "complete", "completed", "finished", "done", "end"}:
+        completion_states = {"on", "true", "1", "complete", "completed", "finished", "done", "end"}
+        if after not in completion_states and before not in completion_states:
             return None
         display = "Completed"
     elif str(entity.device_class or "").casefold() in {

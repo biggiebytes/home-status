@@ -841,23 +841,31 @@ class HomeStatusCard extends HTMLElement {
 
   _nativeCurrentItems(items) {
     return (Array.isArray(items) ? items : [])
-      .filter(item => item?.attention && item.attention !== 'none')
+      // Appliance cycles are intentionally not alarms. They carry
+      // attention: none so that a washing load does not raise the household
+      // health state, but they are still live information for the ticker.
+      .filter(item => (
+        (item?.attention && item.attention !== 'none')
+        || item?.capability === 'appliance_cycle'
+      ))
       .map(item => {
         const label = this._nativeStateLabel(item);
         const alarm = String(item?.domain) === 'alarm_control_panel';
+        const appliance = item?.capability === 'appliance_cycle';
         return {
           id: `native:current:${item.entity_id}`,
           entity_id: item.entity_id,
           entity_name: item.entity_name,
           message: alarm ? label : `${item.entity_name} ${label}`,
-          summary: label,
-          icon: this._nativeIcon(item),
-          category: this._nativeCategory(item),
-          priority: item.attention,
+          summary: appliance ? (item.detail || label) : label,
+          icon: appliance ? 'mdi:washing-machine' : this._nativeIcon(item),
+          category: appliance ? 'laundry' : this._nativeCategory(item),
+          priority: appliance ? 'activity' : item.attention,
           active: true,
           state: item.state,
           created_at: item.changed_at,
-          event_type: 'native_current'
+          event_type: appliance ? 'native_appliance_current' : 'native_current',
+          capability: item.capability
         };
       });
   }
@@ -866,20 +874,31 @@ class HomeStatusCard extends HTMLElement {
     return (Array.isArray(items) ? items : []).map(item => {
       const label = this._nativeStateLabel(item, true);
       const alarm = String(item?.domain) === 'alarm_control_panel';
+      const appliance = item?.capability === 'appliance_cycle';
+      const applianceText = `${item?.entity_name || ''} ${item?.entity_id || ''}`.toLowerCase();
+      const applianceIcon = applianceText.includes('dishwasher') ? 'mdi:dishwasher'
+        : applianceText.includes('dryer') ? 'mdi:tumble-dryer'
+          : 'mdi:washing-machine';
       return {
         id: `native:recent:${item.entity_id}:${item.changed_at}`,
         entity_id: item.entity_id,
         entity_name: item.entity_name,
         message: alarm ? label : `${item.entity_name} ${label}`,
         summary: '',
-        icon: this._nativeIcon(item),
-        category: this._nativeCategory(item),
+        icon: appliance ? applianceIcon : this._nativeIcon(item),
+        category: appliance
+          ? (applianceText.includes('washer') || applianceText.includes('dryer') ? 'laundry' : 'appliance')
+          : this._nativeCategory(item),
         priority: 'activity',
         active: false,
         state: item.to,
         created_at: item.changed_at,
+        // Recent completion is historical information. Keep the standard
+        // white transition treatment used for every completed Home Status item
+        // while retaining the appliance-specific icon above.
         event_type: 'native_transition',
-        source: 'home_assistant'
+        source: 'home_assistant',
+        capability: item.capability
       };
     });
   }
@@ -920,7 +939,13 @@ class HomeStatusCard extends HTMLElement {
       return {
         left: awareness.left,
         right: awareness.right,
-        bottom: recent,
+        // Keep existing recent history, and prepend the explicit live
+        // appliance contract so an active washer/dryer is visible while it
+        // is running (including its time remaining).
+        bottom: [
+          ...active.filter(item => item.capability === 'appliance_cycle'),
+          ...recent
+        ],
         active,
         recent,
         priority,
@@ -1266,17 +1291,20 @@ class HomeStatusCard extends HTMLElement {
 
   _iconSemanticClass(item) {
     if (this._presentationPreferences?.appearance?.semantic_colors === false) return 'semantic-white';
-    // A Recorder transition is historical information. Its category must not
-    // inherit the current-alert color for a door, lock, leak, or alarm.
-    if (item?.event_type === 'native_transition') return 'semantic-white';
+    // Recent transitions retain the same semantic coloring as their current
+    // counterparts: completion is success green and every other category
+    // follows the established color map.
     const category = this._categoryFor(item);
     const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
     const priority = String(item?.priority || '').toLowerCase();
     const state = String(item?.state || '').toLowerCase();
+    const security = category === 'security' || /\b(?:door|window|lock|alarm)\b/.test(text);
+    if (security && /\b(?:closed|locked|disarmed|off)\b/.test(`${text} ${state}`)) return 'semantic-green';
+    if (security && /\b(?:open|opened|unlocked|pending|triggered|armed)\b/.test(`${text} ${state}`)) return 'semantic-red';
     if (priority === 'critical' || /active leak|smoke|alarm|security|severe/.test(text)) return 'semantic-red';
     if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'semantic-orange';
     if (/complete|completed|finished|resolved|healthy/.test(text)) return 'semantic-green';
-    if (category === 'security' || /\b(?:door|lock|alarm)\b/.test(text)) return 'semantic-red';
+    if (security) return 'semantic-red';
     if (/leak|water|moisture|humidity/.test(text)) return 'semantic-cyan';
     if (category === 'weather') return 'semantic-sky';
     if (/recycl/.test(text)) return 'semantic-teal';
