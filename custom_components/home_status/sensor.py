@@ -93,14 +93,25 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 if isinstance(item, dict)
             ]
 
-        return {
-            "current": compact(
+        current = compact(
                 value.get("current"),
                 (
                     "entity_id", "entity_name", "domain", "device_class",
                     "state", "changed_at", "attention", "capability", "detail",
                 ),
-            )[:8],
+            )
+        # The Recorder budget must not hide a live washer, dryer, or
+        # dishwasher behind otherwise idle household entities. Prioritize
+        # appliance cycles, then actionable items, before retaining neutral
+        # context as space permits.
+        current.sort(
+            key=lambda item: (
+                item.get("capability") != "appliance_cycle",
+                item.get("attention") in {None, "none"},
+            )
+        )
+        return {
+            "current": current[:8],
             "recent": compact(
                 value.get("recent"),
                 (

@@ -33,3 +33,21 @@ def test_sensor_payload_budget_preserves_current_appliance_state():
 
     assert encoded_size <= 12_000
     assert compact["native"]["current"] == [{"entity_name": "Washer", "detail": "4 min remaining"}]
+
+
+def test_current_appliance_cycle_is_prioritized_within_sensor_budget():
+    neutral = [
+        {"entity_id": f"binary_sensor.neutral_{index}", "attention": "none"}
+        for index in range(8)
+    ]
+    dryer = {
+        "entity_id": "sensor.dryer_machine_state",
+        "entity_name": "Dryer",
+        "capability": "appliance_cycle",
+        "detail": "40 min remaining",
+    }
+
+    native = HomeStatusSensor._compact_native({"current": [*neutral, dryer]})
+
+    assert len(native["current"]) == 8
+    assert native["current"][0]["entity_name"] == "Dryer"
