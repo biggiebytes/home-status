@@ -23,7 +23,15 @@ from homeassistant.components.recorder import get_instance
 
 from .const import DOMAIN
 from .engine import HomeStatusEngine
-from .ha_native import async_recent_transitions, current_states, transition_entity_ids
+from .ha_native import (
+    async_recent_transitions,
+    compose_presentation_streams,
+    current_states,
+    present_awareness_items,
+    present_current_items,
+    present_recent_items,
+    transition_entity_ids,
+)
 from .presentation import select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
@@ -257,13 +265,18 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _refresh_native_history(self) -> None:
         """Read recent HA transitions; never persist or synthesize them."""
         try:
-            minutes = max(
-                1,
-                int(self.options.get(
-                    "native_history_minutes",
-                    self.options.get("ticker_event_minutes", 10),
-                )),
-            )
+            # Retain the established UI setting from Home Status's original
+            # ticker: a one-day history must still mean a one-day Recorder
+            # query after moving the card to the native contract.
+            if self.options.get("native_history_minutes") is not None:
+                minutes = int(self.options["native_history_minutes"])
+            elif self.options.get("history_retention_days") is not None:
+                minutes = int(float(self.options["history_retention_days"]) * 24 * 60)
+            elif self.options.get("footer_activity_history_hours") is not None:
+                minutes = int(float(self.options["footer_activity_history_hours"]) * 60)
+            else:
+                minutes = int(self.options.get("ticker_event_minutes", 10))
+            minutes = max(1, minutes)
         except (TypeError, ValueError):
             minutes = 10
         transitions = await async_recent_transitions(
@@ -282,7 +295,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
         appliance_current = self.engine.native_current_facts(self.options)
         appliance_entity_ids = self.engine.appliance_owned_entity_ids(self.options)
-        native_current = [
+        native_current_facts = [
             *current_states(
                 self.hass,
                 tuple(entity_id for entity_id in self._observed if entity_id not in appliance_entity_ids),
@@ -290,6 +303,10 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             *appliance_current,
         ]
+        native_current = present_current_items(native_current_facts, self.options)
+        native_recent = present_recent_items(self._native_recent, self.options)
+        awareness = present_awareness_items(awareness, self.options)
+        streams = compose_presentation_streams(native_current, native_recent, awareness)
         # RSS media follows the article currently shown by the card.  It is not
         # independently selected here, so Visual Center has one normal-source
         # fallback when no displayed news item carries media.
@@ -304,12 +321,15 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.async_set_updated_data({
             "native": {
+                "contract_version": 3,
                 "current": native_current,
-                "recent": self._native_recent,
+                "recent": native_recent,
                 "awareness": awareness,
+                "streams": streams,
             },
             "health": priority,
             "priority": priority,
+            "active_count": len(native_current),
             "visual": visual,
             "weather_visual_effect": weather_effect,
             "display": {
@@ -502,7 +522,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @staticmethod
     def _native_priority(current: list[dict[str, Any]]) -> str:
-        priorities = {str(item.get("attention") or "none") for item in current}
+        priorities = {str(item.get("priority") or "none") for item in current}
         if "critical" in priorities:
             return "critical"
         if "attention" in priorities:

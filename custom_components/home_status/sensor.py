@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import HomeStatusCoordinator
+from .ha_native import compose_presentation_streams
 
 
 
@@ -82,7 +83,13 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
     @staticmethod
     def _compact_native(value):
         if not isinstance(value, dict):
-            return {"current": [], "recent": [], "awareness": []}
+            return {
+                "contract_version": 3,
+                "current": [],
+                "recent": [],
+                "awareness": [],
+                "streams": compose_presentation_streams([], [], []),
+            }
 
         def compact(items, fields):
             if not isinstance(items, list):
@@ -94,12 +101,14 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             ]
 
         current = compact(
-                value.get("current"),
-                (
-                    "entity_id", "entity_name", "domain", "device_class",
-                    "state", "changed_at", "attention", "capability", "detail",
-                ),
-            )
+            value.get("current"),
+            (
+                "id", "entity_id", "entity_name", "title", "message", "summary",
+                "icon", "category", "color_role", "priority", "active", "state",
+                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source",
+                "ticker_eligible", "utility_role",
+            ),
+        )
         # The Recorder budget must not hide a live washer, dryer, or
         # dishwasher behind otherwise idle household entities. Prioritize
         # appliance cycles, then actionable items, before retaining neutral
@@ -107,19 +116,27 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         current.sort(
             key=lambda item: (
                 item.get("capability") != "appliance_cycle",
-                item.get("attention") in {None, "none"},
+                {"critical": 0, "attention": 1, "activity": 2, "normal": 3}.get(
+                    str(item.get("priority") or "normal"), 3
+                ),
             )
         )
+        current = current[:8]
+        recent = compact(
+            value.get("recent"),
+            (
+                "id", "entity_id", "entity_name", "title", "message", "summary",
+                "icon", "category", "color_role", "priority", "active", "state",
+                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source", "group_labels", "utility_role",
+            ),
+        )[:16]
+        awareness = HomeStatusSensor._compact_items(value.get("awareness"), 8)
         return {
-            "current": current[:8],
-            "recent": compact(
-                value.get("recent"),
-                (
-                    "entity_id", "entity_name", "domain", "device_class",
-                    "from", "to", "changed_at", "capability",
-                ),
-            )[:16],
-            "awareness": HomeStatusSensor._compact_items(value.get("awareness"), 8),
+            "contract_version": 3,
+            "current": current,
+            "recent": recent,
+            "awareness": awareness,
+            "streams": compose_presentation_streams(current, recent, awareness),
         }
 
     @staticmethod
@@ -131,13 +148,30 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         # from repeatedly inflating the Recorder state payload.
         fields = (
             "id", "title", "message", "summary", "detail", "category",
-            "icon", "priority", "active", "source", "created_at", "updated_at",
+            "icon", "priority", "active", "source", "source_kind", "event_type",
+            "created_at", "updated_at",
             "occurred_at", "expires_at", "scheduled_at", "all_day", "timestamp",
             "entity_id", "image_url", "media_url", "media_type", "article_url",
             "navigation", "subtitle", "body", "visual_effect", "action", "state",
+            "color_role", "timestamp_mode", "display_kind", "utility_role", "visual", "zone_visual",
         )
         items = []
         selected = value if limit is None else value[:limit]
+        # Awareness is assembled from household context first and RSS articles
+        # second. A simple first-N limit would therefore hide every local-news
+        # item once a home has eight other awareness sources. Reserve one news
+        # slot when present without increasing the Recorder payload budget.
+        if limit is not None and len(value) > limit:
+            news = [
+                item for item in value
+                if isinstance(item, dict) and item.get("category") == "news"
+            ]
+            if news:
+                non_news = [
+                    item for item in value
+                    if not isinstance(item, dict) or item.get("category") != "news"
+                ]
+                selected = [*non_news[: limit - 1], news[0]]
         for item in selected:
             if not isinstance(item, dict):
                 continue
@@ -165,7 +199,28 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         if not isinstance(native, dict):
             return attributes
         while size(attributes) > 12_000 and native.get("awareness"):
-            native["awareness"].pop()
+            awareness = native["awareness"]
+            news_indexes = [
+                index for index, item in enumerate(awareness)
+                if isinstance(item, dict) and item.get("category") == "news"
+            ]
+            removable = next(
+                (
+                    index for index in range(len(awareness) - 1, -1, -1)
+                    if index not in news_indexes
+                ),
+                None,
+            )
+            if removable is None:
+                if len(news_indexes) <= 1:
+                    break
+                removable = news_indexes[-1]
+            awareness.pop(removable)
         while size(attributes) > 12_000 and len(native.get("recent", [])) > 8:
             native["recent"].pop()
+        native["streams"] = compose_presentation_streams(
+            native.get("current", []),
+            native.get("recent", []),
+            native.get("awareness", []),
+        )
         return attributes

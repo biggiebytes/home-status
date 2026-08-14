@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from .discovery import discover_home_devices, manual_home_device_for_entity
 from .home_device import HomeDevice
 from .interpreters import (
+    awareness_only_entity,
     appliance_current_fact,
     appliance_recent_entity_ids,
     appliance_transition_fact,
@@ -232,7 +233,11 @@ class HomeStatusEngine:
         for home_device in selected:
             context = self._manual_appliance_context(home_device)
             if not has_appliance_recent_capability(context):
-                entity_ids.extend(home_device.entity_ids)
+                entity_ids.extend(
+                    entity.entity_id
+                    for entity in home_device.entities
+                    if not awareness_only_entity(home_device, entity)
+                )
                 continue
             if context.id in seen_appliance_ids:
                 continue

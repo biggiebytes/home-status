@@ -392,6 +392,23 @@ def _waste_collection_date(value: Any) -> str | None:
         return f"{parsed_date.strftime('%a, %b')} {parsed_date.day}"
     return f"{parsed_date.strftime('%a, %b')} {parsed_date.day}"
 
+
+def _waste_collection_scheduled_at(value: Any) -> str | None:
+    """Return a stable date-only value for a waste collection sensor state."""
+    raw = str(value or "").strip()
+    match = re.search(r"(?<!\d)(\d{1,2})[.](\d{1,2})[.](\d{4})(?!\d)", raw)
+    if match:
+        day, month, year = (int(part) for part in match.groups())
+    else:
+        match = re.search(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", raw)
+        if not match:
+            return None
+        year, month, day = (int(part) for part in match.groups())
+    try:
+        return datetime(year, month, day).date().isoformat()
+    except ValueError:
+        return None
+
 def _has_semantic_owner(home_device: HomeDevice, entity: HomeDeviceEntity) -> bool:
     """Return True when Home Status already understands this entity's semantics.
 
@@ -424,6 +441,20 @@ def _has_semantic_owner(home_device: HomeDevice, entity: HomeDeviceEntity) -> bo
         return True
     if domain == "sensor" and device_class in {"temperature", "humidity"}:
         return True
+    return False
+
+
+def awareness_only_entity(home_device: HomeDevice, entity: HomeDeviceEntity) -> bool:
+    """Return whether an entity describes current/scheduled context, not activity."""
+    if _waste_collection_kind(home_device, entity) is not None:
+        return True
+    if entity.domain in {"weather", "calendar", "person", "zone", "climate"}:
+        return True
+    if entity.domain == "sensor" and str(entity.device_class or "").casefold() in {"temperature", "humidity"}:
+        return True
+    if _is_irrigation_context(home_device, entity) and entity.domain == "sensor":
+        text = entity.name.casefold().replace("_", " ")
+        return "next watering" in text or "next water" in text
     return False
 
 def interpret_entity(
@@ -691,6 +722,7 @@ def awareness_entity(
         name = entity.name
     message = None
     detail = None
+    scheduled_at = None
     icon = entity.icon or attrs.get("icon") or "mdi:information-outline"
 
     waste_kind = _waste_collection_kind(home_device, entity)
@@ -698,6 +730,7 @@ def awareness_entity(
         collection, waste_icon = waste_kind
         message = collection
         detail = _waste_collection_date(state.state) or str(state.state).removeprefix("On ").strip()
+        scheduled_at = _waste_collection_scheduled_at(state.state)
         icon = waste_icon
 
     # Normal alarm states (disarmed/armed) belong to the dedicated security UI,
@@ -727,6 +760,7 @@ def awareness_entity(
                 return []
             message = "Next Watering"
             detail = friendly
+            scheduled_at = str(state.state)
             icon = entity.icon or "mdi:sprinkler-variant"
 
         elif domain == "valve":
@@ -804,6 +838,8 @@ def awareness_entity(
         "home_device_id": home_device.id,
         "home_device_name": home_device.name,
         "entity_id": entity.entity_id,
+        "device_class": entity.device_class,
+        "unit_of_measurement": entity.unit or attrs.get("unit_of_measurement"),
         "event_type": "awareness",
         "title": message,
         "message": message,
@@ -817,6 +853,10 @@ def awareness_entity(
         "state": state.state,
         "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
         "ticker_eligible": True,
+        **({
+            "scheduled_at": scheduled_at,
+            "all_day": bool(waste_kind is not None),
+        } if scheduled_at else {}),
     }]
 
 def interpret_appliance_home_device(

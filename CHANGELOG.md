@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.9.2
+
+### Integration-owned presentation
+
+- Completed the versioned integration-to-card presentation contract. Python now
+  normalizes semantic labels, icons, colors, timestamp modes, grouped contact
+  closures, awareness items, Visual Center selection, and left/right/footer
+  stream placement.
+- Reduced the card to rendering, rotation, responsive visibility, interaction,
+  and media playback instead of duplicating Home Assistant entity semantics.
+
+### Restored behavior and regression fixes
+
+- Restored local-news visuals and preserved at least one news article while
+  enforcing Home Assistant's state-attribute size limit.
+- Restored timestamps for Recorder-backed transitions, including alarms, leak
+  detection, and washer, dryer, and dishwasher completion.
+- Restored semantic icon colors for contacts, security, appliances, climate,
+  schedules, weather, irrigation, recycling, waste, and news.
+- Kept all presentation streams moving while the drawer is open. Expanding a
+  grouped door/window entry pauses only the footer and displays the actual
+  grouped entity names.
+
 ## v0.5.0
 
 ### Visual Center and live information

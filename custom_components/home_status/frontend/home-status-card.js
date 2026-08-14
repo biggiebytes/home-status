@@ -1,12 +1,7 @@
-const BACKEND_CATEGORY_ALIASES = Object.freeze({
-  calendar: 'schedule',
-  sprinklers: 'schedule',
-  fault: 'maintenance'
-});
-
 const FRONTEND_ASSET_BASE = new URL('.', import.meta.url).href.replace(/\/$/, '');
 const LOTTIE_PLAYER_URL = `${FRONTEND_ASSET_BASE}/vendor/lottie_light_canvas.min.js`;
 const HLS_JS_URL = `${FRONTEND_ASSET_BASE}/vendor/hls.min.js`;
+
 const LOTTIE_WEATHER_ASSETS = Object.freeze({
   rain: Object.freeze({
     url: `${FRONTEND_ASSET_BASE}/assets/weather/rain-background.json`,
@@ -14,48 +9,85 @@ const LOTTIE_WEATHER_ASSETS = Object.freeze({
     preserveAspectRatio: 'none'
   })
 });
+
 const VIDEO_WEATHER_ASSETS = Object.freeze({
   clear: Object.freeze({
     sources: Object.freeze([
-      Object.freeze({ src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.webm`, type: 'video/webm' }),
-      Object.freeze({ src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.mp4`, type: 'video/mp4' })
+      Object.freeze({
+        src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.webm`,
+        type: 'video/webm'
+      }),
+      Object.freeze({
+        src: `${FRONTEND_ASSET_BASE}/assets/weather/sunny-ambient.mp4`,
+        type: 'video/mp4'
+      })
     ])
   })
 });
+
 let lottiePlayerPromise = null;
 let hlsJsPromise = null;
 
 function loadHlsJs() {
   if (window.Hls) return Promise.resolve(window.Hls);
   if (hlsJsPromise) return hlsJsPromise;
+
   hlsJsPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = HLS_JS_URL;
     script.async = true;
-    script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error('hls.js did not load'));
-    script.onerror = () => reject(new Error('hls.js could not load'));
+
+    script.onload = () =>
+      window.Hls
+        ? resolve(window.Hls)
+        : reject(new Error('hls.js did not load'));
+
+    script.onerror = () =>
+      reject(new Error('hls.js could not load'));
+
     document.head.append(script);
   });
+
   return hlsJsPromise;
 }
 
 function loadLottiePlayer() {
-  if (window.lottie?.loadAnimation) return Promise.resolve(window.lottie);
+  if (window.lottie?.loadAnimation) {
+    return Promise.resolve(window.lottie);
+  }
+
   if (lottiePlayerPromise) return lottiePlayerPromise;
+
   lottiePlayerPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-home-status-lottie]');
+    const existing = document.querySelector(
+      'script[data-home-status-lottie]'
+    );
+
     const script = existing || document.createElement('script');
+
     const loaded = () => {
-      if (window.lottie?.loadAnimation) resolve(window.lottie);
-      else reject(new Error('Local Lottie player loaded without an animation API'));
+      if (window.lottie?.loadAnimation) {
+        resolve(window.lottie);
+      } else {
+        reject(
+          new Error(
+            'Local Lottie player loaded without an animation API'
+          )
+        );
+      }
     };
+
     const failed = () => {
       script.remove();
       lottiePlayerPromise = null;
-      reject(new Error('Unable to load the local Lottie player'));
+      reject(
+        new Error('Unable to load the local Lottie player')
+      );
     };
+
     script.addEventListener('load', loaded, { once: true });
     script.addEventListener('error', failed, { once: true });
+
     if (!existing) {
       script.src = LOTTIE_PLAYER_URL;
       script.async = true;
@@ -63,6 +95,7 @@ function loadLottiePlayer() {
       document.head.append(script);
     }
   });
+
   return lottiePlayerPromise;
 }
 
@@ -76,32 +109,53 @@ class CssWeatherRenderer {
 
   mount(container) {
     if (!container) return;
-    if (this._container === container && this._layer?.isConnected) return;
+
+    if (
+      this._container === container &&
+      this._layer?.isConnected
+    ) {
+      return;
+    }
+
     this._layer?.remove();
     this._container = container;
+
     this._layer = document.createElement('span');
-    this._layer.className = 'weather-renderer-layer weather-effect-none';
+    this._layer.className =
+      'weather-renderer-layer weather-effect-none';
     this._layer.setAttribute('aria-hidden', 'true');
+
     container.prepend(this._layer);
+
     this.setEffect(this._effect);
     this.setVisible(this._visible);
   }
 
   setEffect(effect) {
-    const nextEffect = String(effect || 'none').trim().toLowerCase() || 'none';
+    const nextEffect =
+      String(effect || 'none').trim().toLowerCase() || 'none';
+
     if (this._layer) {
       const nextClass = `weather-effect-${nextEffect}`;
+
       if (!this._layer.classList.contains(nextClass)) {
-        this._layer.classList.remove(`weather-effect-${this._effect}`);
+        this._layer.classList.remove(
+          `weather-effect-${this._effect}`
+        );
         this._layer.classList.add(nextClass);
       }
     }
+
     this._effect = nextEffect;
   }
 
   setVisible(visible) {
     this._visible = visible !== false;
-    this._layer?.classList.toggle('ambient-paused', !this._visible);
+
+    this._layer?.classList.toggle(
+      'ambient-paused',
+      !this._visible
+    );
   }
 
   destroy() {
@@ -127,13 +181,27 @@ class LottieWeatherRenderer {
 
   mount(container) {
     if (!container) return;
-    if (this._container === container && (this._layer?.isConnected || this._fallback)) return;
+
+    if (
+      this._container === container &&
+      (this._layer?.isConnected || this._fallback)
+    ) {
+      return;
+    }
+
     this._clearRenderedState();
+
     this._container = container;
     this._layer = document.createElement('span');
-    this._layer.className = `weather-renderer-layer lottie-weather-layer ${this._asset.className} lottie-weather-${this._effect}`;
+
+    this._layer.className =
+      `weather-renderer-layer lottie-weather-layer ` +
+      `${this._asset.className} lottie-weather-${this._effect}`;
+
     this._layer.setAttribute('aria-hidden', 'true');
+
     container.prepend(this._layer);
+
     this.setVisible(this._visible);
     this._load();
   }
@@ -142,11 +210,21 @@ class LottieWeatherRenderer {
 
   setVisible(visible) {
     this._visible = visible !== false;
-    this._layer?.classList.toggle('ambient-paused', !this._visible);
+
+    this._layer?.classList.toggle(
+      'ambient-paused',
+      !this._visible
+    );
+
     this._fallback?.setVisible(this._visible);
+
     if (!this._animation) return;
-    if (this._visible) this._animation.play();
-    else this._animation.pause();
+
+    if (this._visible) {
+      this._animation.play();
+    } else {
+      this._animation.pause();
+    }
   }
 
   destroy() {
@@ -158,9 +236,17 @@ class LottieWeatherRenderer {
 
   async _load() {
     const generation = ++this._loadGeneration;
+
     try {
       const lottie = await loadLottiePlayer();
-      if (generation !== this._loadGeneration || !this._layer?.isConnected) return;
+
+      if (
+        generation !== this._loadGeneration ||
+        !this._layer?.isConnected
+      ) {
+        return;
+      }
+
       const animation = lottie.loadAnimation({
         container: this._layer,
         renderer: 'canvas',
@@ -170,29 +256,49 @@ class LottieWeatherRenderer {
         rendererSettings: {
           clearCanvas: true,
           dpr: 1,
-          preserveAspectRatio: this._asset.preserveAspectRatio || 'xMidYMid meet',
+          preserveAspectRatio:
+            this._asset.preserveAspectRatio ||
+            'xMidYMid meet',
           progressiveLoad: true,
           runExpressions: false
         }
       });
+
       this._animation = animation;
       animation.setSubframe(false);
+
       animation.addEventListener('data_failed', () => {
-        if (generation === this._loadGeneration) this._showCssFallback();
+        if (generation === this._loadGeneration) {
+          this._showCssFallback();
+        }
       });
-      if (!this._visible) animation.pause();
+
+      if (!this._visible) {
+        animation.pause();
+      }
     } catch (error) {
-      if (generation === this._loadGeneration) this._showCssFallback(error);
+      if (generation === this._loadGeneration) {
+        this._showCssFallback(error);
+      }
     }
   }
 
   _showCssFallback(error) {
     if (!this._container || this._fallback) return;
-    if (error) console.warn(`[HomeStatusCard] Local ${this._effect} asset unavailable; using CSS fallback.`, error);
+
+    if (error) {
+      console.warn(
+        `[HomeStatusCard] Local ${this._effect} asset unavailable; using CSS fallback.`,
+        error
+      );
+    }
+
     this._animation?.destroy();
     this._animation = null;
+
     this._layer?.remove();
     this._layer = null;
+
     this._fallback = new CssWeatherRenderer();
     this._fallback.mount(this._container);
     this._fallback.setEffect(this._effect);
@@ -202,8 +308,10 @@ class LottieWeatherRenderer {
   _clearRenderedState() {
     this._animation?.destroy();
     this._animation = null;
+
     this._fallback?.destroy();
     this._fallback = null;
+
     this._layer?.remove();
     this._layer = null;
   }
@@ -222,27 +330,45 @@ class VideoWeatherRenderer {
 
   mount(container) {
     if (!container) return;
-    if (this._container === container && (this._video?.isConnected || this._fallback)) return;
+
+    if (
+      this._container === container &&
+      (this._video?.isConnected || this._fallback)
+    ) {
+      return;
+    }
+
     this._clearRenderedState();
     this._container = container;
+
     const video = document.createElement('video');
-    video.className = `weather-renderer-layer video-weather-layer video-weather-${this._effect}`;
+
+    video.className =
+      `weather-renderer-layer video-weather-layer ` +
+      `video-weather-${this._effect}`;
+
     video.setAttribute('aria-hidden', 'true');
+
     video.muted = true;
     video.defaultMuted = true;
     video.loop = true;
     video.playsInline = true;
     video.preload = 'metadata';
     video.disablePictureInPicture = true;
+
     for (const sourceDefinition of this._asset.sources) {
       const source = document.createElement('source');
       source.src = sourceDefinition.src;
       source.type = sourceDefinition.type;
       video.append(source);
     }
+
     video.addEventListener('error', this._handleError);
+
     this._video = video;
+
     container.prepend(video);
+
     this.setVisible(this._visible);
   }
 
@@ -250,9 +376,16 @@ class VideoWeatherRenderer {
 
   setVisible(visible) {
     this._visible = visible !== false;
-    this._video?.classList.toggle('ambient-paused', !this._visible);
+
+    this._video?.classList.toggle(
+      'ambient-paused',
+      !this._visible
+    );
+
     this._fallback?.setVisible(this._visible);
+
     if (!this._video) return;
+
     if (this._visible) {
       const playAttempt = this._video.play();
       playAttempt?.catch?.(() => {});
@@ -269,8 +402,11 @@ class VideoWeatherRenderer {
 
   _showCssFallback() {
     if (!this._container || this._fallback) return;
+
     const container = this._container;
+
     this._releaseVideo();
+
     this._fallback = new CssWeatherRenderer();
     this._fallback.mount(container);
     this._fallback.setEffect(this._effect);
@@ -279,17 +415,28 @@ class VideoWeatherRenderer {
 
   _releaseVideo() {
     if (!this._video) return;
-    this._video.removeEventListener('error', this._handleError);
+
+    this._video.removeEventListener(
+      'error',
+      this._handleError
+    );
+
     this._video.pause();
-    this._video.querySelectorAll('source').forEach(source => source.remove());
+
+    this._video
+      .querySelectorAll('source')
+      .forEach(source => source.remove());
+
     this._video.removeAttribute('src');
     this._video.load();
     this._video.remove();
+
     this._video = null;
   }
 
   _clearRenderedState() {
     this._releaseVideo();
+
     this._fallback?.destroy();
     this._fallback = null;
   }
@@ -299,20 +446,28 @@ class WeatherRenderer {
   constructor(rendererFactories = {}) {
     this._rendererFactories = {
       css: () => new CssWeatherRenderer(),
+
       ...Object.fromEntries(
-        Object.entries(LOTTIE_WEATHER_ASSETS).map(([effect, asset]) => [
-          `lottie-${effect}`,
-          () => new LottieWeatherRenderer(effect, asset)
-        ])
+        Object.entries(LOTTIE_WEATHER_ASSETS).map(
+          ([effect, asset]) => [
+            `lottie-${effect}`,
+            () => new LottieWeatherRenderer(effect, asset)
+          ]
+        )
       ),
+
       ...Object.fromEntries(
-        Object.entries(VIDEO_WEATHER_ASSETS).map(([effect, asset]) => [
-          `video-${effect}`,
-          () => new VideoWeatherRenderer(effect, asset)
-        ])
+        Object.entries(VIDEO_WEATHER_ASSETS).map(
+          ([effect, asset]) => [
+            `video-${effect}`,
+            () => new VideoWeatherRenderer(effect, asset)
+          ]
+        )
       ),
+
       ...rendererFactories
     };
+
     this._container = null;
     this._renderer = null;
     this._rendererType = null;
@@ -322,33 +477,57 @@ class WeatherRenderer {
 
   mount(container) {
     if (!container) return;
+
     this._container = container;
-    this._ensureRenderer(this._rendererType || 'css');
+
+    this._ensureRenderer(
+      this._rendererType || 'css'
+    );
+
     this._renderer.mount(container);
   }
 
   setEffect(effect, options = {}) {
-    this._effect = String(effect || 'none').trim().toLowerCase() || 'none';
-    const rendererType = options.renderer || (
-      VIDEO_WEATHER_ASSETS[this._effect]
-        ? `video-${this._effect}`
-        : LOTTIE_WEATHER_ASSETS[this._effect]
-          ? `lottie-${this._effect}`
-          : 'css'
-    );
+    this._effect =
+      String(effect || 'none').trim().toLowerCase() || 'none';
+
+    const rendererType =
+      options.renderer ||
+      (
+        VIDEO_WEATHER_ASSETS[this._effect]
+          ? `video-${this._effect}`
+          : LOTTIE_WEATHER_ASSETS[this._effect]
+            ? `lottie-${this._effect}`
+            : 'css'
+      );
+
     this._ensureRenderer(rendererType);
-    if (this._container) this._renderer.mount(this._container);
-    this._renderer.setEffect(this._effect, options);
-    this._renderer.setVisible(this._visible);
+
+    if (this._container) {
+      this._renderer.mount(this._container);
+    }
+
+    this._renderer.setEffect(
+      this._effect,
+      options
+    );
+
+    this._renderer.setVisible(
+      this._visible
+    );
   }
 
   setVisible(visible) {
     this._visible = visible !== false;
-    this._renderer?.setVisible(this._visible);
+
+    this._renderer?.setVisible(
+      this._visible
+    );
   }
 
   destroy() {
     this._renderer?.destroy();
+
     this._renderer = null;
     this._rendererType = null;
     this._container = null;
@@ -357,50 +536,24 @@ class WeatherRenderer {
   }
 
   _ensureRenderer(rendererType) {
-    if (this._renderer && this._rendererType === rendererType) return;
+    if (
+      this._renderer &&
+      this._rendererType === rendererType
+    ) {
+      return;
+    }
+
     this._renderer?.destroy();
-    const createRenderer = this._rendererFactories[rendererType];
-    if (!createRenderer) throw new Error(`Unknown weather renderer: ${rendererType}
-/* HOME STATUS 10FT READABILITY FINAL OVERRIDES v0.3.24 */
-/* These rules intentionally sit last and are profile-agnostic so auto profile cannot bypass them. */
-.primary-zone .zone-item.is-measurement .zone-title,
-.secondary-zone .zone-item.is-measurement .zone-title {
-  font-size:64px !important; font-weight:850 !important; line-height:.92 !important; letter-spacing:-1.6px !important;
-}
-.primary-zone .zone-item.is-measurement .zone-title ha-icon,
-.secondary-zone .zone-item.is-measurement .zone-title ha-icon {
-  width:56px !important; height:56px !important; --mdc-icon-size:56px !important;
-}
-.primary-zone .zone-item.is-measurement .zone-summary,
-.secondary-zone .zone-item.is-measurement .zone-summary {
-  margin-top:8px !important; font-size:27px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
-}
-.zone-item.is-current-weather .zone-title {
-  font-size:60px !important; font-weight:840 !important; line-height:.94 !important; letter-spacing:-1.3px !important;
-}
-.zone-item.is-current-weather .zone-title ha-icon {
-  width:54px !important; height:54px !important; --mdc-icon-size:54px !important;
-}
-.zone-item.is-current-weather .zone-summary {
-  margin-top:8px !important; font-size:28px !important; font-weight:650 !important; line-height:1.08 !important; opacity:.9 !important;
-}
-.zone-item.is-scheduled .zone-summary {
-  font-size:25px !important; font-weight:680 !important; line-height:1.12 !important;
-}
-.ticker-footer { min-height:102px !important; padding-top:12px !important; }
-.footer-marquee { height:102px !important; }
-.footer-marquee-item { padding:0 32px !important; }
-.footer-marquee-item > [data-stream-id] { gap:14px !important; }
-.footer-marquee-item ha-icon { width:38px !important; height:38px !important; --mdc-icon-size:38px !important; }
-.footer-marquee-copy strong { font-size:26px !important; font-weight:820 !important; line-height:1.02 !important; letter-spacing:.15px !important; }
-.footer-marquee-copy small { margin-top:7px !important; font-size:21px !important; font-weight:650 !important; line-height:1.05 !important; opacity:.9 !important; }
-.footer-marquee-item.is-current-weather .footer-marquee-copy strong,
-.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:38px !important; font-weight:850 !important; }
-.footer-marquee-item.is-current-weather .footer-marquee-copy small,
-.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { font-size:22px !important; }
-.footer-marquee-item.is-current-weather ha-icon,
-.footer-marquee-item.is-indoor-temperature ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px !important; }
-`);
+
+    const createRenderer =
+      this._rendererFactories[rendererType];
+
+    if (!createRenderer) {
+      throw new Error(
+        `Unknown weather renderer: ${rendererType}`
+      );
+    }
+
     this._renderer = createRenderer();
     this._rendererType = rendererType;
   }
@@ -414,9 +567,18 @@ const HOME_STATUS_CARD_PROFILES = {
     left: { rotate: true, interval: 7 },
     right: { rotate: true },
     bottom: { rotate: false, speed: 35 },
-    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
-    sizing: { max_width: 0, min_height: 0 }
+    home_status_visibility: {
+      left: true,
+      right: true,
+      bottom: true,
+      phone_ticker: true
+    },
+    sizing: {
+      max_width: 0,
+      min_height: 0
+    }
   },
+
   phone: {
     profile: 'phone',
     layout: 'compact',
@@ -424,9 +586,18 @@ const HOME_STATUS_CARD_PROFILES = {
     left: { rotate: false },
     right: { rotate: false },
     bottom: { rotate: false, speed: 26 },
-    home_status_visibility: { left: false, right: false, bottom: false, phone_ticker: true },
-    sizing: { max_width: 0, min_height: 0 }
+    home_status_visibility: {
+      left: false,
+      right: false,
+      bottom: false,
+      phone_ticker: true
+    },
+    sizing: {
+      max_width: 0,
+      min_height: 0
+    }
   },
+
   tablet: {
     profile: 'tablet',
     layout: 'tablet-default',
@@ -434,9 +605,18 @@ const HOME_STATUS_CARD_PROFILES = {
     left: { rotate: true, interval: 7 },
     right: { rotate: true },
     bottom: { rotate: false, speed: 35 },
-    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
-    sizing: { max_width: 0, min_height: 0 }
+    home_status_visibility: {
+      left: true,
+      right: true,
+      bottom: true,
+      phone_ticker: true
+    },
+    sizing: {
+      max_width: 0,
+      min_height: 0
+    }
   },
+
   desktop: {
     profile: 'desktop',
     layout: 'desktop-wide',
@@ -444,520 +624,960 @@ const HOME_STATUS_CARD_PROFILES = {
     left: { rotate: true, interval: 7 },
     right: { rotate: true },
     bottom: { rotate: false, speed: 40 },
-    home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true },
-    sizing: { max_width: 1800, min_height: 0 }
+    home_status_visibility: {
+      left: true,
+      right: true,
+      bottom: true,
+      phone_ticker: true
+    },
+    sizing: {
+      max_width: 1800,
+      min_height: 0
+    }
   }
 };
 
 const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
-  'type', 'entity', 'profile', 'layout', 'grid_options', 'card_size',
-  'show_active_count', 'pause_on_hover',
-  'utility_header', 'left', 'right', 'bottom', 'hero', 'sidebar', 'footer',
-  'context_actions', 'display', 'visibility', 'home_status_visibility', 'sizing', 'animation',
-  'weather_effect', 'time_entity',
-  'recent_drawer_limit', 'rotation_seconds', 'footer_speed'
+  'type',
+  'entity',
+  'profile',
+  'layout',
+  'grid_options',
+  'card_size',
+  'show_active_count',
+  'pause_on_hover',
+  'utility_header',
+  'left',
+  'right',
+  'bottom',
+  'hero',
+  'sidebar',
+  'footer',
+  'context_actions',
+  'display',
+  'visibility',
+  'home_status_visibility',
+  'sizing',
+  'animation',
+  'weather_effect',
+  'time_entity',
+  'recent_drawer_limit',
+  'rotation_seconds',
+  'footer_speed'
 ]);
 
 function homeStatusClone(value) {
-  if (typeof structuredClone === 'function') return structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+
+  return JSON.parse(
+    JSON.stringify(value)
+  );
 }
 
 function homeStatusObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  )
+    ? value
+    : {};
 }
 
 function homeStatusMerge(base, overlay) {
-  const output = homeStatusClone(homeStatusObject(base));
-  Object.entries(homeStatusObject(overlay)).forEach(([key, value]) => {
-    output[key] = homeStatusObject(value) === value
-      ? homeStatusMerge(output[key], value)
-      : homeStatusClone(value);
+  const output =
+    homeStatusClone(
+      homeStatusObject(base)
+    );
+
+  Object.entries(
+    homeStatusObject(overlay)
+  ).forEach(([key, value]) => {
+    output[key] =
+      homeStatusObject(value) === value
+        ? homeStatusMerge(
+            output[key],
+            value
+          )
+        : homeStatusClone(value);
   });
+
   return output;
 }
 
-function homeStatusGetPath(config, path, fallback = undefined) {
-  const value = String(path).split('.').reduce(
-    (current, key) => homeStatusObject(current)[key],
-    config
-  );
-  return value === undefined ? fallback : value;
+function homeStatusGetPath(
+  config,
+  path,
+  fallback = undefined
+) {
+  const value =
+    String(path)
+      .split('.')
+      .reduce(
+        (current, key) =>
+          homeStatusObject(current)[key],
+        config
+      );
+
+  return value === undefined
+    ? fallback
+    : value;
 }
 
-function homeStatusSetPath(config, path, value, removeEmpty = false) {
-  const output = homeStatusClone(homeStatusObject(config));
-  const keys = String(path).split('.');
+function homeStatusSetPath(
+  config,
+  path,
+  value,
+  removeEmpty = false
+) {
+  const output =
+    homeStatusClone(
+      homeStatusObject(config)
+    );
+
+  const keys =
+    String(path).split('.');
+
   let target = output;
-  keys.slice(0, -1).forEach(key => {
-    target[key] = homeStatusObject(target[key]) === target[key]
-      ? homeStatusClone(target[key])
-      : {};
-    target = target[key];
-  });
-  const finalKey = keys[keys.length - 1];
-  if (removeEmpty && (value === '' || value === undefined || value === null)) {
+
+  keys
+    .slice(0, -1)
+    .forEach(key => {
+      target[key] =
+        homeStatusObject(target[key]) === target[key]
+          ? homeStatusClone(target[key])
+          : {};
+
+      target = target[key];
+    });
+
+  const finalKey =
+    keys[keys.length - 1];
+
+  if (
+    removeEmpty &&
+    (
+      value === '' ||
+      value === undefined ||
+      value === null
+    )
+  ) {
     delete target[finalKey];
   } else {
     target[finalKey] = value;
   }
+
   return output;
 }
 
-function homeStatusApplyProfile(config, profile) {
-  const preset = HOME_STATUS_CARD_PROFILES[profile] || HOME_STATUS_CARD_PROFILES.auto;
-  return homeStatusMerge(config, preset);
+function homeStatusApplyProfile(
+  config,
+  profile
+) {
+  const preset =
+    HOME_STATUS_CARD_PROFILES[profile] ||
+    HOME_STATUS_CARD_PROFILES.auto;
+
+  return homeStatusMerge(
+    config,
+    preset
+  );
 }
 
 class HomeStatusCard extends HTMLElement {
   constructor() {
     super();
-    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+
+    if (!this.shadowRoot) {
+      this.attachShadow({
+        mode: 'open'
+      });
+    }
+
     this._config = null;
     this._hass = null;
+
     this._drawerOpen = false;
     this._lastTime = null;
+
     this._zoneTimers = {};
     this._zoneRenderTimers = {};
-    this._zoneRenderGenerations = { left: 0, right: 0 };
-    this._zoneIndexes = { left: 0, right: 0 };
-    this._zoneIds = { left: null, right: null };
-    this._displayedZoneItems = { left: null, right: null };
+
+    this._zoneRenderGenerations = {
+      left: 0,
+      right: 0
+    };
+
+    this._zoneIndexes = {
+      left: 0,
+      right: 0
+    };
+
+    this._zoneIds = {
+      left: null,
+      right: null
+    };
+
+    this._displayedZoneItems = {
+      left: null,
+      right: null
+    };
+
     this._baseVisual = null;
-    this._zoneSignatures = { left: '', right: '' };
+
+    this._zoneSignatures = {
+      left: '',
+      right: ''
+    };
+
     this._footerSignature = '';
     this._footerSignatureParts = [];
+
     this._footerResizeObserver = null;
     this._visibilityObserver = null;
+
     this._ambientVisible = true;
-    this._weatherRenderer = new WeatherRenderer();
+
+    this._weatherRenderer =
+      new WeatherRenderer();
+
     this._mediaEnabled = true;
+
     this._drawerSignature = '';
     this._drawerCloseTimer = null;
+
     this._rotationPaused = false;
-    this._expandedEventIds = new Set();
+
+    this._expandedEventIds =
+      new Set();
+
     this._domReady = false;
     this._clockTimer = null;
   }
 
   setConfig(config) {
-    if (!config || typeof config !== 'object') {
-      throw new Error('Invalid Home Status card configuration');
+    if (
+      !config ||
+      typeof config !== 'object'
+    ) {
+      throw new Error(
+        'Invalid Home Status card configuration'
+      );
     }
-    const utilityHeader = config.utility_header && typeof config.utility_header === 'object'
-      ? config.utility_header
-      : {};
-    const leftConfig = homeStatusObject(config.left ?? config.sidebar);
-    const rightConfig = homeStatusObject(config.right ?? config.hero);
-    const bottomConfig = homeStatusObject(config.bottom ?? config.footer);
-    const requestedBottomSpeed = Number(
-      bottomConfig.speed ?? bottomConfig.marquee_speed ?? config.footer_speed
-    );
-    const namespacedVisibility = homeStatusObject(config.home_status_visibility);
-    const legacyVisibility = homeStatusObject(config.visibility);
-    const visibility = Object.keys(namespacedVisibility).length
-      ? namespacedVisibility
-      : legacyVisibility;
-    const sizing = homeStatusObject(config.sizing);
-    const animation = homeStatusObject(config.animation);
-    const profile = ['auto', 'phone', 'tablet', 'desktop'].includes(config.profile)
-      ? config.profile
-      : 'auto';
-    this._rawConfig = homeStatusClone(config);
+
+    const utilityHeader =
+      config.utility_header &&
+      typeof config.utility_header === 'object'
+        ? config.utility_header
+        : {};
+
+    const leftConfig =
+      homeStatusObject(
+        config.left ?? config.sidebar
+      );
+
+    const rightConfig =
+      homeStatusObject(
+        config.right ?? config.hero
+      );
+
+    const bottomConfig =
+      homeStatusObject(
+        config.bottom ?? config.footer
+      );
+
+    const requestedBottomSpeed =
+      Number(
+        bottomConfig.speed ??
+        bottomConfig.marquee_speed ??
+        config.footer_speed
+      );
+
+    const namespacedVisibility =
+      homeStatusObject(
+        config.home_status_visibility
+      );
+
+    const legacyVisibility =
+      homeStatusObject(
+        config.visibility
+      );
+
+    const visibility =
+      Object.keys(namespacedVisibility).length
+        ? namespacedVisibility
+        : legacyVisibility;
+
+    const sizing =
+      homeStatusObject(
+        config.sizing
+      );
+
+    const animation =
+      homeStatusObject(
+        config.animation
+      );
+
+    const profile =
+      ['auto', 'phone', 'tablet', 'desktop']
+        .includes(config.profile)
+          ? config.profile
+          : 'auto';
+
+    this._rawConfig =
+      homeStatusClone(config);
+
     this._config = {
       ...homeStatusClone(config),
-      entity: config.entity || 'sensor.home_status',
-      context_actions: config.context_actions || {},
-      layout: config.layout || 'tablet-default',
+
+      entity:
+        config.entity ||
+        'sensor.home_status',
+
+      context_actions:
+        config.context_actions || {},
+
+      layout:
+        config.layout ||
+        'tablet-default',
+
       profile,
-      left: leftConfig,
-      right: rightConfig,
-      bottom: bottomConfig,
-      bottom_speed: Number.isFinite(requestedBottomSpeed)
-        ? Math.max(1, requestedBottomSpeed)
-        : 35,
-      display: config.display || {},
+
+      left:
+        leftConfig,
+
+      right:
+        rightConfig,
+
+      bottom:
+        bottomConfig,
+
+      bottom_speed:
+        Number.isFinite(
+          requestedBottomSpeed
+        )
+          ? Math.max(
+              1,
+              requestedBottomSpeed
+            )
+          : 35,
+
+      display:
+        config.display || {},
+
       utility_header: {
-        enabled: utilityHeader.enabled !== false,
-        security_entity: utilityHeader.security_entity || '',
-        security_path: utilityHeader.security_path || '',
-        music_entity: utilityHeader.music_entity || '',
-        music_path: utilityHeader.music_path || ''
+        enabled:
+          utilityHeader.enabled !== false,
+
+        security_entity:
+          utilityHeader.security_entity || '',
+
+        security_path:
+          utilityHeader.security_path || '',
+
+        music_entity:
+          utilityHeader.music_entity || '',
+
+        music_path:
+          utilityHeader.music_path || ''
       },
+
       home_status_visibility: {
-        left: (visibility.left ?? visibility.sidebar) !== false,
-        right: (visibility.right ?? visibility.hero) !== false,
-        bottom: (visibility.bottom ?? visibility.footer) !== false,
-        phone_ticker: visibility.phone_ticker !== false,
-        drawer: visibility.drawer !== false
+        left:
+          (
+            visibility.left ??
+            visibility.sidebar
+          ) !== false,
+
+        right:
+          (
+            visibility.right ??
+            visibility.hero
+          ) !== false,
+
+        bottom:
+          (
+            visibility.bottom ??
+            visibility.footer
+          ) !== false,
+
+        phone_ticker:
+          visibility.phone_ticker !== false,
+
+        drawer:
+          visibility.drawer !== false
       },
+
       sizing: {
-        max_width: Number.isFinite(Number(sizing.max_width)) ? Math.max(0, Number(sizing.max_width)) : 0,
-        min_height: Number.isFinite(Number(sizing.min_height)) ? Math.max(0, Number(sizing.min_height)) : 0
+        max_width:
+          Number.isFinite(
+            Number(sizing.max_width)
+          )
+            ? Math.max(
+                0,
+                Number(sizing.max_width)
+              )
+            : 0,
+
+        min_height:
+          Number.isFinite(
+            Number(sizing.min_height)
+          )
+            ? Math.max(
+                0,
+                Number(sizing.min_height)
+              )
+            : 0
       },
+
       animation: {
-        level: ['full', 'reduced', 'none'].includes(animation.level) ? animation.level : 'full'
+        level:
+          ['full', 'reduced', 'none']
+            .includes(animation.level)
+              ? animation.level
+              : 'full'
       },
-      weather_effect: String(config.weather_effect || 'auto').toLowerCase(),
-      pause_on_hover: config.pause_on_hover !== false,
-      time_entity: config.time_entity || '',
-      recent_drawer_limit: Number.isFinite(Number(config.recent_drawer_limit)) ? Number(config.recent_drawer_limit) : 10,
-      rotation_seconds: Number.isFinite(Number(config.rotation_seconds)) ? Number(config.rotation_seconds) : 4
+
+      weather_effect:
+        String(
+          config.weather_effect || 'auto'
+        ).toLowerCase(),
+
+      pause_on_hover:
+        config.pause_on_hover !== false,
+
+      time_entity:
+        config.time_entity || '',
+
+      recent_drawer_limit:
+        Number.isFinite(
+          Number(config.recent_drawer_limit)
+        )
+          ? Number(config.recent_drawer_limit)
+          : 10,
+
+      rotation_seconds:
+        Number.isFinite(
+          Number(config.rotation_seconds)
+        )
+          ? Number(config.rotation_seconds)
+          : 4
     };
-    this.setAttribute('data-profile', profile);
-    this.setAttribute('data-layout', this._config.layout);
-    this.setAttribute('data-animation', this._config.animation.level);
-    this.style.maxWidth = this._config.sizing.max_width
-      ? `${this._config.sizing.max_width}px`
-      : profile === 'phone' ? '600px' : '';
-    this.style.minHeight = this._config.sizing.min_height ? `${this._config.sizing.min_height}px` : '';
+
+    this.setAttribute(
+      'data-profile',
+      profile
+    );
+
+    this.setAttribute(
+      'data-layout',
+      this._config.layout
+    );
+
+    this.setAttribute(
+      'data-animation',
+      this._config.animation.level
+    );
+
+    this.style.maxWidth =
+      this._config.sizing.max_width
+        ? `${this._config.sizing.max_width}px`
+        : profile === 'phone'
+          ? '600px'
+          : '';
+
+    this.style.minHeight =
+      this._config.sizing.min_height
+        ? `${this._config.sizing.min_height}px`
+        : '';
+
     this.style.setProperty(
       '--home-status-phone-ticker-seconds',
-      `${Math.max(1, this._config.bottom_speed)}s`
+      `${Math.max(
+        1,
+        this._config.bottom_speed
+      )}s`
     );
+
     this._stopZoneRotations();
-    this._zoneSignatures = { left: '', right: '' };
+
+    this._zoneSignatures = {
+      left: '',
+      right: ''
+    };
+
     this._footerSignature = '';
     this._footerSignatureParts = [];
     this._drawerSignature = '';
+
     this._updateCard();
   }
 
   set hass(hass) {
     this._hass = hass;
-    const time = hass?.states?.[this._config?.time_entity]?.state;
-    if (time !== this._lastTime) this._lastTime = time;
+
+    const time =
+      hass?.states?.[
+        this._config?.time_entity
+      ]?.state;
+
+    if (time !== this._lastTime) {
+      this._lastTime = time;
+    }
+
     try {
       this._updateCard();
     } catch (error) {
-      console.error('[HomeStatusCard] update failed', error);
+      console.error(
+        '[HomeStatusCard] update failed',
+        error
+      );
+
       throw error;
     }
   }
 
-  get hass() { return this._hass; }
+  get hass() {
+    return this._hass;
+  }
 
   disconnectedCallback() {
     this._stopZoneRotations();
+
     if (this._clockTimer) {
-      clearInterval(this._clockTimer);
+      clearInterval(
+        this._clockTimer
+      );
+
       this._clockTimer = null;
     }
+
     if (this._footerResizeObserver) {
       this._footerResizeObserver.disconnect();
       this._footerResizeObserver = null;
     }
+
     this._visibilityObserver?.disconnect();
     this._visibilityObserver = null;
+
     this._weatherRenderer.destroy();
+
     if (this._drawerCloseTimer) {
-      clearTimeout(this._drawerCloseTimer);
+      clearTimeout(
+        this._drawerCloseTimer
+      );
+
       this._drawerCloseTimer = null;
     }
-    Object.values(this._zoneRenderTimers).forEach(timer => clearTimeout(timer));
+
+    Object.values(
+      this._zoneRenderTimers
+    ).forEach(timer =>
+      clearTimeout(timer)
+    );
+
     this._zoneRenderTimers = {};
-    this._zoneRenderGenerations = { left: 0, right: 0 };
+
+    this._zoneRenderGenerations = {
+      left: 0,
+      right: 0
+    };
   }
 
-  _state(entity) { return this._hass?.states?.[entity]; }
-
-  _plainEntityName(entity, value) {
-    let raw = String(value || String(entity || '').split('.').pop() || 'Home item')
-      .replace(/[_-]+/g, ' ')
-      .replace(/^(?:alarm|alarmo|security)\s+(?:(?:door|window|contact|lock|leak|water|moisture|smoke|carbon monoxide|co)\s+)?sensors?\s+/i, '')
-      .replace(/\s+(?:binary\s+)?sensor$/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const contactContext = `${String(entity || '').replace(/[_.-]+/g, ' ')} ${raw}`;
-    if (/\b(?:doors?|windows?|locks?|contacts?|openings?|garage)\b/i.test(contactContext)) {
-      raw = raw.replace(/^(?:alarm|alarmo|security)\s+/i, '');
-    }
-    if (!raw) raw = 'Home item';
-    const acronyms = { co: 'CO', hvac: 'HVAC', nws: 'NWS' };
-    const minorWords = new Set(['and', 'of', 'the', 'in', 'at']);
-    return raw.split(' ').map((word, index) => {
-      const lower = word.toLowerCase();
-      return acronyms[lower] || (index && minorWords.has(lower) ? lower : `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`);
-    }).join(' ');
+  _state(entity) {
+    return this._hass?.states?.[entity];
   }
 
   _updateCard() {
-    if (!this._config || !this._hass) return;
-    if (this.shadowRoot.querySelector('.ticker')) this._update();
-    else this.render();
+    if (
+      !this._config ||
+      !this._hass
+    ) {
+      return;
+    }
+
+    if (
+      this.shadowRoot.querySelector(
+        '.ticker'
+      )
+    ) {
+      this._update();
+    } else {
+      this.render();
+    }
   }
 
   _date(value) {
     if (!value) return null;
-    const text = String(value).trim();
-    // Treat Home Assistant's date-only and timezone-less calendar values as
-    // local wall-clock values. Native Date parsing can otherwise interpret a
-    // date-only value as UTC and shift it to the previous day in US timezones.
-    let match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    const text =
+      String(value).trim();
+
+    let match =
+      text.match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
     if (match) {
-      const [, year, month, day] = match;
-      return new Date(Number(year), Number(month) - 1, Number(day));
+      const [
+        ,
+        year,
+        month,
+        day
+      ] = match;
+
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day)
+      );
     }
-    match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+
+    match =
+      text.match(
+        /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/
+      );
+
     if (match) {
-      const [, year, month, day, hour, minute, second = '0'] = match;
-      return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+      const [
+        ,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second = '0'
+      ] = match;
+
+      return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      );
     }
-    const date = new Date(text);
-    return Number.isFinite(date.getTime()) ? date : null;
+
+    const date =
+      new Date(text);
+
+    return Number.isFinite(
+      date.getTime()
+    )
+      ? date
+      : null;
   }
 
-  _friendlyScheduled(value, allDay = false) {
-    const date = this._date(value);
+  _friendlyScheduled(
+    value,
+    allDay = false
+  ) {
+    const date =
+      this._date(value);
+
     if (!date) return '';
+
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const delta = Math.round((eventDay - today) / 86400000);
-    const dayLabel = delta === 0
-      ? 'Today'
-      : delta === 1
-        ? 'Tomorrow'
-        : date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(String(value).trim())) return dayLabel;
-    return `${dayLabel} • ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+
+    const today =
+      new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      );
+
+    const eventDay =
+      new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+      );
+
+    const delta =
+      Math.round(
+        (eventDay - today) /
+        86400000
+      );
+
+    const dayLabel =
+      delta === 0
+        ? 'Today'
+        : delta === 1
+          ? 'Tomorrow'
+          : date.toLocaleDateString(
+              [],
+              {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+              }
+            );
+
+    if (
+      allDay ||
+      /^\d{4}-\d{2}-\d{2}$/
+        .test(
+          String(value).trim()
+        )
+    ) {
+      return dayLabel;
+    }
+
+    return (
+      `${dayLabel} • ` +
+      date.toLocaleTimeString(
+        [],
+        {
+          hour: 'numeric',
+          minute: '2-digit'
+        }
+      )
+    );
   }
 
   _time(value) {
-    const date = this._date(value);
+    const date =
+      this._date(value);
+
     if (!date) return '';
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    return date.toLocaleTimeString(
+      [],
+      {
+        hour: 'numeric',
+        minute: '2-digit'
+      }
+    );
   }
 
   _relative(value) {
-    const date = this._date(value);
+    const date =
+      this._date(value);
+
     if (!date) return '';
-    const now = new Date();
-    const minutes = Math.max(0, Math.floor((now - date) / 60000));
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes} min ago`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'}${rest ? ` ${rest} min` : ''} ago`;
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const delta = Math.round((today - day) / 86400000);
-    if (delta === 1) return `Yesterday ${this._time(date)}`;
-    if (delta >= 0 && delta < 7) return `${date.toLocaleDateString([], { weekday: 'short' })} ${this._time(date)}`;
-    return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} • ${this._time(date)}`;
-  }
 
-  _unique(items) {
-    const seen = new Set();
-    return (Array.isArray(items) ? items : []).filter((item, index) => {
-      const key = item?.id || `${item?.event_type || 'event'}|${item?.message || ''}|${item?.created_at || index}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
+    const now =
+      new Date();
 
-  _collapseRecentSequences(items) {
-    const events = Array.isArray(items) ? items : [];
-    const collapsed = [];
-    let index = 0;
+    const minutes =
+      Math.max(
+        0,
+        Math.floor(
+          (now - date) / 60000
+        )
+      );
 
-    const normalizeSource = value => String(value || '')
-      .toLowerCase()
-      .trim()
-      .replace(/^[^.]+\./, '')
-      .replace(/(?:^|[_\s-])(opened|closed|opening|closing|open|close)$/i, '')
-      .replace(/[_\s-]+/g, '_');
+    if (minutes < 1) {
+      return 'Just now';
+    }
 
-    const sourceOf = item => normalizeSource(
-      item?.entity_id ||
-      item?.entity ||
-      item?.device ||
-      item?.event_type ||
-      item?.message ||
-      ''
+    if (minutes < 60) {
+      return `${minutes} min ago`;
+    }
+
+    const hours =
+      Math.floor(
+        minutes / 60
+      );
+
+    const rest =
+      minutes % 60;
+
+    if (hours < 24) {
+      return (
+        `${hours} hr` +
+        `${hours === 1 ? '' : 's'}` +
+        `${rest ? ` ${rest} min` : ''} ago`
+      );
+    }
+
+    const today =
+      new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      );
+
+    const day =
+      new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+      );
+
+    const delta =
+      Math.round(
+        (today - day) /
+        86400000
+      );
+
+    if (delta === 1) {
+      return (
+        `Yesterday ${this._time(date)}`
+      );
+    }
+
+    if (
+      delta >= 0 &&
+      delta < 7
+    ) {
+      return (
+        `${date.toLocaleDateString(
+          [],
+          { weekday: 'short' }
+        )} ${this._time(date)}`
+      );
+    }
+
+    return (
+      `${date.toLocaleDateString(
+        [],
+        {
+          month: 'short',
+          day: 'numeric'
+        }
+      )} • ${this._time(date)}`
     );
-
-    const timestampOf = item => this._date(
-      item?.created_at ||
-      item?.timestamp
-    )?.getTime() || null;
-
-    while (index < events.length) {
-      const source = sourceOf(events[index]);
-      const run = [events[index]];
-      index += 1;
-
-      while (index < events.length && sourceOf(events[index]) === source) {
-        run.push(events[index]);
-        index += 1;
-      }
-
-      collapsed.push(run.reduce((newest, item) => {
-        const newestTime = timestampOf(newest);
-        const itemTime = timestampOf(item);
-        return itemTime !== null && (newestTime === null || itemTime > newestTime)
-          ? item
-          : newest;
-      }));
-    }
-
-    return collapsed;
-  }
-
-  _nativeCategory(item) {
-    const domain = String(item?.domain || '').toLowerCase();
-    const deviceClass = String(item?.device_class || '').toLowerCase();
-    if (domain === 'alarm_control_panel' || domain === 'lock' || ['door', 'window', 'opening', 'garage_door', 'smoke', 'gas', 'carbon_monoxide', 'moisture'].includes(deviceClass)) return 'security';
-    return 'activity';
-  }
-
-  _nativeIcon(item) {
-    const deviceClass = String(item?.device_class || '').toLowerCase();
-    const state = String(item?.state ?? item?.to ?? '').toLowerCase();
-    const open = ['on', 'open', 'opened'].includes(state);
-    if (deviceClass === 'door' || deviceClass === 'garage_door') return open ? 'mdi:door-open' : 'mdi:door-closed';
-    if (deviceClass === 'window' || deviceClass === 'opening') return open ? 'mdi:window-open-variant' : 'mdi:window-closed-variant';
-    if (deviceClass === 'moisture') return 'mdi:water-alert';
-    if (deviceClass === 'smoke') return 'mdi:smoke-detector-alert';
-    if (String(item?.domain) === 'lock') return state === 'unlocked' ? 'mdi:lock-open-variant' : 'mdi:lock';
-    if (String(item?.domain) === 'alarm_control_panel') return state === 'triggered' ? 'mdi:shield-alert' : 'mdi:shield-check';
-    return 'mdi:information-outline';
-  }
-
-  _nativeStateLabel(item, transition = false) {
-    const state = String(item?.state ?? item?.to ?? '').replace(/[_-]+/g, ' ').trim();
-    const deviceClass = String(item?.device_class || '').toLowerCase();
-    if (['door', 'window', 'opening', 'garage_door'].includes(deviceClass)) {
-      if (['on', 'open', 'opened'].includes(state.toLowerCase())) return transition ? 'Opened' : 'Open';
-      if (['off', 'closed'].includes(state.toLowerCase())) return 'Closed';
-    }
-    if (String(item?.domain) === 'lock') {
-      if (state === 'unlocked') return 'Unlocked';
-      if (state === 'locked') return 'Locked';
-    }
-    return state.replace(/\b\w/g, character => character.toUpperCase());
-  }
-
-  _nativeCurrentItems(items) {
-    return (Array.isArray(items) ? items : [])
-      // Appliance cycles are intentionally not alarms. They carry
-      // attention: none so that a washing load does not raise the household
-      // health state, but they are still live information for the ticker.
-      .filter(item => (
-        (item?.attention && item.attention !== 'none')
-        || item?.capability === 'appliance_cycle'
-      ))
-      .map(item => {
-        const label = this._nativeStateLabel(item);
-        const alarm = String(item?.domain) === 'alarm_control_panel';
-        const appliance = item?.capability === 'appliance_cycle';
-        return {
-          id: `native:current:${item.entity_id}`,
-          entity_id: item.entity_id,
-          entity_name: item.entity_name,
-          message: alarm ? label : `${item.entity_name} ${label}`,
-          summary: appliance ? (item.detail || label) : label,
-          icon: appliance ? 'mdi:washing-machine' : this._nativeIcon(item),
-          category: appliance ? 'laundry' : this._nativeCategory(item),
-          priority: appliance ? 'activity' : item.attention,
-          active: true,
-          state: item.state,
-          created_at: item.changed_at,
-          event_type: appliance ? 'native_appliance_current' : 'native_current',
-          capability: item.capability
-        };
-      });
-  }
-
-  _nativeRecentItems(items) {
-    return (Array.isArray(items) ? items : []).map(item => {
-      const label = this._nativeStateLabel(item, true);
-      const alarm = String(item?.domain) === 'alarm_control_panel';
-      const appliance = item?.capability === 'appliance_cycle';
-      const applianceText = `${item?.entity_name || ''} ${item?.entity_id || ''}`.toLowerCase();
-      const applianceIcon = applianceText.includes('dishwasher') ? 'mdi:dishwasher'
-        : applianceText.includes('dryer') ? 'mdi:tumble-dryer'
-          : 'mdi:washing-machine';
-      return {
-        id: `native:recent:${item.entity_id}:${item.changed_at}`,
-        entity_id: item.entity_id,
-        entity_name: item.entity_name,
-        message: alarm ? label : `${item.entity_name} ${label}`,
-        summary: '',
-        icon: appliance ? applianceIcon : this._nativeIcon(item),
-        category: appliance
-          ? (applianceText.includes('washer') || applianceText.includes('dryer') ? 'laundry' : 'appliance')
-          : this._nativeCategory(item),
-        priority: 'activity',
-        active: false,
-        state: item.to,
-        created_at: item.changed_at,
-        // Recent completion is historical information. Keep the standard
-        // white transition treatment used for every completed Home Status item
-        // while retaining the appliance-specific icon above.
-        event_type: 'native_transition',
-        source: 'home_assistant',
-        capability: item.capability
-      };
-    });
-  }
-
-  _nativeAwarenessZones(items) {
-    const left = [];
-    const right = [];
-    (Array.isArray(items) ? items : []).forEach((item, index) => {
-      if (!item || typeof item !== 'object') return;
-      const category = String(item.category || '').toLowerCase();
-      const target = ['schedule', 'calendar', 'waste', 'irrigation'].includes(category)
-        ? left
-        : right;
-      target.push({
-        ...item,
-        id: item.id || `native:awareness:${item.entity_id || category}:${index}`,
-        event_type: 'native_awareness',
-        active: false,
-        priority: item.priority || 'normal'
-      });
-    });
-    return { left, right };
   }
 
   _data() {
-    const source = this._state(this._config.entity);
-    const attrs = source?.attributes || {};
-    const display = attrs.display && typeof attrs.display === 'object' ? attrs.display : {};
-    const presentation = attrs.presentation && typeof attrs.presentation === 'object' ? attrs.presentation : {};
-    const native = attrs.native && typeof attrs.native === 'object' ? attrs.native : null;
+    const source =
+      this._state(
+        this._config.entity
+      );
+
+    const attrs =
+      source?.attributes || {};
+
+    const display =
+      attrs.display &&
+      typeof attrs.display === 'object'
+        ? attrs.display
+        : {};
+
+    const presentation =
+      attrs.presentation &&
+      typeof attrs.presentation === 'object'
+        ? attrs.presentation
+        : {};
+
+    const native =
+      attrs.native &&
+      typeof attrs.native === 'object'
+        ? attrs.native
+        : null;
+
     if (native) {
-      const active = this._nativeCurrentItems(native.current);
-      const recent = this._nativeRecentItems(native.recent);
-      const awareness = this._nativeAwarenessZones(native.awareness);
-      const priority = active.some(item => item.priority === 'critical') ? 'critical'
-        : active.some(item => item.priority === 'attention') ? 'attention'
-          : 'normal';
+      const active = Array.isArray(native.current) ? native.current : [];
+      const recent = Array.isArray(native.recent) ? native.recent : [];
+      const awareness = Array.isArray(native.awareness) ? native.awareness : [];
+      const streams = native.streams && typeof native.streams === 'object'
+        ? native.streams
+        : {};
+      const itemById = new Map(
+        [...active, ...recent, ...awareness]
+          .filter(item => item && item.id)
+          .map(item => [String(item.id), item])
+      );
+      const resolveStream = ids => (
+        Array.isArray(ids)
+          ? ids.map(id => itemById.get(String(id))).filter(Boolean)
+          : []
+      );
+      const phonePrimary =
+        itemById.get(String(streams.phone_primary_id || '')) ||
+        (
+          streams.phone_fallback &&
+          typeof streams.phone_fallback === 'object'
+            ? streams.phone_fallback
+            : null
+        );
+
       return {
-        left: awareness.left,
-        right: awareness.right,
-        // Keep existing recent history, and prepend the explicit live
-        // appliance contract so an active washer/dryer is visible while it
-        // is running (including its time remaining).
-        bottom: [
-          ...active.filter(item => item.capability === 'appliance_cycle'),
-          ...recent
-        ],
+        left:
+          resolveStream(streams.left),
+
+        right:
+          resolveStream(streams.right),
+
+        bottom:
+          resolveStream(streams.bottom),
+
+        phone_primary:
+          phonePrimary,
+
         active,
         recent,
-        priority,
-        count: active.length,
+        awareness,
+
+        priority:
+          attrs.priority ||
+          attrs.health ||
+          'normal',
+
+        count:
+          Number(attrs.active_count) ||
+          active.length,
+
         display,
         presentation,
-        visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null,
-        weather_visual_effect: attrs.weather_visual_effect || '',
-        unavailable: !source || ['unknown', 'unavailable'].includes(source.state)
+
+        visual:
+          attrs.visual &&
+          typeof attrs.visual === 'object'
+            ? attrs.visual
+            : null,
+
+        weather_visual_effect:
+          attrs.weather_visual_effect ||
+          '',
+
+        unavailable:
+          !source ||
+          [
+            'unknown',
+            'unavailable'
+          ].includes(
+            source.state
+          )
       };
     }
-    return { left: [], right: [], bottom: [], active: [], recent: [], priority: 'normal', count: 0, display, presentation, visual: attrs.visual && typeof attrs.visual === 'object' ? attrs.visual : null, weather_visual_effect: attrs.weather_visual_effect || '', unavailable: !source || ['unknown', 'unavailable'].includes(source.state) };
+
+    return {
+      left: [],
+      right: [],
+      bottom: [],
+      active: [],
+      recent: [],
+      awareness: [],
+      phone_primary: null,
+      priority: 'normal',
+      count: 0,
+      display,
+      presentation,
+
+      visual:
+        attrs.visual &&
+        typeof attrs.visual === 'object'
+          ? attrs.visual
+          : null,
+
+      weather_visual_effect:
+        attrs.weather_visual_effect ||
+        '',
+
+      unavailable:
+        !source ||
+        [
+          'unknown',
+          'unavailable'
+        ].includes(
+          source.state
+        )
+    };
   }
 
   _getRuntimeData() {
@@ -965,524 +1585,1498 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _visualFromData(value) {
-    if (!value || typeof value !== 'object') return null;
-    const type = String(value.type || '').toLowerCase();
-    if (!['image', 'video', 'camera', 'map'].includes(type)) return null;
-    const url = typeof value.url === 'string' ? value.url.trim() : '';
-    const entityId = typeof value.entity_id === 'string' ? value.entity_id.trim() : '';
-    if (!url && !entityId) return null;
-    if (value.expires_at) {
-      const expires = new Date(value.expires_at);
-      if (!Number.isFinite(expires.getTime()) || expires.getTime() <= Date.now()) return null;
+    if (
+      !value ||
+      typeof value !== 'object'
+    ) {
+      return null;
     }
-    if ((type === 'image' || type === 'video') && !url) return null;
-    if (type === 'camera' && !entityId) return null;
+
+    const type =
+      String(
+        value.type || ''
+      ).toLowerCase();
+
+    if (
+      ![
+        'image',
+        'video',
+        'camera',
+        'map'
+      ].includes(type)
+    ) {
+      return null;
+    }
+
+    const url =
+      typeof value.url === 'string'
+        ? value.url.trim()
+        : '';
+
+    const entityId =
+      typeof value.entity_id === 'string'
+        ? value.entity_id.trim()
+        : '';
+
+    if (
+      !url &&
+      !entityId
+    ) {
+      return null;
+    }
+
+    if (value.expires_at) {
+      const expires =
+        new Date(
+          value.expires_at
+        );
+
+      if (
+        !Number.isFinite(
+          expires.getTime()
+        ) ||
+        expires.getTime() <= Date.now()
+      ) {
+        return null;
+      }
+    }
+
+    if (
+      (
+        type === 'image' ||
+        type === 'video'
+      ) &&
+      !url
+    ) {
+      return null;
+    }
+
+    if (
+      type === 'camera' &&
+      !entityId
+    ) {
+      return null;
+    }
+
     return {
       type,
-      transport: typeof value.transport === 'string' ? value.transport.trim().toLowerCase() : '',
+
+      transport:
+        typeof value.transport === 'string'
+          ? value.transport
+              .trim()
+              .toLowerCase()
+          : '',
+
       url,
-      article_url: typeof value.article_url === 'string' ? value.article_url.trim() : '',
-      entity_id: entityId,
-      priority: String(value.priority || 'normal'),
-      live: value.live === true,
-      started_at: typeof value.started_at === 'string' ? value.started_at : '',
-      expires_at: typeof value.expires_at === 'string' ? value.expires_at : '',
-      resumable: value.resumable !== false
-      ,mute: value.mute !== false
+
+      article_url:
+        typeof value.article_url === 'string'
+          ? value.article_url.trim()
+          : '',
+
+      entity_id:
+        entityId,
+
+      priority:
+        String(
+          value.priority ||
+          'normal'
+        ),
+
+      live:
+        value.live === true,
+
+      started_at:
+        typeof value.started_at === 'string'
+          ? value.started_at
+          : '',
+
+      expires_at:
+        typeof value.expires_at === 'string'
+          ? value.expires_at
+          : '',
+
+      resumable:
+        value.resumable !== false,
+
+      mute:
+        value.mute !== false
     };
   }
 
   _visualSignature(visual) {
     return visual
-      ? [visual.type, visual.transport, visual.url, visual.entity_id, visual.article_url, visual.priority, visual.live, visual.started_at, visual.expires_at, visual.resumable, visual.mute].join('|')
+      ? [
+          visual.type,
+          visual.transport,
+          visual.url,
+          visual.entity_id,
+          visual.article_url,
+          visual.priority,
+          visual.live,
+          visual.started_at,
+          visual.expires_at,
+          visual.resumable,
+          visual.mute
+        ].join('|')
       : '';
   }
 
   _syncVisualCenter(value) {
-    const zones = this.shadowRoot.querySelector('.ticker-zones');
+    const zones =
+      this.shadowRoot.querySelector(
+        '.ticker-zones'
+      );
+
     if (!zones) return;
-    const visual = this._visualFromData(value);
-    let center = zones.querySelector('[data-visual-center]');
-    zones.classList.toggle('has-visual', Boolean(visual));
+
+    const visual =
+      this._visualFromData(value);
+
+    let center =
+      zones.querySelector(
+        '[data-visual-center]'
+      );
+
+    zones.classList.toggle(
+      'has-visual',
+      Boolean(visual)
+    );
+
     if (!visual) {
-      this._destroyVisualHls(center);
+      this._destroyVisualHls(
+        center
+      );
+
       center?.remove();
+
       return;
     }
-    if (!center) {
-      center = document.createElement('span');
-      center.className = 'visual-center';
-      center.dataset.visualCenter = 'true';
-      zones.insertBefore(center, zones.querySelector('[data-zone="right"]'));
-    }
-    const signature = this._visualSignature(visual);
-    if (center.dataset.visualSignature === signature) return;
-    center.dataset.visualSignature = signature;
-    center.dataset.visualType = visual.type;
-    center.setAttribute('aria-label', `Home Status visual: ${visual.type}`);
-    center.onclick = visual.article_url ? event => { event.stopPropagation(); window.open(visual.article_url, '_blank', 'noopener,noreferrer'); } : null;
-    this._renderVisualCenter(center, visual);
-  }
 
-  _awarenessVisual(item) {
-    if (!item || item.source_kind !== 'news') return null;
-    const url = String(item.media_url || '').trim();
-    if (!url) return null;
-    return {
-      type: String(item.media_type || 'image').toLowerCase().startsWith('video') ? 'video' : 'image',
-      url,
-      article_url: String(item.article_url || item.navigation || '').trim(),
-      mute: true
-    };
+    if (!center) {
+      center =
+        document.createElement(
+          'span'
+        );
+
+      center.className =
+        'visual-center';
+
+      center.dataset.visualCenter =
+        'true';
+
+      zones.insertBefore(
+        center,
+        zones.querySelector(
+          '[data-zone="right"]'
+        )
+      );
+    }
+
+    const signature =
+      this._visualSignature(
+        visual
+      );
+
+    if (
+      center.dataset.visualSignature ===
+      signature
+    ) {
+      return;
+    }
+
+    center.dataset.visualSignature =
+      signature;
+
+    center.dataset.visualType =
+      visual.type;
+
+    center.setAttribute(
+      'aria-label',
+      `Home Status visual: ${visual.type}`
+    );
+
+    center.onclick =
+      visual.article_url
+        ? event => {
+            event.stopPropagation();
+
+            window.open(
+              visual.article_url,
+              '_blank',
+              'noopener,noreferrer'
+            );
+          }
+        : null;
+
+    this._renderVisualCenter(
+      center,
+      visual
+    );
   }
 
   _syncDisplayedVisual() {
     this._syncVisualCenter(
-      this._awarenessVisual(this._displayedZoneItems.right) || this._baseVisual
+      this._displayedZoneItems
+        .right?.zone_visual ||
+      this._displayedZoneItems
+        .left?.zone_visual ||
+      this._displayedZoneItems
+        .right?.visual ||
+      this._displayedZoneItems
+        .left?.visual ||
+      this._baseVisual
     );
   }
 
-  _renderVisualCenter(center, visual) {
-    const existing = center.firstElementChild;
-    if (visual.type === 'image') {
-      this._destroyVisualHls(center);
-      if (existing?.tagName === 'IMG') {
+  _renderVisualCenter(
+    center,
+    visual
+  ) {
+    const existing =
+      center.firstElementChild;
+
+    if (
+      visual.type === 'image'
+    ) {
+      this._destroyVisualHls(
+        center
+      );
+
+      if (
+        existing?.tagName === 'IMG'
+      ) {
         existing.src = visual.url;
       } else {
-        const image = document.createElement('img');
-        image.className = 'visual-center-media';
+        const image =
+          document.createElement(
+            'img'
+          );
+
+        image.className =
+          'visual-center-media';
+
         image.alt = '';
         image.loading = 'eager';
         image.src = visual.url;
-        center.replaceChildren(image);
+
+        center.replaceChildren(
+          image
+        );
       }
+
       return;
     }
-    if (visual.type === 'video') {
-      let video = existing?.tagName === 'VIDEO' ? existing : null;
+
+    if (
+      visual.type === 'video'
+    ) {
+      let video =
+        existing?.tagName === 'VIDEO'
+          ? existing
+          : null;
+
       if (!video) {
-        video = document.createElement('video');
-        video.className = 'visual-center-media';
-        video.muted = visual.mute;
-        video.defaultMuted = visual.mute;
+        video =
+          document.createElement(
+            'video'
+          );
+
+        video.className =
+          'visual-center-media';
+
+        video.muted =
+          visual.mute;
+
+        video.defaultMuted =
+          visual.mute;
+
         video.autoplay = true;
         video.playsInline = true;
         video.preload = 'metadata';
-        center.replaceChildren(video);
+
+        center.replaceChildren(
+          video
+        );
       }
-      this._renderVisualVideo(center, video, visual);
+
+      this._renderVisualVideo(
+        center,
+        video,
+        visual
+      );
+
       return;
     }
-    this._destroyVisualHls(center);
-    if (visual.type === 'camera') {
-      let camera = existing?.tagName === 'HA-CAMERA-STREAM' ? existing : null;
+
+    this._destroyVisualHls(
+      center
+    );
+
+    if (
+      visual.type === 'camera'
+    ) {
+      let camera =
+        existing?.tagName ===
+        'HA-CAMERA-STREAM'
+          ? existing
+          : null;
+
       if (!camera) {
-        camera = document.createElement('ha-camera-stream');
-        camera.className = 'visual-center-camera';
-        center.replaceChildren(camera);
+        camera =
+          document.createElement(
+            'ha-camera-stream'
+          );
+
+        camera.className =
+          'visual-center-camera';
+
+        center.replaceChildren(
+          camera
+        );
       }
-      // Let Home Assistant choose the appropriate stream transport from the
-      // camera entity; Visual Center never constructs a stream URL itself.
-      camera.stateObj = this._hass?.states?.[visual.entity_id];
-      camera.fitMode = 'cover';
+
+      camera.stateObj =
+        this._hass?.states?.[
+          visual.entity_id
+        ];
+
+      camera.fitMode =
+        'cover';
+
       camera.muted = true;
       camera.controls = false;
-      camera.setAttribute('camera-entity', visual.entity_id);
-      camera.setAttribute('entity', visual.entity_id);
+
+      camera.setAttribute(
+        'camera-entity',
+        visual.entity_id
+      );
+
+      camera.setAttribute(
+        'entity',
+        visual.entity_id
+      );
+
       return;
     }
-    center.replaceChildren(Object.assign(document.createElement('span'), {
-      className: 'visual-center-fallback',
-      textContent: 'Visual content is not supported yet'
-    }));
+
+    center.replaceChildren(
+      Object.assign(
+        document.createElement(
+          'span'
+        ),
+        {
+          className:
+            'visual-center-fallback',
+
+          textContent:
+            'Visual content is not supported yet'
+        }
+      )
+    );
   }
 
   _destroyVisualHls(center) {
-    const hls = center?._homeStatusHls;
+    const hls =
+      center?._homeStatusHls;
+
     if (hls) {
       hls.destroy();
-      delete center._homeStatusHls;
+
+      delete center
+        ._homeStatusHls;
     }
   }
 
-  _showVisualError(center, message) {
-    this._destroyVisualHls(center);
-    center.replaceChildren(Object.assign(document.createElement('span'), {
-      className: 'visual-center-fallback',
-      textContent: message
-    }));
+  _showVisualError(
+    center,
+    message
+  ) {
+    this._destroyVisualHls(
+      center
+    );
+
+    center.replaceChildren(
+      Object.assign(
+        document.createElement(
+          'span'
+        ),
+        {
+          className:
+            'visual-center-fallback',
+
+          textContent:
+            message
+        }
+      )
+    );
   }
 
-  _renderVisualVideo(center, video, visual) {
-    this._destroyVisualHls(center);
-    video.muted = visual.mute;
-    video.defaultMuted = visual.mute;
-    const fail = () => this._showVisualError(center, 'Live stream unavailable');
+  _renderVisualVideo(
+    center,
+    video,
+    visual
+  ) {
+    this._destroyVisualHls(
+      center
+    );
+
+    video.muted =
+      visual.mute;
+
+    video.defaultMuted =
+      visual.mute;
+
+    const fail =
+      () =>
+        this._showVisualError(
+          center,
+          'Live stream unavailable'
+        );
+
     video.onerror = fail;
-    if (visual.transport !== 'hls') {
-      if (video.getAttribute('src') !== visual.url) video.src = visual.url;
-      video.play()?.catch?.(() => {});
-      return;
-    }
-    const nativeHls = video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL');
-    if (nativeHls) {
-      video.src = visual.url;
-      video.play()?.catch?.(() => {});
-      return;
-    }
-    loadHlsJs().then(Hls => {
-      if (!center.isConnected || center.firstElementChild !== video) return;
-      if (!Hls.isSupported()) {
-        fail();
-        return;
+
+    if (
+      visual.transport !== 'hls'
+    ) {
+      if (
+        video.getAttribute('src') !==
+        visual.url
+      ) {
+        video.src =
+          visual.url;
       }
-      const hls = new Hls({ enableWorker: true });
-      center._homeStatusHls = hls;
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) this._showVisualError(center, 'Live stream unavailable');
-      });
-      hls.loadSource(visual.url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play()?.catch?.(() => {}));
-    }).catch(fail);
-  }
 
+      video.play()
+        ?.catch?.(
+          () => {}
+        );
 
-  _applyPresentationPreferences(data) {
-    const preferences = data?.presentation && typeof data.presentation === 'object'
-      ? data.presentation
-      : {};
-    this._presentationPreferences = preferences;
-    const layout = preferences.layout && typeof preferences.layout === 'object'
-      ? preferences.layout
-      : {};
-    const emphasis = preferences.emphasis && typeof preferences.emphasis === 'object'
-      ? preferences.emphasis
-      : {};
-    const number = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-    const px = (name, value, fallback) => this.style.setProperty(name, `${number(value, fallback)}px`);
-
-    const leftTitle = number(layout.left_title_size, 23);
-    const rightTitle = number(layout.right_title_size, 23);
-    const bottomTitle = number(layout.bottom_title_size, 26);
-    const leftIcon = number(layout.left_icon_size, 40);
-    const rightIcon = number(layout.right_icon_size, 40);
-    const bottomIcon = number(layout.bottom_icon_size, 38);
-    const emphasized = emphasis.enabled !== false;
-    const leftValue = emphasized ? number(emphasis.left_measurement_size, 64) : leftTitle;
-    const rightValue = emphasized ? number(emphasis.right_measurement_size, 48) : rightTitle;
-    const rightWeather = emphasized ? number(emphasis.right_weather_size, 44) : rightTitle;
-    const bottomValue = emphasized ? number(emphasis.bottom_measurement_size, 38) : bottomTitle;
-
-    px('--hs-card-body-height', layout.card_body_height, 380);
-    px('--hs-card-live-height', number(layout.card_body_height, 380) + 44, 424);
-    px('--hs-main-row-height', layout.main_row_height, 150);
-    px('--hs-bottom-height', layout.bottom_height, 102);
-    px('--hs-left-title-size', leftTitle, 23);
-    px('--hs-left-summary-size', layout.left_summary_size, 15);
-    px('--hs-left-icon-size', leftIcon, 40);
-    px('--hs-right-title-size', rightTitle, 23);
-    px('--hs-right-summary-size', layout.right_summary_size, 15);
-    px('--hs-right-icon-size', rightIcon, 40);
-    px('--hs-bottom-title-size', bottomTitle, 26);
-    px('--hs-bottom-summary-size', layout.bottom_summary_size, 21);
-    px('--hs-bottom-icon-size', bottomIcon, 38);
-    px('--hs-left-value-size', leftValue, 64);
-    px('--hs-right-value-size', rightValue, 48);
-    px('--hs-right-weather-size', rightWeather, 44);
-    px('--hs-bottom-value-size', bottomValue, 38);
-    px('--hs-left-value-icon-size', Math.max(leftIcon, Math.round(leftValue * 0.875)), 56);
-    px('--hs-right-value-icon-size', Math.max(rightIcon, Math.round(rightValue * 0.92)), 44);
-
-    // Card YAML remains the explicit per-card override. Integration sizing is
-    // the default when the card has not specified its own maximum width.
-    if (!this._config?.sizing?.max_width) {
-      const maxWidth = number(layout.card_max_width, 0);
-      this.style.maxWidth = maxWidth ? `${maxWidth}px` : (this._config?.profile === 'phone' ? '600px' : '');
+      return;
     }
+
+    const nativeHls =
+      video.canPlayType(
+        'application/vnd.apple.mpegurl'
+      ) ||
+      video.canPlayType(
+        'application/x-mpegURL'
+      );
+
+    if (nativeHls) {
+      video.src =
+        visual.url;
+
+      video.play()
+        ?.catch?.(
+          () => {}
+        );
+
+      return;
+    }
+
+    loadHlsJs()
+      .then(Hls => {
+        if (
+          !center.isConnected ||
+          center.firstElementChild !==
+          video
+        ) {
+          return;
+        }
+
+        if (
+          !Hls.isSupported()
+        ) {
+          fail();
+          return;
+        }
+
+        const hls =
+          new Hls({
+            enableWorker: true
+          });
+
+        center._homeStatusHls =
+          hls;
+
+        hls.on(
+          Hls.Events.ERROR,
+          (_event, data) => {
+            if (data.fatal) {
+              this._showVisualError(
+                center,
+                'Live stream unavailable'
+              );
+            }
+          }
+        );
+
+        hls.loadSource(
+          visual.url
+        );
+
+        hls.attachMedia(
+          video
+        );
+
+        hls.on(
+          Hls.Events.MANIFEST_PARSED,
+          () =>
+            video.play()
+              ?.catch?.(
+                () => {}
+              )
+        );
+      })
+      .catch(fail);
   }
 
-  _presentationColorKey(item) {
-    // Historical Recorder transitions are neutral regardless of their entity
-    // category or words in their label. Current attention owns alert color.
-    if (item?.event_type === 'native_transition') return '';
-    const category = this._categoryFor(item);
-    const priority = String(item?.priority || '').toLowerCase();
-    const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
-    const state = String(item?.state || '').toLowerCase();
-    if (/complete|completed|finished|resolved|healthy/.test(text)) return 'success';
-    if (priority === 'critical') return 'security';
-    if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'attention';
-    if (/recycl/.test(text)) return 'recycling';
-    if (category === 'security' || /\b(?:door|window|lock|alarm)\b/.test(text)) return 'security';
-    if (category === 'weather') return 'weather';
-    if (category === 'waste' || /waste|garbage|trash/.test(text)) return 'waste';
-    if (/sprinkler|irrigation|watering/.test(text)) return 'irrigation';
-    if (category === 'calendar' || category === 'schedule' || /calendar|schedule|event/.test(text)) return 'calendar';
-    if (category === 'news' || ['rss', 'atom', 'news'].includes(String(item?.source_kind || '').toLowerCase())) return 'news';
-    if (category === 'climate' || /climate|temperature|humidity|thermostat/.test(text)) return 'climate';
-    if (['laundry', 'appliance'].includes(category) || /laundry|washer|dryer|dishwasher/.test(text)) return 'appliance';
-    return '';
+  _applyPresentationPreferences(
+    data
+  ) {
+    const preferences =
+      data?.presentation &&
+      typeof data.presentation === 'object'
+        ? data.presentation
+        : {};
+
+    this._presentationPreferences =
+      preferences;
+
+    const layout =
+      preferences.layout &&
+      typeof preferences.layout === 'object'
+        ? preferences.layout
+        : {};
+
+    const emphasis =
+      preferences.emphasis &&
+      typeof preferences.emphasis === 'object'
+        ? preferences.emphasis
+        : {};
+
+    const number =
+      (value, fallback) =>
+        Number.isFinite(
+          Number(value)
+        )
+          ? Number(value)
+          : fallback;
+
+    const px =
+      (name, value, fallback) =>
+        this.style.setProperty(
+          name,
+          `${number(
+            value,
+            fallback
+          )}px`
+        );
+
+    const leftTitle =
+      number(
+        layout.left_title_size,
+        23
+      );
+
+    const rightTitle =
+      number(
+        layout.right_title_size,
+        23
+      );
+
+    const bottomTitle =
+      number(
+        layout.bottom_title_size,
+        26
+      );
+
+    const leftIcon =
+      number(
+        layout.left_icon_size,
+        40
+      );
+
+    const rightIcon =
+      number(
+        layout.right_icon_size,
+        40
+      );
+
+    const bottomIcon =
+      number(
+        layout.bottom_icon_size,
+        38
+      );
+
+    const emphasized =
+      emphasis.enabled !== false;
+
+    const leftValue =
+      emphasized
+        ? number(
+            emphasis.left_measurement_size,
+            64
+          )
+        : leftTitle;
+
+    const rightValue =
+      emphasized
+        ? number(
+            emphasis.right_measurement_size,
+            48
+          )
+        : rightTitle;
+
+    const rightWeather =
+      emphasized
+        ? number(
+            emphasis.right_weather_size,
+            44
+          )
+        : rightTitle;
+
+    const bottomValue =
+      emphasized
+        ? number(
+            emphasis.bottom_measurement_size,
+            38
+          )
+        : bottomTitle;
+
+    px(
+      '--hs-card-body-height',
+      layout.card_body_height,
+      380
+    );
+
+    px(
+      '--hs-card-live-height',
+      number(
+        layout.card_body_height,
+        380
+      ) + 44,
+      424
+    );
+
+    px(
+      '--hs-main-row-height',
+      layout.main_row_height,
+      150
+    );
+
+    px(
+      '--hs-bottom-height',
+      layout.bottom_height,
+      102
+    );
+
+    px(
+      '--hs-left-title-size',
+      leftTitle,
+      23
+    );
+
+    px(
+      '--hs-left-summary-size',
+      layout.left_summary_size,
+      15
+    );
+
+    px(
+      '--hs-left-icon-size',
+      leftIcon,
+      40
+    );
+
+    px(
+      '--hs-right-title-size',
+      rightTitle,
+      23
+    );
+
+    px(
+      '--hs-right-summary-size',
+      layout.right_summary_size,
+      15
+    );
+
+    px(
+      '--hs-right-icon-size',
+      rightIcon,
+      40
+    );
+
+    px(
+      '--hs-bottom-title-size',
+      bottomTitle,
+      26
+    );
+
+    px(
+      '--hs-bottom-summary-size',
+      layout.bottom_summary_size,
+      21
+    );
+
+    px(
+      '--hs-bottom-icon-size',
+      bottomIcon,
+      38
+    );
+
+    px(
+      '--hs-left-value-size',
+      leftValue,
+      64
+    );
+
+    px(
+      '--hs-right-value-size',
+      rightValue,
+      48
+    );
+
+    px(
+      '--hs-right-weather-size',
+      rightWeather,
+      44
+    );
+
+    px(
+      '--hs-bottom-value-size',
+      bottomValue,
+      38
+    );
+
+    px(
+      '--hs-left-value-icon-size',
+      Math.max(
+        leftIcon,
+        Math.round(
+          leftValue * 0.875
+        )
+      ),
+      56
+    );
+
+    px(
+      '--hs-right-value-icon-size',
+      Math.max(
+        rightIcon,
+        Math.round(
+          rightValue * 0.92
+        )
+      ),
+      44
+    );
+
+    if (
+      !this._config?.sizing
+        ?.max_width
+    ) {
+      const maxWidth =
+        number(
+          layout.card_max_width,
+          0
+        );
+
+      this.style.maxWidth =
+        maxWidth
+          ? `${maxWidth}px`
+          : this._config?.profile ===
+              'phone'
+            ? '600px'
+            : '';
+    }
   }
 
   _iconStyle(item) {
-    const appearance = this._presentationPreferences?.appearance;
-    if (!appearance || appearance.semantic_colors === false) return '';
-    const key = this._presentationColorKey(item);
-    const color = key ? appearance.colors?.[key] : '';
-    return color ? ` style="color:${this._escape(color)}"` : '';
-  }
+    const appearance =
+      this._presentationPreferences
+        ?.appearance;
 
+    if (
+      !appearance ||
+      appearance.semantic_colors ===
+        false
+    ) {
+      return '';
+    }
+
+    const key =
+      String(
+        item?.color_role || ''
+      );
+
+    const color =
+      key
+        ? appearance.colors?.[key]
+        : '';
+
+    return color
+      ? ` style="color:${this._escape(color)}"`
+      : '';
+  }
 
   _label(item) {
-    const customLabel = String(item?.display_name || '').trim();
-    if (customLabel) return customLabel;
-    const labels = {
-      'Dryer Finished': 'Dryer Complete',
-      'Washer Finished': 'Washer Complete',
-      'Dishwasher Finished': 'Dishwasher Complete',
-      'Everything Looks Good': 'Home Normal'
-    };
-    const value = item?.message || item?.title || 'Home notification';
-    return labels[value] || this._humanizeStatusText(value);
-  }
-
-  _humanizeStatusText(value) {
-    return String(value || '')
-      .replace(
-        /^(?:alarm|alarmo|security)\s+(?:(?:door|window|contact|lock|leak|water|moisture|smoke|carbon monoxide|co)\s+)?sensors?\s+/i,
-        ''
-      )
-      .replace(/\b(dishwasher|washer|dryer)\s+current\s+status\s+/i, '$1 ')
-      .replace(/\s+/g, ' ')
-      .trim() || 'Home notification';
+    return String(
+      item?.display_name ||
+      item?.title ||
+      item?.message ||
+      'Home notification'
+    ).trim();
   }
 
   _footerFilters(data) {
-    const filters = data?.display?.footer_filters;
-    return filters && typeof filters === 'object' ? filters : {};
+    const filters =
+      data?.display
+        ?.footer_filters;
+
+    return (
+      filters &&
+      typeof filters === 'object'
+    )
+      ? filters
+      : {};
   }
 
   _escape(value) {
-    const node = document.createElement('span');
-    node.textContent = String(value ?? '');
+    const node =
+      document.createElement(
+        'span'
+      );
+
+    node.textContent =
+      String(value ?? '');
+
     return node.innerHTML;
   }
 
   _icon(priority) {
-    return ({ critical: 'mdi:alert-circle', attention: 'mdi:alert', activity: 'mdi:information', normal: 'mdi:check-circle' })[priority] || 'mdi:home-heart';
+    return (
+      {
+        critical:
+          'mdi:alert-circle',
+
+        attention:
+          'mdi:alert',
+
+        activity:
+          'mdi:information',
+
+        normal:
+          'mdi:check-circle'
+      }[priority] ||
+      'mdi:home-heart'
+    );
   }
 
   _color(category) {
-    return ({ security: '#ef5350', weather: '#42a5f5', hvac: '#ff9800', appliance: '#66bb6a', laundry: '#66bb6a', media: '#ab47bc', irrigation: '#26c6da' })[String(category || '').toLowerCase()] || '#90a4ae';
-  }
+    return (
+      {
+        security:
+          '#ef5350',
 
-  _iconTone(item) {
-    const category = this._categoryFor(item);
-    const priority = String(item?.priority || '').toLowerCase();
-    const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
-    if (priority === 'critical' || /alarm|leak|smoke|security|severe weather/.test(text)) return 'critical';
-    if (priority === 'attention' || /warning|advisory|traffic delay|package/.test(text)) return 'attention';
-    if (category === 'media' || /music|tv|entertainment/.test(text)) return 'media';
-    if (priority === 'activity' || /complete|completed|finished|resolved|healthy|normal/.test(text)) return 'success';
-    if (['weather', 'schedule', 'climate', 'energy', 'maintenance'].includes(category)) return 'information';
-    return 'neutral';
+        weather:
+          '#42a5f5',
+
+        hvac:
+          '#ff9800',
+
+        appliance:
+          '#66bb6a',
+
+        laundry:
+          '#66bb6a',
+
+        media:
+          '#ab47bc',
+
+        irrigation:
+          '#26c6da'
+      }[
+        String(
+          category || ''
+        ).toLowerCase()
+      ] ||
+      '#90a4ae'
+    );
   }
 
   _iconSemanticClass(item) {
-    if (this._presentationPreferences?.appearance?.semantic_colors === false) return 'semantic-white';
-    // Recent transitions retain the same semantic coloring as their current
-    // counterparts: completion is success green and every other category
-    // follows the established color map.
-    const category = this._categoryFor(item);
-    const text = String(item?.title || item?.message || item?.summary || '').toLowerCase();
-    const priority = String(item?.priority || '').toLowerCase();
-    const state = String(item?.state || '').toLowerCase();
-    const security = category === 'security' || /\b(?:door|window|lock|alarm)\b/.test(text);
-    if (security && /\b(?:closed|locked|disarmed|off)\b/.test(`${text} ${state}`)) return 'semantic-green';
-    if (security && /\b(?:open|opened|unlocked|pending|triggered|armed)\b/.test(`${text} ${state}`)) return 'semantic-red';
-    if (priority === 'critical' || /active leak|smoke|alarm|security|severe/.test(text)) return 'semantic-red';
-    if (priority === 'attention' || /warning|advisory|delay|requires action/.test(text)) return 'semantic-orange';
-    if (/complete|completed|finished|resolved|healthy/.test(text)) return 'semantic-green';
-    if (security) return 'semantic-red';
-    if (/leak|water|moisture|humidity/.test(text)) return 'semantic-cyan';
-    if (category === 'weather') return 'semantic-sky';
-    if (/recycl/.test(text)) return 'semantic-teal';
-    if (category === 'waste' || /waste|garbage|trash/.test(text)) return 'semantic-green';
-    if (/sprinkler|irrigation|watering/.test(text)) return 'semantic-teal';
-    if (category === 'schedule' || /calendar|schedule|event/.test(text)) return 'semantic-purple';
-    if (/package|delivery/.test(text)) return 'semantic-orange';
-    if (/traffic|road/.test(text)) return 'semantic-amber';
-    if (category === 'energy' || /energy|power/.test(text)) return 'semantic-yellow';
-    if (/climate|temperature|thermostat/.test(text)) return 'semantic-blue';
-    if (category === 'laundry' || /laundry|washer|dryer/.test(text)) return 'semantic-lime';
-    if (/music|media|tv|entertainment/.test(text)) return 'semantic-purple';
-    return 'semantic-white';
+    if (
+      this._presentationPreferences
+        ?.appearance
+        ?.semantic_colors === false
+    ) {
+      return 'semantic-white';
+    }
+
+    const classes = {
+      critical:
+        'semantic-red',
+
+      security:
+        'semantic-red',
+
+      attention:
+        'semantic-orange',
+
+      success:
+        'semantic-green',
+
+      moisture:
+        'semantic-cyan',
+
+      weather:
+        'semantic-sky',
+
+      recycling:
+        'semantic-teal',
+
+      waste:
+        'semantic-green',
+
+      irrigation:
+        'semantic-teal',
+
+      schedule:
+        'semantic-purple',
+
+      calendar:
+        'semantic-purple',
+
+      traffic:
+        'semantic-amber',
+
+      energy:
+        'semantic-yellow',
+
+      climate:
+        'semantic-blue',
+
+      appliance:
+        'semantic-lime',
+
+      laundry_running:
+        'semantic-lime',
+
+      news:
+        'semantic-blue',
+
+      media:
+        'semantic-purple'
+    };
+
+    return (
+      classes[
+        String(
+          item?.color_role || ''
+        )
+      ] ||
+      'semantic-white'
+    );
   }
 
   _timestamp(item, active) {
     return this._date(
-      item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp
+      item?.occurred_at ||
+      item?.created_at ||
+      item?.updated_at ||
+      item?.timestamp
     );
   }
 
   _timestampValue(item) {
-    return item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '';
-  }
-
-  _showsRelativeAge(item, category = this._categoryFor(item), title = this._label(item)) {
-    const settings = this._presentationPreferences?.timestamps || {};
-    const text = `${item?.entity_name || ''} ${item?.entity_id || ''} ${title || ''} ${item?.message || ''} ${item?.summary || ''} ${item?.state || ''}`.toLowerCase();
-    const eventType = String(item?.event_type || '').toLowerCase();
-    const contactEvent = eventType === 'contact' || (
-      category === 'security' && /\b(?:doors?|windows?)\b/.test(text)
+    return (
+      item?.occurred_at ||
+      item?.created_at ||
+      item?.updated_at ||
+      item?.timestamp ||
+      ''
     );
-    if (eventType === 'alarm_transition') return true;
-    if (eventType === 'native_transition') return true;
-    if (contactEvent) return settings.contacts !== false;
-    return settings.other === true;
   }
 
-  _streamAsTicker(item, fallback = 'No new information') {
-    if (!item) return { id: `empty:${fallback}`, message: fallback, secondary: 'Tap for its actions', detail: '', priority: 'normal', category: 'Home Status' };
-    let title = item.title || item.message || 'Home Status';
-    title = title.replace(/^(?:alarm|security)\s+(?:(?:door|window|contact|lock|leak|water|moisture|smoke|carbon monoxide|co)\s+)?sensors?\s+/i, '');
-    if (/door/i.test(title)) {
-      title = title.replace(/\s+Active$/i, ' Open');
+  _showsRelativeAge(item) {
+    return (
+      item?.timestamp_mode ===
+      'relative'
+    );
+  }
+
+  _streamAsTicker(
+    item,
+    fallback = 'No new information'
+  ) {
+    if (!item) {
+      return {
+        id:
+          `empty:${fallback}`,
+
+        message:
+          fallback,
+
+        secondary:
+          '',
+
+        detail:
+          '',
+
+        priority:
+          'normal',
+
+        category:
+          'Home Status'
+      };
     }
-    if (/sprinklers rain delay active/i.test(title)) title = 'Rain Delay Active';
-    let summary = this._humanizeStatusText(item.body || item.summary || item.detail || item.secondary || 'Tap for its actions');
-    if (item.expires_at) summary = `${summary} • Until ${this._formatDateTime(item.expires_at)}`;
+
+    const title =
+      item.title ||
+      item.message ||
+      'Home Status';
+
+    let summary =
+      String(
+        item.body ||
+        item.summary ||
+        item.secondary ||
+        ''
+      ).trim();
+
+    if (item.expires_at) {
+      summary =
+        [
+          summary,
+          `Until ${this._formatDateTime(item.expires_at)}`
+        ].filter(Boolean).join(' • ');
+    }
+
     return {
-      id: item.id,
-      message: title,
-      subtitle: item.subtitle || '',
-      body: item.body || summary,
-      secondary: summary,
-      detail: '',
-      priority: item.priority || 'normal',
-      category: item.category || 'Home Status',
-      source: item.source,
-      source_kind: item.source_kind,
-      _category: item._category,
-      entity_id: item.entity_id,
-      event_type: item.event_type,
-      active: item.active,
-      state: item.state,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      occurred_at: item.occurred_at,
-      resolved_at: item.resolved_at,
-      scheduled_at: item.scheduled_at,
-      all_day: item.all_day === true,
-      expires_at: item.expires_at,
-      timestamp: item.timestamp,
-      source_id: item.source_id,
-      source_name: item.source_name,
-      home_device_id: item.home_device_id,
-      home_device_name: item.home_device_name,
-      entity_name: item.entity_name,
-      navigation: item.action || item.navigation,
-      icon: item.icon,
-      media_url: item.media_url || item.media?.url || item.image_url || '',
-      media_type: item.media_type || item.media?.type || (item.image_url ? 'image' : ''),
-      visual_effect: item.visual_effect || '',
+      id:
+        item.id,
+
+      message:
+        title,
+
+      subtitle:
+        item.subtitle || '',
+
+      body:
+        item.body ||
+        summary,
+
+      secondary:
+        summary,
+
+      detail:
+        item.detail || '',
+
+      priority:
+        item.priority ||
+        'normal',
+
+      category:
+        item.category ||
+        'Home Status',
+
+      color_role:
+        item.color_role || '',
+
+      display_kind:
+        item.display_kind || '',
+
+      timestamp_mode:
+        item.timestamp_mode || '',
+
+      ticker_eligible:
+        item.ticker_eligible === true,
+
+      utility_role:
+        item.utility_role || '',
+
+      visual:
+        item.visual || null,
+
+      zone_visual:
+        item.zone_visual || null,
+
+      source:
+        item.source,
+
+      source_kind:
+        item.source_kind,
+
+      _category:
+        item._category,
+
+      entity_id:
+        item.entity_id,
+
+      group_labels:
+        item.group_labels,
+
+      event_type:
+        item.event_type,
+
+      active:
+        item.active,
+
+      state:
+        item.state,
+
+      created_at:
+        item.created_at,
+
+      updated_at:
+        item.updated_at,
+
+      occurred_at:
+        item.occurred_at,
+
+      resolved_at:
+        item.resolved_at,
+
+      scheduled_at:
+        item.scheduled_at,
+
+      all_day:
+        item.all_day === true,
+
+      expires_at:
+        item.expires_at,
+
+      timestamp:
+        item.timestamp,
+
+      source_id:
+        item.source_id,
+
+      source_name:
+        item.source_name,
+
+      home_device_id:
+        item.home_device_id,
+
+      home_device_name:
+        item.home_device_name,
+
+      entity_name:
+        item.entity_name,
+
+      navigation:
+        item.action ||
+        item.navigation,
+
+      icon:
+        item.icon,
+
+      media_url:
+        item.media_url ||
+        item.media?.url ||
+        item.image_url ||
+        '',
+
+      media_type:
+        item.media_type ||
+        item.media?.type ||
+        (
+          item.image_url
+            ? 'image'
+            : ''
+        ),
+
+      visual_effect:
+        item.visual_effect ||
+        ''
     };
   }
 
   _heroMedia(item) {
-    if (!this._mediaEnabled) return null;
-    const url = String(item?.media_url || item?.media?.url || item?.image_url || '').trim();
-    const type = String(item?.media_type || item?.media?.type || (url ? 'image' : '')).toLowerCase();
-    return url ? { url, type: type || 'image' } : null;
+    if (!this._mediaEnabled) {
+      return null;
+    }
+
+    const url =
+      String(
+        item?.media_url ||
+        item?.media?.url ||
+        item?.image_url ||
+        ''
+      ).trim();
+
+    const type =
+      String(
+        item?.media_type ||
+        item?.media?.type ||
+        (
+          url
+            ? 'image'
+            : ''
+        )
+      ).toLowerCase();
+
+    return url
+      ? {
+          url,
+          type:
+            type || 'image'
+        }
+      : null;
   }
 
   _formatDateTime(value) {
-    const date = this._date(value);
-    return date ? date.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : String(value || '');
+    const date =
+      this._date(value);
+
+    return date
+      ? date.toLocaleString(
+          [],
+          {
+            weekday:
+              'short',
+
+            hour:
+              'numeric',
+
+            minute:
+              '2-digit'
+          }
+        )
+      : String(
+          value || ''
+        );
   }
 
   _zoneItems(data) {
+    const left =
+      Array.isArray(data.left)
+        ? data.left.slice()
+        : [];
+
+    const right =
+      Array.isArray(data.right)
+        ? data.right.slice()
+        : [];
+
+    const showLeft =
+      this._config
+        .home_status_visibility
+        .left;
+
+    const showRight =
+      this._config
+        .home_status_visibility
+        .right;
+
+    if (
+      showLeft &&
+      showRight
+    ) {
+      return {
+        left,
+        right
+      };
+    }
+
+    const merged =
+      [
+        ...left,
+        ...right
+      ].filter(
+        (
+          item,
+          index,
+          items
+        ) => {
+          const key =
+            item?.id ||
+            item?.entity_id ||
+            item?.message ||
+            index;
+
+          return (
+            items.findIndex(
+              candidate =>
+                (
+                  candidate?.id ||
+                  candidate?.entity_id ||
+                  candidate?.message
+                ) === key
+            ) === index
+          );
+        }
+      );
+
+    if (showLeft) {
+      return {
+        left:
+          merged,
+
+        right:
+          []
+      };
+    }
+
+    if (showRight) {
+      return {
+        left:
+          [],
+
+        right:
+          merged
+      };
+    }
+
     return {
-      left: this._config.home_status_visibility.left && Array.isArray(data.left) ? data.left.slice() : [],
-      right: this._config.home_status_visibility.right && Array.isArray(data.right) ? data.right.slice() : []
+      left: [],
+      right: []
     };
   }
 
   _buildFooterStream(data) {
-    if (!this._config.home_status_visibility.bottom) return [];
-    const authoritativeBottom = Array.isArray(data.bottom) ? data.bottom : [];
-    const newestAlarmTransition = authoritativeBottom
-      .filter(item => String(item?.event_type || '').toLowerCase() === 'alarm_transition')
-      .reduce((newest, item) => {
-        if (!newest) return item;
-        const newestTime = this._date(this._timestampValue(newest))?.getTime() || 0;
-        const itemTime = this._date(this._timestampValue(item))?.getTime() || 0;
-        return itemTime > newestTime ? item : newest;
-      }, null);
-    const footerItems = authoritativeBottom.filter(item => (
-      String(item?.event_type || '').toLowerCase() !== 'alarm_transition'
-      || item === newestAlarmTransition
-    ));
-    return footerItems
-      .map(item => ({ ...this._streamAsTicker(item, 'Status update'), _category: this._categoryFor(item) }));
-  }
+    if (
+      !this._config
+        .home_status_visibility
+        .bottom
+    ) {
+      return [];
+    }
 
-  _phonePriorityRank(item) {
-    return {
-      critical: 0,
-      attention: 1,
-      activity: 2,
-      normal: 3
-    }[String(item?.priority || 'normal').toLowerCase()] ?? 3;
+    return (
+      Array.isArray(data.bottom)
+        ? data.bottom
+        : []
+    ).map(
+      item => ({
+        ...this._streamAsTicker(
+          item,
+          'Status update'
+        ),
+
+        _category:
+          this._categoryFor(
+            item
+          )
+      })
+    );
   }
 
   _phoneStatusItem(data) {
-    const active = (Array.isArray(data?.active) ? data.active : [])
-      .filter(item => item?.active !== false)
-      .map((item, index) => ({ item, index }))
-      .sort((left, right) =>
-        this._phonePriorityRank(left.item) - this._phonePriorityRank(right.item)
-        || left.index - right.index
-      );
-    if (active.length) return active[0].item;
-    return {
-      id: 'phone-home-normal',
-      message: 'Home Normal',
-      summary: 'No active alerts',
-      icon: 'mdi:check-circle-outline',
-      priority: 'normal',
+    return data?.phone_primary || {
+      id: 'phone-status-unavailable',
+      message: 'Home Status unavailable',
+      summary: '',
+      icon: 'mdi:alert-circle-outline',
+      priority: 'attention',
+      color_role: 'attention',
       active: false
     };
   }
 
   _phoneStatusMarkup(data) {
-    const item = this._phoneStatusItem(data);
-    const title = this._label(item);
-    const summary = item.summary || item.secondary || item.detail || 'Tap for details';
-    const navigation = String(item.navigation || item.action || '');
-    const entity = String(item.entity_id || item.entity || '');
-    const footerStream = this._buildFooterStream(data);
-    const phoneTickerItems = footerStream.length ? footerStream : [{
-      id: 'phone-no-updates',
-      message: 'No recent updates',
-      summary: 'Home is quiet',
-      icon: 'mdi:home-heart'
-    }];
-    const tickerText = phoneTickerItems.map(footerItem => this._label(footerItem)).filter(Boolean).join(' • ');
-    const renderPhoneTickerSequence = () => phoneTickerItems.map(footerItem => {
-      const display = this._formatFooterItem(footerItem);
-      const relative = display.relativeStamp ? this._relative(display.relativeStamp) : '';
-      const secondary = display.summary || relative
-        ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? this._escape(relative) : ''}</small>`
-        : '';
-      return `<span class="phone-status-ticker-item" data-stream-id="${this._escape(footerItem.id || '')}" data-stream-navigation="${this._escape(footerItem.navigation || '')}" data-stream-entity="${this._escape(footerItem.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(footerItem)}" icon="${this._escape(display.icon)}"${this._iconStyle(footerItem)}></ha-icon><span class="phone-status-ticker-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span>`;
-    }).join('');
-    const phoneTickerSequence = renderPhoneTickerSequence();
-    const actionable = navigation || entity;
+    const item =
+      this._phoneStatusItem(
+        data
+      );
+
+    const title =
+      this._label(item);
+
+    const summary =
+      item.summary ||
+      item.secondary ||
+      'Tap for details';
+
+    const navigation =
+      String(
+        item.navigation ||
+        item.action ||
+        ''
+      );
+
+    const entity =
+      String(
+        item.entity_id ||
+        item.entity ||
+        ''
+      );
+
+    const footerStream =
+      this._buildFooterStream(
+        data
+      );
+
+    const phoneTickerItems =
+      footerStream.length
+        ? footerStream
+        : [
+            {
+              id:
+                'phone-no-updates',
+
+              message:
+                'No recent updates',
+
+              summary:
+                'Home is quiet',
+
+              icon:
+                'mdi:home-heart'
+            }
+          ];
+
+    const tickerText =
+      phoneTickerItems
+        .map(
+          footerItem =>
+            this._label(
+              footerItem
+            )
+        )
+        .filter(Boolean)
+        .join(' • ');
+
+    const renderPhoneTickerSequence =
+      () =>
+        phoneTickerItems
+          .map(
+            footerItem => {
+              const display =
+                this._formatFooterItem(
+                  footerItem
+                );
+
+              const relative =
+                display.relativeStamp
+                  ? this._relative(
+                      display.relativeStamp
+                    )
+                  : '';
+
+              const secondary =
+                display.summary ||
+                relative
+                  ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? this._escape(relative) : ''}</small>`
+                  : '';
+
+              return `<span class="phone-status-ticker-item" data-stream-id="${this._escape(footerItem.id || '')}" data-stream-navigation="${this._escape(footerItem.navigation || '')}" data-stream-entity="${this._escape(footerItem.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(footerItem)}" icon="${this._escape(display.icon)}"${this._iconStyle(footerItem)}></ha-icon><span class="phone-status-ticker-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span>`;
+            }
+          )
+          .join('');
+
+    const phoneTickerSequence =
+      renderPhoneTickerSequence();
+
+    const actionable =
+      navigation ||
+      entity;
+
     return `<section class="phone-status-shell" aria-label="Current home status">
       <button class="phone-status-current priority-${this._escape(item.priority || 'normal')}${actionable ? ' is-actionable' : ''}" type="button" data-stream-navigation="${this._escape(navigation)}" data-stream-entity="${this._escape(entity)}"${actionable ? '' : ' disabled'}>
-        <span class="phone-status-icon"><ha-icon icon="${this._escape(item.icon || 'mdi:home-heart')}"></ha-icon></span>
+        <span class="phone-status-icon"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:home-heart')}"${this._iconStyle(item)}></ha-icon></span>
         <span class="phone-status-copy"><small>Home Status</small><strong>${this._escape(title)}</strong><span>${this._escape(summary)}</span></span>
         ${actionable ? '<ha-icon class="phone-status-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}
       </button>
@@ -1493,413 +3087,1414 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _renderPhoneStatus(data) {
-    const host = this.shadowRoot?.querySelector('[data-phone-status-host]');
+    const host =
+      this.shadowRoot?.querySelector(
+        '[data-phone-status-host]'
+      );
+
     if (!host) return;
-    const markup = this._phoneStatusMarkup(data);
-    if (host.dataset.signature === markup) return;
-    host.dataset.signature = markup;
-    host.innerHTML = markup;
+
+    const markup =
+      this._phoneStatusMarkup(
+        data
+      );
+
+    if (
+      host.dataset.signature ===
+      markup
+    ) {
+      return;
+    }
+
+    host.dataset.signature =
+      markup;
+
+    host.innerHTML =
+      markup;
+
     this._bindStreamItems();
   }
 
   _formatFooterItem(item) {
-    const category = item._category || this._categoryFor(item);
-    const id = String(item.id || '');
-    let title = this._glanceableMeasurementTitle(this._label(item));
-    let summary = this._humanizeStatusText(item.summary || item.secondary || '');
-    let icon = item.icon || 'mdi:information-outline';
-    const currentWeather = category === 'weather' && (id.startsWith('current:weather:') || item.source_kind === 'weather');
-    const indoorTemperature = category === 'climate'
-      && (id.startsWith('current:climate:') || /^Indoor Temperature$/i.test(title));
+    const category =
+      item._category ||
+      this._categoryFor(
+        item
+      );
+
+    const displayKind =
+      String(
+        item?.display_kind ||
+        ''
+      ).toLowerCase();
+
+    let title =
+      this._glanceableMeasurementTitle(
+        this._label(item)
+      );
+
+    let summary =
+      String(
+        item.summary ||
+        item.secondary ||
+        ''
+      ).trim();
+
+    let icon =
+      item.icon ||
+      'mdi:information-outline';
+
+    const currentWeather =
+      displayKind ===
+      'current_weather';
+
+    const indoorTemperature =
+      displayKind ===
+        'indoor_temperature';
+
+    const weatherAlert =
+      displayKind ===
+      'weather_alert';
+
     if (currentWeather) {
-      title = this._glanceableTemperature(title || item.summary || item.detail || '');
-      summary = this._friendlyWeatherCondition(item.state || item.summary || item.detail || '');
-      icon = item.icon || 'mdi:weather-partly-cloudy';
-    } else if (indoorTemperature) {
-      title = this._glanceableTemperature(summary);
-      summary = 'Indoors';
-      icon = item.icon || 'mdi:home-thermometer-outline';
-    }
-    const scheduled = item.scheduled_at ? this._friendlyScheduled(item.scheduled_at, item.all_day === true) : '';
-    if (scheduled) {
-      summary = [item.source_name || summary, scheduled].filter(Boolean).join(' · ');
-    }
-    const relativeStamp = !currentWeather && !indoorTemperature && !scheduled && this._showsRelativeAge(item, category, title)
-      ? this._timestampValue(item)
-      : '';
-    if (category === 'weather' && (id.startsWith('upcoming:weather:') || /weather-alert/i.test(icon))) {
-      title = String(title).replace(/^NT WEATHER\s*/i, '').replace(/\s+/g, ' ').trim();
-      summary = item.expires_at ? `Until ${this._formatDateTime(item.expires_at)}` : '';
-      icon = 'mdi:weather-alert';
-    } else if (category === 'security') {
-      icon = item.icon || 'mdi:shield-check';
-      const contactText = `${item.entity_id || ''} ${item.entity_name || ''} ${title}`;
-      if (/\bclosed\b/i.test(contactText) && /\b(?:doors?|windows?|openings?|garage)\b/i.test(contactText)) {
-        const explicitName = String(item.entity_name || '').trim();
-        const name = explicitName || this._plainEntityName(
-          item.entity_id,
-          String(item.message || title).replace(/\s+(?:is\s+)?closed\b.*$/i, '')
+      title =
+        this._glanceableTemperature(
+          title ||
+          item.summary ||
+          ''
         );
-        if (name) title = `${name} Closed`;
-        summary = '';
-      }
-    } else if (category === 'laundry') {
-      icon = item.icon || 'mdi:washing-machine';
-    } else if (category === 'cameras') {
-      icon = item.icon || 'mdi:camera';
+
+      summary =
+        this._friendlyWeatherCondition(
+          item.state ||
+          item.summary ||
+          ''
+        );
+    } else if (
+      indoorTemperature
+    ) {
+      title =
+        this._glanceableTemperature(
+          title ||
+          summary
+        );
     }
-    if (relativeStamp && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
+
+    const scheduled =
+      item.scheduled_at
+        ? this._friendlyScheduled(
+            item.scheduled_at,
+            item.all_day === true
+          )
+        : '';
+
+    if (scheduled) {
+      summary =
+        [
+          item.source_name ||
+            summary,
+          scheduled
+        ]
+          .filter(Boolean)
+          .join(' · ');
+    }
+
+    const relativeStamp =
+      !currentWeather &&
+      !indoorTemperature &&
+      this._showsRelativeAge(
+        item
+      )
+        ? this._timestampValue(
+            item
+          )
+        : '';
+
+    if (weatherAlert) {
+      summary =
+        item.expires_at
+          ? `Until ${this._formatDateTime(item.expires_at)}`
+          : summary;
+    }
+
+    if (
+      relativeStamp &&
+      String(summary)
+        .trim()
+        .toLowerCase() ===
+      String(title)
+        .trim()
+        .toLowerCase()
+    ) {
       summary = '';
     }
+
     return {
-      title: String(title).replace(/\s+/g, ' ').trim().slice(0, 60),
-      summary: String(summary).replace(/\s+/g, ' ').trim().slice(0, 48),
+      title:
+        String(title)
+          .replace(
+            /\s+/g,
+            ' '
+          )
+          .trim()
+          .slice(0, 60),
+
+      summary:
+        String(summary)
+          .replace(
+            /\s+/g,
+            ' '
+          )
+          .trim()
+          .slice(0, 48),
+
       icon,
+
       relativeStamp,
+
       currentWeather,
+
       indoorTemperature
     };
   }
 
   _refreshFooterRelativeTimes() {
-    this.shadowRoot.querySelectorAll('[data-footer-time]').forEach(element => {
-      element.textContent = this._relative(element.dataset.footerTime);
-    });
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-footer-time]'
+      )
+      .forEach(
+        element => {
+          element.textContent =
+            this._relative(
+              element.dataset.footerTime
+            );
+        }
+      );
   }
 
   _renderFooterStream(items) {
-    const target = this.shadowRoot.querySelector('.bottom-stream');
+    const target =
+      this.shadowRoot.querySelector(
+        '.bottom-stream'
+      );
+
     if (!target) return;
-    const signatureParts = items.map((item, index) => {
-      const display = this._formatFooterItem(item);
-      return {
-        index,
-        item: item.id || item.entity_id || item.message || `index:${index}`,
-        title: display.title,
-        summary: display.summary,
-        icon: display.icon,
-        value: `${index}|${display.title}|${display.summary}|${display.icon}|${display.relativeStamp}`
-      };
-    });
-    const signature = signatureParts.map(part => part.value).join('||');
-    if (signature === this._footerSignature) {
+
+    const signatureParts =
+      items.map(
+        (
+          item,
+          index
+        ) => {
+          const display =
+            this._formatFooterItem(
+              item
+            );
+
+          return {
+            index,
+
+            item:
+              item.id ||
+              item.entity_id ||
+              item.message ||
+              `index:${index}`,
+
+            title:
+              display.title,
+
+            summary:
+              display.summary,
+
+            icon:
+              display.icon,
+
+            value:
+              `${index}|${display.title}|${display.summary}|${display.icon}|${display.relativeStamp}`
+          };
+        }
+      );
+
+    const signature =
+      signatureParts
+        .map(
+          part =>
+            part.value
+        )
+        .join('||');
+
+    if (
+      signature ===
+      this._footerSignature
+    ) {
       this._refreshFooterRelativeTimes();
       return;
     }
-    const previousPhase = this._footerMarqueePhase(target);
-    this._footerSignature = signature;
-    this._footerSignatureParts = signatureParts;
-    if (this._footerResizeObserver) {
+
+    const previousPhase =
+      this._footerMarqueePhase(
+        target
+      );
+
+    this._footerSignature =
+      signature;
+
+    this._footerSignatureParts =
+      signatureParts;
+
+    if (
+      this._footerResizeObserver
+    ) {
       this._footerResizeObserver.disconnect();
       this._footerResizeObserver = null;
     }
-    const renderSequence = () => items.map((item, index) => {
-      const display = this._formatFooterItem(item);
-      const relative = display.relativeStamp ? this._relative(display.relativeStamp) : '';
-      const secondary = display.summary || relative
-        ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? `<span data-footer-time="${this._escape(display.relativeStamp)}">${this._escape(relative)}</span>` : ''}</small>`
+
+    const renderSequence =
+      () =>
+        items
+          .map(
+            (
+              item,
+              index
+            ) => {
+              const display =
+                this._formatFooterItem(
+                  item
+                );
+
+              const relative =
+                display.relativeStamp
+                  ? this._relative(
+                      display.relativeStamp
+                    )
+                  : '';
+
+              const secondary =
+                display.summary ||
+                relative
+                  ? `<small>${display.summary ? this._escape(display.summary) : ''}${display.summary && relative ? ' • ' : ''}${relative ? `<span data-footer-time="${this._escape(display.relativeStamp)}">${this._escape(relative)}</span>` : ''}</small>`
+                  : '';
+
+              const groupLabels =
+                Array.isArray(
+                  item.group_labels
+                ) &&
+                item.group_labels.length >
+                  1
+                  ? ` data-footer-group-labels="${encodeURIComponent(JSON.stringify(item.group_labels))}" data-footer-group-title="${encodeURIComponent(display.title)}"`
+                  : '';
+
+              return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"${groupLabels}><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"${this._iconStyle(item)}></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
+            }
+          )
+          .join('');
+
+    const sequence =
+      items.length
+        ? renderSequence()
         : '';
-      return `<span class="footer-marquee-item${display.currentWeather ? ' is-current-weather' : ''}${display.indoorTemperature ? ' is-indoor-temperature' : ''}"><span data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(display.icon)}"${this._iconStyle(item)}></ha-icon><span class="footer-marquee-copy"><strong>${this._escape(display.title)}</strong>${secondary}</span></span></span>`;
-    }).join('');
-    const sequence = items.length ? renderSequence() : '';
-    const singleItem = items.length === 1;
-    target.innerHTML = sequence
-      ? singleItem
-        ? `<div class="footer-marquee single-item"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div></div></div>`
-        : `<div class="footer-marquee"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div><div class="footer-sequence" aria-hidden="true">${sequence}</div></div></div>`
-      : '';
-    const trackElement = target.querySelector('.footer-marquee-track');
-    const firstSequence = target.querySelector('.footer-sequence');
-    if (!singleItem && trackElement && firstSequence) {
-      const metrics = this._updateFooterMarqueeMetrics(target);
-      if (previousPhase !== null && metrics) {
-        trackElement.style.animationDelay = `-${previousPhase * metrics.duration}s`;
+
+    const singleItem =
+      items.length === 1;
+
+    target.innerHTML =
+      sequence
+        ? singleItem
+          ? `<div class="footer-marquee single-item"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div></div></div>`
+          : `<div class="footer-marquee"><div class="footer-marquee-track"><div class="footer-sequence">${sequence}</div><div class="footer-sequence" aria-hidden="true">${sequence}</div></div></div>`
+        : '';
+
+    const trackElement =
+      target.querySelector(
+        '.footer-marquee-track'
+      );
+
+    const firstSequence =
+      target.querySelector(
+        '.footer-sequence'
+      );
+
+    if (
+      !singleItem &&
+      trackElement &&
+      firstSequence
+    ) {
+      const metrics =
+        this._updateFooterMarqueeMetrics(
+          target
+        );
+
+      if (
+        previousPhase !== null &&
+        metrics
+      ) {
+        trackElement.style.animationDelay =
+          `-${previousPhase * metrics.duration}s`;
       }
-      if (typeof ResizeObserver !== 'undefined') {
-        this._footerResizeObserver = new ResizeObserver(() => {
-          this._updateFooterMarqueeMetrics(target);
-        });
-        this._footerResizeObserver.observe(firstSequence);
+
+      if (
+        typeof ResizeObserver !==
+        'undefined'
+      ) {
+        this._footerResizeObserver =
+          new ResizeObserver(
+            () => {
+              this._updateFooterMarqueeMetrics(
+                target
+              );
+            }
+          );
+
+        this._footerResizeObserver.observe(
+          firstSequence
+        );
       }
     }
+
     this._refreshFooterRelativeTimes();
     this._bindStreamItems();
   }
 
   _footerMarqueePhase(target) {
-    const track = target?.querySelector('.footer-marquee-track');
-    const sequence = target?.querySelector('.footer-sequence');
-    if (!track || !sequence) return null;
-    const distance = sequence.getBoundingClientRect().width;
-    const transform = getComputedStyle(track).transform;
-    const match = /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,([^,]+),/.exec(transform);
-    const offset = match ? Number(match[1]) : NaN;
-    if (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(offset)) return null;
-    return ((-offset % distance) + distance) % distance / distance;
+    const track =
+      target?.querySelector(
+        '.footer-marquee-track'
+      );
+
+    const sequence =
+      target?.querySelector(
+        '.footer-sequence'
+      );
+
+    if (
+      !track ||
+      !sequence
+    ) {
+      return null;
+    }
+
+    const distance =
+      sequence
+        .getBoundingClientRect()
+        .width;
+
+    const transform =
+      getComputedStyle(
+        track
+      ).transform;
+
+    const match =
+      /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,([^,]+),/
+        .exec(transform);
+
+    const offset =
+      match
+        ? Number(match[1])
+        : NaN;
+
+    if (
+      !Number.isFinite(
+        distance
+      ) ||
+      distance <= 0 ||
+      !Number.isFinite(
+        offset
+      )
+    ) {
+      return null;
+    }
+
+    return (
+      (
+        (
+          -offset %
+          distance
+        ) +
+        distance
+      ) %
+      distance
+    ) /
+    distance;
   }
 
-  _updateFooterMarqueeMetrics(target) {
-    const track = target?.querySelector('.footer-marquee-track');
-    const firstSequence = target?.querySelector('.footer-sequence');
-    if (!track || !firstSequence) return;
-    const distance = firstSequence.getBoundingClientRect().width;
-    if (!Number.isFinite(distance) || distance <= 0) return;
-    const duration = Math.max(8, distance / this._config.bottom_speed);
-    track.style.setProperty('--marquee-distance', `${distance}px`);
-    track.style.setProperty('--marquee-duration', `${duration}s`);
-    return { distance, duration };
+  _updateFooterMarqueeMetrics(
+    target
+  ) {
+    const track =
+      target?.querySelector(
+        '.footer-marquee-track'
+      );
+
+    const firstSequence =
+      target?.querySelector(
+        '.footer-sequence'
+      );
+
+    if (
+      !track ||
+      !firstSequence
+    ) {
+      return;
+    }
+
+    const distance =
+      firstSequence
+        .getBoundingClientRect()
+        .width;
+
+    if (
+      !Number.isFinite(
+        distance
+      ) ||
+      distance <= 0
+    ) {
+      return;
+    }
+
+    const duration =
+      Math.max(
+        8,
+        distance /
+        this._config.bottom_speed
+      );
+
+    track.style.setProperty(
+      '--marquee-distance',
+      `${distance}px`
+    );
+
+    track.style.setProperty(
+      '--marquee-duration',
+      `${duration}s`
+    );
+
+    return {
+      distance,
+      duration
+    };
   }
 
   _categoryFor(item) {
-    const rawCategory = String(item?.category || item?.source_kind || item?.source || '').toLowerCase();
-    const category = BACKEND_CATEGORY_ALIASES[rawCategory] || rawCategory;
-    return category.includes('weather') ? 'weather'
-      : category.includes('security') || category.includes('alarm') || category.includes('contact') ? 'security'
-        : category.includes('fault') ? 'maintenance'
-          : category.includes('schedule') ? 'schedule'
-            : category.includes('maintenance') ? 'maintenance'
-              : category.includes('laundry') ? 'laundry'
-                : category.includes('climate') ? 'climate'
-                  : 'activity';
+    return String(
+      item?.category ||
+      'activity'
+    ).toLowerCase();
   }
 
-  _zoneMarkup(item, emptyLabel) {
-    if (!item) return `<span class="zone-item zone-empty">${this._escape(emptyLabel)}</span>`;
-    let title = this._glanceableMeasurementTitle(this._label(item));
-    let summary = this._humanizeStatusText(item.summary || item.secondary || item.detail || '');
-    const category = this._categoryFor(item);
-    const currentWeather = category === 'weather'
-      && (/^current:weather:/i.test(String(item.id || '')) || item.source_kind === 'weather' || /^weather$/i.test(title));
-    const indoorTemperature = category === 'climate'
-      && (/^current:climate:/i.test(String(item.id || '')) || /^Indoor Temperature$/i.test(title));
+  _zoneMarkup(
+    item,
+    emptyLabel
+  ) {
+    if (!item) {
+      return `<span class="zone-item zone-empty">${this._escape(emptyLabel)}</span>`;
+    }
+
+    let title =
+      this._glanceableMeasurementTitle(
+        this._label(item)
+      );
+
+    let summary =
+      String(
+        item.summary ||
+        item.secondary ||
+        ''
+      ).trim();
+
+    const category =
+      this._categoryFor(
+        item
+      );
+
+    const displayKind =
+      String(
+        item?.display_kind ||
+        ''
+      ).toLowerCase();
+
+    const currentWeather =
+      displayKind ===
+      'current_weather';
+
+    const indoorTemperature =
+      displayKind ===
+        'indoor_temperature';
+
     if (currentWeather) {
-      const parts = String(summary).split(/\s*(?:\u2022|\u00e2\u20ac\u00a2|\|)\s*/, 2);
-      if (parts[0]) title = parts[0];
-      summary = this._friendlyWeatherCondition(parts[1] || item.state || '');
-    } else if (indoorTemperature) {
-      title = this._glanceableTemperature(summary);
-      summary = 'Indoors';
+      title =
+        this._glanceableTemperature(
+          title
+        );
+
+      summary =
+        this._friendlyWeatherCondition(
+          summary ||
+          item.state ||
+          ''
+        );
+    } else if (
+      indoorTemperature
+    ) {
+      title =
+        this._glanceableTemperature(
+          title ||
+          summary
+        );
     }
-    const scheduled = item.scheduled_at ? this._friendlyScheduled(item.scheduled_at, item.all_day === true) : '';
+
+    const scheduled =
+      item.scheduled_at
+        ? this._friendlyScheduled(
+            item.scheduled_at,
+            item.all_day === true
+          )
+        : '';
+
     if (scheduled) {
-      summary = [item.source_name || summary, scheduled].filter(Boolean).join(' · ');
+      summary =
+        [
+          item.source_name ||
+            summary,
+          scheduled
+        ]
+          .filter(Boolean)
+          .join(' · ');
     }
-    const relative = !currentWeather && !indoorTemperature && !scheduled && this._showsRelativeAge(item, category, title)
-      ? this._relative(this._timestampValue(item))
-      : '';
-    if (relative && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
+
+    const relative =
+      !currentWeather &&
+      !indoorTemperature &&
+      this._showsRelativeAge(
+        item
+      )
+        ? this._relative(
+            this._timestampValue(
+              item
+            )
+          )
+        : '';
+
+    if (
+      relative &&
+      String(summary)
+        .trim()
+        .toLowerCase() ===
+      String(title)
+        .trim()
+        .toLowerCase()
+    ) {
       summary = '';
     }
+
     if (relative) {
-      summary = [summary, relative].filter(Boolean).join(' — ');
+      summary =
+        [
+          summary,
+          relative
+        ]
+          .filter(Boolean)
+          .join(' — ');
     }
-    const brief = `${title} ${summary}`.trim().length <= 42;
-    const measurementValue = /^-?\d+(?:\.\d+)?(?:%|°[CF])$/i.test(String(title).trim());
-    const isNews = item.source_kind === 'news' || item.event_type === 'news_article';
-    const media = isNews ? null : this._heroMedia(item);
-    const mediaMarkup = media ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true">${media.type.startsWith('video') ? '<span class="hero-media-play"><ha-icon icon="mdi:play"></ha-icon></span>' : ''}<span class="hero-media-overlay"></span></span>` : '';
-    const content = `<span class="hero-content"><span class="zone-title"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"${this._iconStyle(item)}></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
+
+    const brief =
+      `${title} ${summary}`
+        .trim()
+        .length <= 42;
+
+    const measurementValue =
+      /^-?\d+(?:\.\d+)?(?:%|°[CF])$/i
+        .test(
+          String(title).trim()
+        );
+
+    const media =
+      (item?.zone_visual || item?.visual)
+        ? null
+        : this._heroMedia(
+            item
+          );
+
+    const mediaMarkup =
+      media
+        ? `<span class="hero-media-wrap"><img class="hero-media" src="${this._escape(media.url)}" alt="" loading="eager" data-hero-media="true">${media.type.startsWith('video') ? '<span class="hero-media-play"><ha-icon icon="mdi:play"></ha-icon></span>' : ''}<span class="hero-media-overlay"></span></span>`
+        : '';
+
+    const content =
+      `<span class="hero-content"><span class="zone-title"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"${this._iconStyle(item)}></ha-icon><span>${this._escape(title)}</span></span><span class="zone-summary">${this._escape(summary)}</span></span>`;
+
     return `<span class="zone-item hero-zone-item${media ? ' has-hero-media' : ''}${brief ? ' is-brief' : ''}${currentWeather ? ' is-current-weather' : ''}${indoorTemperature ? ' is-indoor-temperature' : ''}${measurementValue ? ' is-measurement' : ''}${scheduled ? ' is-scheduled' : ''} priority-${this._escape(item.priority || 'normal')}" data-stream-id="${this._escape(item.id || '')}" data-stream-navigation="${this._escape(item.navigation || '')}" data-stream-entity="${this._escape(item.entity_id || '')}">${mediaMarkup}${content}</span>`;
   }
 
-  _glanceableMeasurementTitle(value) {
-    const text = String(value || '').trim();
-    return text.replace(/^(Humidity|Temperature):\s*(-?\d+(?:\.\d+)?)(%|°?[CF])$/i, (_match, _label, number, unit) => {
-      const rounded = Math.round(Number(number));
-      return `${rounded}${unit}`;
-    });
+  _glanceableMeasurementTitle(
+    value
+  ) {
+    const text =
+      String(value || '').trim();
+
+    return text.replace(
+      /^(Humidity|Temperature):\s*(-?\d+(?:\.\d+)?)(%|°?[CF])$/i,
+      (
+        _match,
+        _label,
+        number,
+        unit
+      ) => {
+        const rounded =
+          Math.round(
+            Number(number)
+          );
+
+        return `${rounded}${unit}`;
+      }
+    );
   }
 
-  _glanceableTemperature(value) {
-    const text = String(value || '').trim();
-    const match = text.match(/^(-?\d+(?:\.\d+)?)\s*°?\s*[CF]?$/i);
-    return match ? `${Math.round(Number(match[1]))}°` : text;
+  _glanceableTemperature(
+    value
+  ) {
+    const text =
+      String(value || '').trim();
+
+    const match =
+      text.match(
+        /^(-?\d+(?:\.\d+)?)\s*°?\s*[CF]?$/i
+      );
+
+    return match
+      ? `${Math.round(Number(match[1]))}°`
+      : text;
   }
 
-  _friendlyWeatherCondition(value) {
-    const condition = String(value || '').trim().toLowerCase();
+  _friendlyWeatherCondition(
+    value
+  ) {
+    const condition =
+      String(value || '')
+        .trim()
+        .toLowerCase();
+
     const labels = {
-      'clear-night': 'Clear night',
-      cloudy: 'Cloudy',
-      fog: 'Foggy',
-      hail: 'Hail',
-      lightning: 'Lightning',
-      'lightning-rainy': 'Thunderstorms',
-      partlycloudy: 'Partly cloudy',
-      pouring: 'Heavy rain',
-      rainy: 'Rainy',
-      snowy: 'Snowy',
-      'snowy-rainy': 'Wintry mix',
-      sunny: 'Sunny',
-      windy: 'Windy',
-      'windy-variant': 'Windy',
-      exceptional: 'Exceptional weather'
+      'clear-night':
+        'Clear night',
+
+      cloudy:
+        'Cloudy',
+
+      fog:
+        'Foggy',
+
+      hail:
+        'Hail',
+
+      lightning:
+        'Lightning',
+
+      'lightning-rainy':
+        'Thunderstorms',
+
+      partlycloudy:
+        'Partly cloudy',
+
+      pouring:
+        'Heavy rain',
+
+      rainy:
+        'Rainy',
+
+      snowy:
+        'Snowy',
+
+      'snowy-rainy':
+        'Wintry mix',
+
+      sunny:
+        'Sunny',
+
+      windy:
+        'Windy',
+
+      'windy-variant':
+        'Windy',
+
+      exceptional:
+        'Exceptional weather'
     };
-    return labels[condition] || condition.replace(/[-_]+/g, ' ').replace(/^./, character => character.toUpperCase());
+
+    return (
+      labels[condition] ||
+      condition
+        .replace(
+          /[-_]+/g,
+          ' '
+        )
+        .replace(
+          /^./,
+          character =>
+            character.toUpperCase()
+        )
+    );
   }
 
-  _renderZone(zone, item, emptyLabel, animate = true) {
-    const target = this.shadowRoot.querySelector(`[data-zone="${zone}"]`);
+  _renderZone(
+    zone,
+    item,
+    emptyLabel,
+    animate = true
+  ) {
+    const target =
+      this.shadowRoot.querySelector(
+        `[data-zone="${zone}"]`
+      );
+
     if (!target) return;
-    if (this._zoneRenderTimers[zone]) {
-      clearTimeout(this._zoneRenderTimers[zone]);
-      delete this._zoneRenderTimers[zone];
+
+    if (
+      this._zoneRenderTimers[
+        zone
+      ]
+    ) {
+      clearTimeout(
+        this._zoneRenderTimers[
+          zone
+        ]
+      );
+
+      delete this
+        ._zoneRenderTimers[
+          zone
+        ];
     }
-    const generation = (this._zoneRenderGenerations[zone] || 0) + 1;
-    this._zoneRenderGenerations[zone] = generation;
-    const intendedId = item?.id || item?.entity_id || item?.message || null;
+
+    const generation =
+      (
+        this._zoneRenderGenerations[
+          zone
+        ] || 0
+      ) + 1;
+
+    this._zoneRenderGenerations[
+      zone
+    ] = generation;
+
+    const intendedId =
+      item?.id ||
+      item?.entity_id ||
+      item?.message ||
+      null;
+
     const apply = () => {
-      if (this._zoneRenderGenerations[zone] !== generation) return;
-      const currentId = item?.id || item?.entity_id || item?.message || null;
-      if (currentId !== intendedId) return;
-      delete this._zoneRenderTimers[zone];
-      target.innerHTML = this._zoneMarkup(item, emptyLabel);
-      this._displayedZoneItems[zone] = item || null;
-      if (zone === 'right') this._syncDisplayedVisual();
+      if (
+        this._zoneRenderGenerations[
+          zone
+        ] !== generation
+      ) {
+        return;
+      }
+
+      const currentId =
+        item?.id ||
+        item?.entity_id ||
+        item?.message ||
+        null;
+
+      if (
+        currentId !==
+        intendedId
+      ) {
+        return;
+      }
+
+      delete this
+        ._zoneRenderTimers[
+          zone
+        ];
+
+      target.innerHTML =
+        this._zoneMarkup(
+          item,
+          emptyLabel
+        );
+
+      this._displayedZoneItems[
+        zone
+      ] =
+        item || null;
+
+      this._syncDisplayedVisual();
       this._bindHeroMedia(target);
-      target.classList.remove('zone-changing');
+
+      target.classList.remove(
+        'zone-changing'
+      );
+
       this._bindStreamItems();
     };
-    if (!animate || !target.firstElementChild) {
+
+    if (
+      !animate ||
+      !target.firstElementChild
+    ) {
       apply();
       return;
     }
-    target.classList.add('zone-changing');
-    this._zoneRenderTimers[zone] = window.setTimeout(apply, 180);
+
+    target.classList.add(
+      'zone-changing'
+    );
+
+    this._zoneRenderTimers[
+      zone
+    ] =
+      window.setTimeout(
+        apply,
+        180
+      );
   }
 
   _bindHeroMedia(target) {
-    target.querySelectorAll('[data-hero-media]').forEach(image => {
-      image.addEventListener('error', () => {
-        const item = image.closest('.hero-zone-item');
-        image.closest('.hero-media-wrap')?.remove();
-        item?.classList.remove('has-hero-media');
-      }, { once: true });
-    });
+    target
+      .querySelectorAll(
+        '[data-hero-media]'
+      )
+      .forEach(
+        image => {
+          image.addEventListener(
+            'error',
+            () => {
+              const item =
+                image.closest(
+                  '.hero-zone-item'
+                );
+
+              image.closest(
+                '.hero-media-wrap'
+              )?.remove();
+
+              item?.classList.remove(
+                'has-hero-media'
+              );
+            },
+            {
+              once: true
+            }
+          );
+        }
+      );
   }
 
   _zoneItemSignature(item) {
     return [
       item?.id || '',
       item?.entity_id || '',
-      item?.title || item?.message || '',
-      item?.summary || item?.secondary || item?.detail || '',
-      item?.home_device_name || '',
-      item?.entity_name || '',
-      item?.source_name || '',
-      item?.scheduled_at || '',
-      item?.all_day === true ? 'all-day' : '',
-      item?.resolved_at || item?.occurred_at || item?.created_at || item?.updated_at || item?.timestamp || '',
+      item?.title ||
+        item?.message ||
+        '',
+      item?.summary ||
+        item?.secondary ||
+        item?.detail ||
+        '',
+      item?.home_device_name ||
+        '',
+      item?.entity_name ||
+        '',
+      item?.source_name ||
+        '',
+      item?.scheduled_at ||
+        '',
+      item?.all_day === true
+        ? 'all-day'
+        : '',
+      item?.resolved_at ||
+        item?.occurred_at ||
+        item?.created_at ||
+        item?.updated_at ||
+        item?.timestamp ||
+        '',
       item?.priority || '',
       item?.icon || '',
-      item?.media_url || item?.media?.url || item?.image_url || '',
+      item?.media_url ||
+        item?.media?.url ||
+        item?.image_url ||
+        '',
       item?.category || '',
-      item?.state || ''
+      item?.state || '',
+      item?.color_role || '',
+      item?.display_kind || '',
+      item?.timestamp_mode || '',
+      this._visualSignature(
+        this._visualFromData(
+          item?.zone_visual
+        )
+      ),
+      this._visualSignature(
+        this._visualFromData(
+          item?.visual
+        )
+      )
     ].join('|');
   }
 
   _startZoneRotations(data) {
-    this._rotationPaused = Boolean(this._drawerOpen);
-    const zones = this._zoneItems(data);
-    const signatures = Object.fromEntries(
-      Object.entries(zones).map(([zone, items]) => {
-        const config = this._config[zone] || {};
-        const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
-        const legacyRightInterval = zone === 'right' ? Number(data.display?.hero_rotation_seconds) : NaN;
-        const interval = Number.isFinite(backendInterval) && backendInterval > 0
-          ? backendInterval
-          : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
-            ? legacyRightInterval
-            : Number(config.interval) || this._config.rotation_seconds;
-        return [
+    const zones =
+      this._zoneItems(data);
+
+    const signatures =
+      Object.fromEntries(
+        Object.entries(
+          zones
+        ).map(
+          (
+            [zone, items]
+          ) => {
+            const config =
+              this._config[zone] ||
+              {};
+
+            const backendInterval =
+              Number(
+                data.display?.[
+                  `${zone}_rotation_seconds`
+                ]
+              );
+
+            const legacyRightInterval =
+              zone === 'right'
+                ? Number(
+                    data.display
+                      ?.hero_rotation_seconds
+                  )
+                : NaN;
+
+            const interval =
+              Number.isFinite(
+                backendInterval
+              ) &&
+              backendInterval > 0
+                ? backendInterval
+                : Number.isFinite(
+                    legacyRightInterval
+                  ) &&
+                  legacyRightInterval >
+                    0
+                  ? legacyRightInterval
+                  : Number(
+                      config.interval
+                    ) ||
+                    this._config
+                      .rotation_seconds;
+
+            return [
+              zone,
+              `${items.map(item => this._zoneItemSignature(item)).join('||')}::${config.rotate !== false}|${interval}`
+            ];
+          }
+        )
+      );
+
+    ['left', 'right']
+      .forEach(
+        (
           zone,
-          `${items.map(item => this._zoneItemSignature(item)).join('||')}::${config.rotate !== false}|${interval}`
-        ];
-      })
-    );
-    ['left', 'right'].forEach((zone, index) => {
-      if (signatures[zone] === this._zoneSignatures[zone]) return;
-      if (this._zoneTimers[zone]) {
-        clearInterval(this._zoneTimers[zone]);
-        delete this._zoneTimers[zone];
-      }
-      this._zoneSignatures[zone] = signatures[zone];
-      const ids = zones[zone].map(item => item.id || item.entity_id || item.message);
-      if (!zones[zone].length) {
-        this._zoneIndexes[zone] = 0;
-        this._zoneIds[zone] = null;
-        this._renderZone(zone, null, zone === 'right' ? 'No current events' : 'No upcoming information');
-        return;
-      }
-      const previousId = this._zoneIds[zone];
-      const previous = previousId && ids.indexOf(previousId) >= 0 ? ids.indexOf(previousId) : this._zoneIndexes[zone];
-      this._zoneIndexes[zone] = Math.min(previous, Math.max(0, zones[zone].length - 1));
-      this._zoneIds[zone] = ids[this._zoneIndexes[zone]] || null;
-      const config = this._config[zone] || {};
-      const item = zones[zone][this._zoneIndexes[zone]];
-      this._renderZone(zone, item, zone === 'right' ? 'No current events' : 'No upcoming information');
-      if (config.rotate === false || zones[zone].length < 2) return;
-      const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
-      const legacyRightInterval = zone === 'right' ? Number(data.display?.hero_rotation_seconds) : NaN;
-      const configuredInterval = Number.isFinite(backendInterval) && backendInterval > 0
-        ? backendInterval
-        : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
-          ? legacyRightInterval
-          : Number(config.interval) || this._config.rotation_seconds;
-      const interval = Math.max(zone === 'left' ? 2 : 1, configuredInterval);
-      this._zoneTimers[zone] = setInterval(() => {
-        if (this._rotationPaused) return;
-        this._zoneIndexes[zone] = (this._zoneIndexes[zone] + 1) % zones[zone].length;
-        this._zoneIds[zone] = ids[this._zoneIndexes[zone]] || null;
-        const item = zones[zone][this._zoneIndexes[zone]];
-        this._renderZone(zone, item, zone === 'right' ? 'No current events' : 'No upcoming information');
-      }, interval * 1000);
-    });
+          index
+        ) => {
+          if (
+            signatures[zone] ===
+            this._zoneSignatures[
+              zone
+            ]
+          ) {
+            return;
+          }
+
+          if (
+            this._zoneTimers[
+              zone
+            ]
+          ) {
+            clearInterval(
+              this._zoneTimers[
+                zone
+              ]
+            );
+
+            delete this
+              ._zoneTimers[
+                zone
+              ];
+          }
+
+          this._zoneSignatures[
+            zone
+          ] =
+            signatures[zone];
+
+          const ids =
+            zones[zone].map(
+              item =>
+                item.id ||
+                item.entity_id ||
+                item.message
+            );
+
+          if (
+            !zones[zone].length
+          ) {
+            this._zoneIndexes[
+              zone
+            ] = 0;
+
+            this._zoneIds[
+              zone
+            ] = null;
+
+            this._renderZone(
+              zone,
+              null,
+              zone === 'right'
+                ? 'No current events'
+                : 'No upcoming information'
+            );
+
+            return;
+          }
+
+          const previousId =
+            this._zoneIds[
+              zone
+            ];
+
+          const previous =
+            previousId &&
+            ids.indexOf(
+              previousId
+            ) >= 0
+              ? ids.indexOf(
+                  previousId
+                )
+              : this._zoneIndexes[
+                  zone
+                ];
+
+          this._zoneIndexes[
+            zone
+          ] =
+            Math.min(
+              previous,
+              Math.max(
+                0,
+                zones[zone].length -
+                  1
+              )
+            );
+
+          this._zoneIds[
+            zone
+          ] =
+            ids[
+              this._zoneIndexes[
+                zone
+              ]
+            ] || null;
+
+          const config =
+            this._config[zone] ||
+            {};
+
+          const item =
+            zones[zone][
+              this._zoneIndexes[
+                zone
+              ]
+            ];
+
+          this._renderZone(
+            zone,
+            item,
+            zone === 'right'
+              ? 'No current events'
+              : 'No upcoming information'
+          );
+
+          if (
+            config.rotate === false ||
+            zones[zone].length <
+              2
+          ) {
+            return;
+          }
+
+          const backendInterval =
+            Number(
+              data.display?.[
+                `${zone}_rotation_seconds`
+              ]
+            );
+
+          const legacyRightInterval =
+            zone === 'right'
+              ? Number(
+                  data.display
+                    ?.hero_rotation_seconds
+                )
+              : NaN;
+
+          const configuredInterval =
+            Number.isFinite(
+              backendInterval
+            ) &&
+            backendInterval > 0
+              ? backendInterval
+              : Number.isFinite(
+                  legacyRightInterval
+                ) &&
+                legacyRightInterval >
+                  0
+                ? legacyRightInterval
+                : Number(
+                    config.interval
+                  ) ||
+                  this._config
+                    .rotation_seconds;
+
+          const interval =
+            Math.max(
+              zone === 'left'
+                ? 2
+                : 1,
+              configuredInterval
+            );
+
+          this._zoneTimers[
+            zone
+          ] =
+            setInterval(
+              () => {
+                if (
+                  this._rotationPaused
+                ) {
+                  return;
+                }
+
+                this._zoneIndexes[
+                  zone
+                ] =
+                  (
+                    this._zoneIndexes[
+                      zone
+                    ] + 1
+                  ) %
+                  zones[zone]
+                    .length;
+
+                this._zoneIds[
+                  zone
+                ] =
+                  ids[
+                    this._zoneIndexes[
+                      zone
+                    ]
+                  ] || null;
+
+                const item =
+                  zones[zone][
+                    this._zoneIndexes[
+                      zone
+                    ]
+                  ];
+
+                this._renderZone(
+                  zone,
+                  item,
+                  zone === 'right'
+                    ? 'No current events'
+                    : 'No upcoming information'
+                );
+              },
+              interval * 1000
+            );
+        }
+      );
   }
 
   _utilitySecurityState() {
-    const entity = this._config.utility_header.security_entity;
-    const value = String(this._state(entity)?.state || 'unavailable').toLowerCase();
+    const entity =
+      this._config
+        .utility_header
+        .security_entity;
+
+    const value =
+      String(
+        this._state(entity)
+          ?.state ||
+        'unavailable'
+      ).toLowerCase();
+
     const states = {
-      disarmed: ['Alarm off', 'mdi:shield-off-outline', 'neutral'],
-      armed_home: ['Alarm armed home', 'mdi:shield-home', 'success'],
-      armed_away: ['Alarm armed away', 'mdi:shield-lock', 'success'],
-      armed_night: ['Alarm armed night', 'mdi:shield-moon', 'success'],
-      arming: ['Alarm arming', 'mdi:shield-sync', 'attention'],
-      pending: ['Entry Delay', 'mdi:shield-alert', 'critical'],
-      triggered: ['Alarm triggered', 'mdi:shield-alert', 'critical']
+      disarmed: [
+        'Alarm off',
+        'mdi:shield-off-outline',
+        'neutral'
+      ],
+
+      armed_home: [
+        'Alarm armed home',
+        'mdi:shield-home',
+        'success'
+      ],
+
+      armed_away: [
+        'Alarm armed away',
+        'mdi:shield-lock',
+        'success'
+      ],
+
+      armed_night: [
+        'Alarm armed night',
+        'mdi:shield-moon',
+        'success'
+      ],
+
+      arming: [
+        'Alarm arming',
+        'mdi:shield-sync',
+        'attention'
+      ],
+
+      pending: [
+        'Entry Delay',
+        'mdi:shield-alert',
+        'critical'
+      ],
+
+      triggered: [
+        'Alarm triggered',
+        'mdi:shield-alert',
+        'critical'
+      ]
     };
-    const [state, icon, tone] = states[value] || ['Unavailable', 'mdi:shield-off-outline', 'neutral'];
-    return { entity, state, icon, tone };
+
+    const [
+      state,
+      icon,
+      tone
+    ] =
+      states[value] || [
+        'Unavailable',
+        'mdi:shield-off-outline',
+        'neutral'
+      ];
+
+    return {
+      entity,
+      state,
+      icon,
+      tone
+    };
   }
 
   _utilityMusicState() {
-    const entity = this._config.utility_header.music_entity;
-    const player = this._state(entity);
-    const value = String(player?.state || 'unavailable').toLowerCase();
-    const attributes = player?.attributes || {};
-    const available = Boolean(player && !['unknown', 'unavailable'].includes(value));
-    const playing = value === 'playing';
-    const paused = value === 'paused';
-    const title = attributes.media_title
-      || (playing ? 'Playing' : paused ? 'Paused' : available ? 'Nothing Playing' : 'Music Unavailable');
-    const secondary = attributes.media_artist
-      || attributes.media_album_name
-      || attributes.source
-      || (available ? 'Speakers and playback' : 'Player is unavailable');
-    const volumeAvailable = Number.isFinite(Number(attributes.volume_level));
-    const volume = volumeAvailable
-      ? Math.max(0, Math.min(1, Number(attributes.volume_level)))
-      : 0;
-    const sources = Array.isArray(attributes.source_list)
-      ? [...new Set(attributes.source_list.map(source => String(source || '').trim()).filter(Boolean))]
-      : [];
-    const artwork = String(
-      attributes.entity_picture
-      || attributes.media_image_url
-      || attributes.media_album_cover_url
-      || ''
-    ).trim();
+    const entity =
+      this._config
+        .utility_header
+        .music_entity;
+
+    const player =
+      this._state(entity);
+
+    const value =
+      String(
+        player?.state ||
+        'unavailable'
+      ).toLowerCase();
+
+    const attributes =
+      player?.attributes ||
+      {};
+
+    const available =
+      Boolean(
+        player &&
+        ![
+          'unknown',
+          'unavailable'
+        ].includes(value)
+      );
+
+    const playing =
+      value === 'playing';
+
+    const paused =
+      value === 'paused';
+
+    const title =
+      attributes.media_title ||
+      (
+        playing
+          ? 'Playing'
+          : paused
+            ? 'Paused'
+            : available
+              ? 'Nothing Playing'
+              : 'Music Unavailable'
+      );
+
+    const secondary =
+      attributes.media_artist ||
+      attributes.media_album_name ||
+      attributes.source ||
+      (
+        available
+          ? 'Speakers and playback'
+          : 'Player is unavailable'
+      );
+
+    const volumeAvailable =
+      Number.isFinite(
+        Number(
+          attributes.volume_level
+        )
+      );
+
+    const volume =
+      volumeAvailable
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              Number(
+                attributes.volume_level
+              )
+            )
+          )
+        : 0;
+
+    const sources =
+      Array.isArray(
+        attributes.source_list
+      )
+        ? [
+            ...new Set(
+              attributes.source_list
+                .map(
+                  source =>
+                    String(
+                      source || ''
+                    ).trim()
+                )
+                .filter(Boolean)
+            )
+          ]
+        : [];
+
+    const artwork =
+      String(
+        attributes.entity_picture ||
+        attributes.media_image_url ||
+        attributes.media_album_cover_url ||
+        ''
+      ).trim();
+
     return {
       entity,
       value,
@@ -1910,29 +4505,88 @@ class HomeStatusCard extends HTMLElement {
       volume,
       volumeAvailable,
       sources,
-      source: attributes.source || '',
+      source:
+        attributes.source ||
+        '',
       artwork,
-      icon: playing ? 'mdi:music-circle' : paused ? 'mdi:pause-circle' : 'mdi:music-circle-outline'
+
+      icon:
+        playing
+          ? 'mdi:music-circle'
+          : paused
+            ? 'mdi:pause-circle'
+            : 'mdi:music-circle-outline'
     };
   }
 
   _utilityHeaderMarkup() {
-    if (!this._config.utility_header.enabled) return '';
-    const security = this._utilitySecurityState();
-    const music = this._utilityMusicState();
-    const securityNavigation = this._config.context_actions.security?.type === 'navigate'
-      ? this._config.context_actions.security.path
-      : this._config.utility_header.security_path;
-    const musicNavigation = this._config.context_actions.music?.type === 'navigate'
-      ? this._config.context_actions.music.path
-      : this._config.utility_header.music_path;
-    const securityNavigationDisabled = securityNavigation ? '' : ' disabled';
-    const musicNavigationDisabled = musicNavigation ? '' : ' disabled';
-    const disabled = music.available ? '' : ' disabled';
-    const volumeDisabled = music.available && music.volumeAvailable ? '' : ' disabled';
-    const sourceOptions = music.sources.map(source =>
-      `<option value="${this._escape(source)}"${source === music.source ? ' selected' : ''}>${this._escape(source)}</option>`
-    ).join('');
+    if (
+      !this._config
+        .utility_header
+        .enabled
+    ) {
+      return '';
+    }
+
+    const security =
+      this._utilitySecurityState();
+
+    const music =
+      this._utilityMusicState();
+
+    const securityNavigation =
+      this._config
+        .context_actions
+        .security?.type ===
+      'navigate'
+        ? this._config
+            .context_actions
+            .security.path
+        : this._config
+            .utility_header
+            .security_path;
+
+    const musicNavigation =
+      this._config
+        .context_actions
+        .music?.type ===
+      'navigate'
+        ? this._config
+            .context_actions
+            .music.path
+        : this._config
+            .utility_header
+            .music_path;
+
+    const securityNavigationDisabled =
+      securityNavigation
+        ? ''
+        : ' disabled';
+
+    const musicNavigationDisabled =
+      musicNavigation
+        ? ''
+        : ' disabled';
+
+    const disabled =
+      music.available
+        ? ''
+        : ' disabled';
+
+    const volumeDisabled =
+      music.available &&
+      music.volumeAvailable
+        ? ''
+        : ' disabled';
+
+    const sourceOptions =
+      music.sources
+        .map(
+          source =>
+            `<option value="${this._escape(source)}"${source === music.source ? ' selected' : ''}>${this._escape(source)}</option>`
+        )
+        .join('');
+
     return `<section class="utility-header" aria-label="Home controls">
       <div class="utility-clock" aria-label="Current time"><span class="utility-time"><strong data-clock-hour></strong><span class="utility-clock-seconds" data-clock-seconds></span><small data-clock-period></small></span><span class="utility-date" data-clock-date></span></div>
       <button class="utility-security tone-${this._escape(security.tone)}" type="button" data-utility-security aria-label="${this._escape(`Security: ${security.state}`)}"${securityNavigationDisabled}><ha-icon icon="${this._escape(security.icon)}"></ha-icon><span><strong>Security</strong><small>${this._escape(security.state)}</small></span></button>
@@ -1953,263 +4607,1107 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _refreshUtilityClock() {
-    const header = this.shadowRoot?.querySelector('.utility-header');
+    const header =
+      this.shadowRoot?.querySelector(
+        '.utility-header'
+      );
+
     if (!header) return;
-    const now = new Date();
-    const parts = new Intl.DateTimeFormat([], {
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    }).formatToParts(now);
-    const part = type => parts.find(value => value.type === type)?.value || '';
-    const hour = part('hour');
-    const minute = part('minute');
-    const second = part('second');
-    const period = part('dayPeriod');
-    const time = header.querySelector('[data-clock-hour]');
-    const seconds = header.querySelector('[data-clock-seconds]');
-    const dayPeriod = header.querySelector('[data-clock-period]');
-    const date = header.querySelector('[data-clock-date]');
-    if (time) time.textContent = `${hour}:${minute}`;
-    if (seconds) seconds.textContent = second;
-    if (dayPeriod) dayPeriod.textContent = period;
-    if (date) date.textContent = new Intl.DateTimeFormat([], {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric'
-    }).format(now);
+
+    const now =
+      new Date();
+
+    const parts =
+      new Intl.DateTimeFormat(
+        [],
+        {
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        }
+      ).formatToParts(now);
+
+    const part =
+      type =>
+        parts.find(
+          value =>
+            value.type ===
+            type
+        )?.value || '';
+
+    const hour =
+      part('hour');
+
+    const minute =
+      part('minute');
+
+    const second =
+      part('second');
+
+    const period =
+      part('dayPeriod');
+
+    const time =
+      header.querySelector(
+        '[data-clock-hour]'
+      );
+
+    const seconds =
+      header.querySelector(
+        '[data-clock-seconds]'
+      );
+
+    const dayPeriod =
+      header.querySelector(
+        '[data-clock-period]'
+      );
+
+    const date =
+      header.querySelector(
+        '[data-clock-date]'
+      );
+
+    if (time) {
+      time.textContent =
+        `${hour}:${minute}`;
+    }
+
+    if (seconds) {
+      seconds.textContent =
+        second;
+    }
+
+    if (dayPeriod) {
+      dayPeriod.textContent =
+        period;
+    }
+
+    if (date) {
+      date.textContent =
+        new Intl.DateTimeFormat(
+          [],
+          {
+            weekday:
+              'short',
+
+            month:
+              'short',
+
+            day:
+              'numeric'
+          }
+        ).format(now);
+    }
   }
 
   _startUtilityClock() {
-    if (!this._config.utility_header.enabled) return;
+    if (
+      !this._config
+        .utility_header
+        .enabled
+    ) {
+      return;
+    }
+
     this._refreshUtilityClock();
-    if (this._clockTimer) return;
-    this._clockTimer = setInterval(() => this._refreshUtilityClock(), 1000);
+
+    if (this._clockTimer) {
+      return;
+    }
+
+    this._clockTimer =
+      setInterval(
+        () =>
+          this._refreshUtilityClock(),
+        1000
+      );
   }
 
   _updateUtilityHeader() {
-    const header = this.shadowRoot?.querySelector('.utility-header');
+    const header =
+      this.shadowRoot?.querySelector(
+        '.utility-header'
+      );
+
     if (!header) return;
-    const security = this._utilitySecurityState();
-    const securityButton = header.querySelector('[data-utility-security]');
+
+    const security =
+      this._utilitySecurityState();
+
+    const securityButton =
+      header.querySelector(
+        '[data-utility-security]'
+      );
+
     if (securityButton) {
-      securityButton.className = `utility-security tone-${security.tone}`;
-      securityButton.setAttribute('aria-label', `Security: ${security.state}`);
-      securityButton.querySelector('ha-icon')?.setAttribute('icon', security.icon);
-      const state = securityButton.querySelector('small');
-      if (state && state.textContent !== security.state) state.textContent = security.state;
+      securityButton.className =
+        `utility-security tone-${security.tone}`;
+
+      securityButton.setAttribute(
+        'aria-label',
+        `Security: ${security.state}`
+      );
+
+      securityButton
+        .querySelector(
+          'ha-icon'
+        )
+        ?.setAttribute(
+          'icon',
+          security.icon
+        );
+
+      const state =
+        securityButton.querySelector(
+          'small'
+        );
+
+      if (
+        state &&
+        state.textContent !==
+        security.state
+      ) {
+        state.textContent =
+          security.state;
+      }
     }
 
-    const music = this._utilityMusicState();
-    const musicPanel = header.querySelector('.utility-music');
-    musicPanel?.classList.toggle('playing', music.playing);
-    const summary = header.querySelector('[data-utility-music-nav]');
-    summary?.setAttribute('aria-label', `Music: ${music.title}`);
-    summary?.querySelector('[data-music-icon]')?.setAttribute('icon', music.icon);
-    const artworkFrame = summary?.querySelector('.utility-music-art');
-    const artwork = summary?.querySelector('[data-music-art]');
-    if (artworkFrame && artwork && artwork.dataset.url !== music.artwork) {
-      artwork.dataset.url = music.artwork;
-      artworkFrame.classList.toggle('has-art', Boolean(music.artwork));
-      artwork.hidden = !music.artwork;
-      if (music.artwork) artwork.setAttribute('src', music.artwork);
-      else artwork.removeAttribute('src');
-    }
-    const title = header.querySelector('[data-music-title]');
-    const secondary = header.querySelector('[data-music-secondary]');
-    if (title && title.textContent !== music.title) title.textContent = music.title;
-    if (secondary && secondary.textContent !== music.secondary) secondary.textContent = music.secondary;
-    const controls = [...header.querySelectorAll('[data-music-command]')];
-    controls.forEach(control => { control.disabled = !music.available; });
-    const play = header.querySelector('.music-play-toggle');
-    if (play) {
-      play.dataset.musicCommand = music.playing ? 'media_pause' : 'media_play';
-      play.setAttribute('aria-label', music.playing ? 'Pause' : 'Play');
-      play.querySelector('ha-icon')?.setAttribute('icon', music.playing ? 'mdi:pause' : 'mdi:play');
-    }
-    const volume = header.querySelector('.music-volume');
-    if (volume) {
-      volume.disabled = !music.available || !music.volumeAvailable;
-      if (this.shadowRoot.activeElement !== volume) volume.value = String(music.volume);
-      volume.setAttribute('aria-valuetext', `${Math.round(music.volume * 100)} percent`);
-    }
-    header.querySelector('.music-volume-icon')?.setAttribute(
-      'icon',
-      music.volume === 0 ? 'mdi:volume-off' : music.volume < .5 ? 'mdi:volume-medium' : 'mdi:volume-high'
+    const music =
+      this._utilityMusicState();
+
+    const musicPanel =
+      header.querySelector(
+        '.utility-music'
+      );
+
+    musicPanel?.classList.toggle(
+      'playing',
+      music.playing
     );
-    const source = header.querySelector('[data-music-source]');
-    if (source) {
-      const sourceSignature = music.sources.join('|');
-      if (source.dataset.sources !== sourceSignature) {
-        source.dataset.sources = sourceSignature;
-        source.innerHTML = `<option value="">Choose speaker</option>${music.sources.map(item =>
-          `<option value="${this._escape(item)}">${this._escape(item)}</option>`
-        ).join('')}`;
+
+    const summary =
+      header.querySelector(
+        '[data-utility-music-nav]'
+      );
+
+    summary?.setAttribute(
+      'aria-label',
+      `Music: ${music.title}`
+    );
+
+    summary
+      ?.querySelector(
+        '[data-music-icon]'
+      )
+      ?.setAttribute(
+        'icon',
+        music.icon
+      );
+
+    const artworkFrame =
+      summary?.querySelector(
+        '.utility-music-art'
+      );
+
+    const artwork =
+      summary?.querySelector(
+        '[data-music-art]'
+      );
+
+    if (
+      artworkFrame &&
+      artwork &&
+      artwork.dataset.url !==
+      music.artwork
+    ) {
+      artwork.dataset.url =
+        music.artwork;
+
+      artworkFrame.classList.toggle(
+        'has-art',
+        Boolean(
+          music.artwork
+        )
+      );
+
+      artwork.hidden =
+        !music.artwork;
+
+      if (music.artwork) {
+        artwork.setAttribute(
+          'src',
+          music.artwork
+        );
+      } else {
+        artwork.removeAttribute(
+          'src'
+        );
       }
-      source.disabled = !music.available || !music.sources.length;
-      if (this.shadowRoot.activeElement !== source) source.value = music.source;
+    }
+
+    const title =
+      header.querySelector(
+        '[data-music-title]'
+      );
+
+    const secondary =
+      header.querySelector(
+        '[data-music-secondary]'
+      );
+
+    if (
+      title &&
+      title.textContent !==
+      music.title
+    ) {
+      title.textContent =
+        music.title;
+    }
+
+    if (
+      secondary &&
+      secondary.textContent !==
+      music.secondary
+    ) {
+      secondary.textContent =
+        music.secondary;
+    }
+
+    const controls =
+      [
+        ...header.querySelectorAll(
+          '[data-music-command]'
+        )
+      ];
+
+    controls.forEach(
+      control => {
+        control.disabled =
+          !music.available;
+      }
+    );
+
+    const play =
+      header.querySelector(
+        '.music-play-toggle'
+      );
+
+    if (play) {
+      play.dataset.musicCommand =
+        music.playing
+          ? 'media_pause'
+          : 'media_play';
+
+      play.setAttribute(
+        'aria-label',
+        music.playing
+          ? 'Pause'
+          : 'Play'
+      );
+
+      play
+        .querySelector(
+          'ha-icon'
+        )
+        ?.setAttribute(
+          'icon',
+          music.playing
+            ? 'mdi:pause'
+            : 'mdi:play'
+        );
+    }
+
+    const volume =
+      header.querySelector(
+        '.music-volume'
+      );
+
+    if (volume) {
+      volume.disabled =
+        !music.available ||
+        !music.volumeAvailable;
+
+      if (
+        this.shadowRoot
+          .activeElement !==
+        volume
+      ) {
+        volume.value =
+          String(
+            music.volume
+          );
+      }
+
+      volume.setAttribute(
+        'aria-valuetext',
+        `${Math.round(music.volume * 100)} percent`
+      );
+    }
+
+    header
+      .querySelector(
+        '.music-volume-icon'
+      )
+      ?.setAttribute(
+        'icon',
+        music.volume === 0
+          ? 'mdi:volume-off'
+          : music.volume < .5
+            ? 'mdi:volume-medium'
+            : 'mdi:volume-high'
+      );
+
+    const source =
+      header.querySelector(
+        '[data-music-source]'
+      );
+
+    if (source) {
+      const sourceSignature =
+        music.sources.join('|');
+
+      if (
+        source.dataset.sources !==
+        sourceSignature
+      ) {
+        source.dataset.sources =
+          sourceSignature;
+
+        source.innerHTML =
+          `<option value="">Choose speaker</option>${music.sources.map(item =>
+            `<option value="${this._escape(item)}">${this._escape(item)}</option>`
+          ).join('')}`;
+      }
+
+      source.disabled =
+        !music.available ||
+        !music.sources.length;
+
+      if (
+        this.shadowRoot
+          .activeElement !==
+        source
+      ) {
+        source.value =
+          music.source;
+      }
     }
   }
 
   _navigateUtility(path) {
     if (!path) return;
-    if (/^https?:\/\//i.test(path)) {
-      window.open(path, '_blank', 'noopener,noreferrer');
+
+    if (
+      /^https?:\/\//i.test(
+        path
+      )
+    ) {
+      window.open(
+        path,
+        '_blank',
+        'noopener,noreferrer'
+      );
+
       return;
     }
-    window.history.pushState({}, '', path);
-    this.dispatchEvent(new Event('location-changed', { bubbles: true, composed: true }));
+
+    window.history.pushState(
+      {},
+      '',
+      path
+    );
+
+    this.dispatchEvent(
+      new Event(
+        'location-changed',
+        {
+          bubbles: true,
+          composed: true
+        }
+      )
+    );
   }
 
-  _contextActions(data = this._getRuntimeData()) {
+  _contextActions(
+    data =
+      this._getRuntimeData()
+  ) {
     return [
-      ['security', 'mdi:shield-home', 'Security'],
-      ['lighting', 'mdi:home-lightbulb', 'Lighting'],
-      ['cameras', 'mdi:cctv', 'Cameras'],
-      ['calendar', 'mdi:calendar', 'Calendar'],
-      ['music', 'mdi:music', 'Music'],
-      ['location', 'mdi:map-marker', 'Location'],
-      ['movies', 'mdi:movie-open', 'Movies'],
-      ['sprinklers', 'mdi:sprinkler', 'Sprinklers'],
-      ['energy', 'mdi:lightning-bolt', 'Energy']
-    ].map(([id, icon, label]) => {
-      const configured = homeStatusObject(this._config.context_actions[id]);
-      const config = !configured.type && configured.path
-        ? { ...configured, type: 'navigate' }
-        : configured;
-      return {
-        id,
-        label,
-        ...this._contextActionState(id, icon, data),
-        config
-      };
-    }).filter(action => action.config.type);
+      [
+        'security',
+        'mdi:shield-home',
+        'Security'
+      ],
+
+      [
+        'lighting',
+        'mdi:home-lightbulb',
+        'Lighting'
+      ],
+
+      [
+        'cameras',
+        'mdi:cctv',
+        'Cameras'
+      ],
+
+      [
+        'calendar',
+        'mdi:calendar',
+        'Calendar'
+      ],
+
+      [
+        'music',
+        'mdi:music',
+        'Music'
+      ],
+
+      [
+        'location',
+        'mdi:map-marker',
+        'Location'
+      ],
+
+      [
+        'movies',
+        'mdi:movie-open',
+        'Movies'
+      ],
+
+      [
+        'sprinklers',
+        'mdi:sprinkler',
+        'Sprinklers'
+      ],
+
+      [
+        'energy',
+        'mdi:lightning-bolt',
+        'Energy'
+      ]
+    ]
+      .map(
+        (
+          [
+            id,
+            icon,
+            label
+          ]
+        ) => {
+          const configured =
+            homeStatusObject(
+              this._config
+                .context_actions[
+                  id
+                ]
+            );
+
+          const config =
+            !configured.type &&
+            configured.path
+              ? {
+                  ...configured,
+                  type:
+                    'navigate'
+                }
+              : configured;
+
+          return {
+            id,
+            label,
+
+            ...this._contextActionState(
+              id,
+              icon,
+              data
+            ),
+
+            config
+          };
+        }
+      )
+      .filter(
+        action =>
+          action.config.type
+      );
   }
 
-  _contextActionState(id, defaultIcon, data) {
-    const neutral = (state, icon = defaultIcon) => ({ state, icon, tone: 'neutral', active: false });
-    if (id === 'security') {
-      const entity = this._config.context_actions?.security?.entity
-        || this._config.utility_header.security_entity;
-      const value = String(this._state(entity)?.state || 'unavailable').toLowerCase();
-      const states = {
-        disarmed: ['Alarm off', 'mdi:shield-off-outline', 'neutral'],
-        armed_home: ['Alarm armed home', 'mdi:shield-home', 'success'],
-        armed_away: ['Alarm armed away', 'mdi:shield-lock', 'success'],
-        armed_night: ['Alarm armed night', 'mdi:shield-moon', 'success'],
-        arming: ['Alarm arming', 'mdi:shield-sync', 'attention'],
-        pending: ['Entry Delay', 'mdi:shield-alert', 'critical'],
-        triggered: ['Alarm triggered', 'mdi:shield-alert', 'critical']
-      };
-      const [state, icon, tone] = states[value] || ['Unavailable', 'mdi:shield-off-outline', 'neutral'];
-      return { state, icon, tone, active: tone !== 'neutral' };
-    }
-    if (id === 'lighting') {
-      const configured = this._config.context_actions?.lighting?.entities;
-      const entities = Array.isArray(configured) ? configured : [];
-      if (!entities.length) return neutral('Not configured');
-      const count = entities.filter(entity => this._state(entity)?.state === 'on').length;
-      return {
-        state: count ? `${count} Light${count === 1 ? '' : 's'} On` : 'All Lights Off',
-        icon: count ? 'mdi:lightbulb-group' : 'mdi:lightbulb-group-outline',
-        tone: count ? 'attention' : 'neutral',
-        active: count > 0
-      };
-    }
-    if (id === 'cameras') {
-      const item = (data?.active || []).find(candidate =>
-        candidate?.category === 'cameras' || candidate?.event_type === 'camera_offline'
-      );
-      return item
-        ? { state: item.message || item.title || 'Camera Offline', icon: 'mdi:cctv-off', tone: 'critical', active: true }
-        : neutral('All Online', 'mdi:cctv');
-    }
-    if (id === 'calendar') {
-      const item = [...(data?.left || []), ...(data?.right || []), ...(data?.bottom || [])].find(candidate => {
-        const entity = String(candidate?.entity_id || '');
-        return candidate?.category === 'schedule'
-          && !/sprinkler|watering|garbage|recycl|waste/i.test(`${entity} ${candidate?.title || ''}`);
+  _contextActionState(
+    id,
+    defaultIcon,
+    data
+  ) {
+    const neutral =
+      (
+        state,
+        icon =
+          defaultIcon
+      ) => ({
+        state,
+        icon,
+        tone:
+          'neutral',
+
+        active:
+          false
       });
-      const state = item?.title || item?.message || 'Open Calendar';
-      return item
-        ? { state, icon: 'mdi:calendar-clock', tone: 'information', active: true }
-        : neutral(state);
-    }
-    if (id === 'music') {
-      const entity = this._config.context_actions?.music?.entity
-        || this._config.utility_header.music_entity;
-      const player = this._state(entity);
-      const value = String(player?.state || 'unavailable').toLowerCase();
-      if (value === 'playing') {
-        return {
-          state: player?.attributes?.media_title || 'Playing',
-          icon: 'mdi:music-circle',
-          tone: 'success',
-          active: true
-        };
-      }
-      if (value === 'paused') return { state: 'Paused', icon: 'mdi:pause-circle', tone: 'information', active: true };
-      return neutral(value === 'unavailable' ? 'Unavailable' : 'Idle');
-    }
-    if (id === 'location') {
-      const people = Object.values(this._hass?.states || {}).filter(state =>
-        state?.entity_id?.startsWith('person.') && !['unknown', 'unavailable'].includes(state.state)
-      );
-      if (!people.length) return neutral('Unavailable');
-      const home = people.filter(state => state.state === 'home').length;
+
+    if (id === 'security') {
+      const entity =
+        this._config
+          .context_actions
+          ?.security
+          ?.entity ||
+        this._config
+          .utility_header
+          .security_entity;
+
+      const value =
+        String(
+          this._state(entity)
+            ?.state ||
+          'unavailable'
+        ).toLowerCase();
+
+      const states = {
+        disarmed: [
+          'Alarm off',
+          'mdi:shield-off-outline',
+          'neutral'
+        ],
+
+        armed_home: [
+          'Alarm armed home',
+          'mdi:shield-home',
+          'success'
+        ],
+
+        armed_away: [
+          'Alarm armed away',
+          'mdi:shield-lock',
+          'success'
+        ],
+
+        armed_night: [
+          'Alarm armed night',
+          'mdi:shield-moon',
+          'success'
+        ],
+
+        arming: [
+          'Alarm arming',
+          'mdi:shield-sync',
+          'attention'
+        ],
+
+        pending: [
+          'Entry Delay',
+          'mdi:shield-alert',
+          'critical'
+        ],
+
+        triggered: [
+          'Alarm triggered',
+          'mdi:shield-alert',
+          'critical'
+        ]
+      };
+
+      const [
+        state,
+        icon,
+        tone
+      ] =
+        states[value] || [
+          'Unavailable',
+          'mdi:shield-off-outline',
+          'neutral'
+        ];
+
       return {
-        state: home === people.length
-          ? 'Everyone Home'
-          : home === 0
-            ? 'Everyone Away'
-            : `${home} of ${people.length} Home`,
-        icon: home === people.length ? 'mdi:home-account' : 'mdi:map-marker-account',
-        tone: home === people.length ? 'neutral' : 'information',
-        active: home !== people.length
+        state,
+        icon,
+        tone,
+
+        active:
+          tone !==
+          'neutral'
       };
     }
-    if (id === 'sprinklers') {
-      const configured = this._config.context_actions?.sprinklers?.entities;
-      const entities = Array.isArray(configured) ? configured : [];
-      if (!entities.length) return neutral('Not configured');
-      const watering = entities.filter(entity =>
-        ['open', 'opening', 'on'].includes(String(this._state(entity)?.state || '').toLowerCase())
-      );
-      if (watering.length) {
+
+    if (
+      id === 'lighting'
+    ) {
+      const configured =
+        this._config
+          .context_actions
+          ?.lighting
+          ?.entities;
+
+      const entities =
+        Array.isArray(
+          configured
+        )
+          ? configured
+          : [];
+
+      if (
+        !entities.length
+      ) {
+        return neutral(
+          'Not configured'
+        );
+      }
+
+      const count =
+        entities.filter(
+          entity =>
+            this._state(entity)
+              ?.state ===
+            'on'
+        ).length;
+
+      return {
+        state:
+          count
+            ? `${count} Light${count === 1 ? '' : 's'} On`
+            : 'All Lights Off',
+
+        icon:
+          count
+            ? 'mdi:lightbulb-group'
+            : 'mdi:lightbulb-group-outline',
+
+        tone:
+          count
+            ? 'attention'
+            : 'neutral',
+
+        active:
+          count > 0
+      };
+    }
+
+    if (
+      id === 'cameras'
+    ) {
+      const item =
+        (
+          data?.active ||
+          []
+        ).find(
+          candidate =>
+            candidate?.category ===
+              'cameras' ||
+            candidate?.event_type ===
+              'camera_offline'
+        );
+
+      return item
+        ? {
+            state:
+              item.message ||
+              item.title ||
+              'Camera Offline',
+
+            icon:
+              'mdi:cctv-off',
+
+            tone:
+              'critical',
+
+            active:
+              true
+          }
+        : neutral(
+            'All Online',
+            'mdi:cctv'
+          );
+    }
+
+    if (
+      id === 'calendar'
+    ) {
+      const item =
+        [
+          ...(data?.left || []),
+          ...(data?.right || []),
+          ...(data?.bottom || [])
+        ].find(
+          candidate =>
+            candidate?.utility_role ===
+              'calendar'
+        );
+
+      const state =
+        item?.title ||
+        item?.message ||
+        'Open Calendar';
+
+      return item
+        ? {
+            state,
+
+            icon:
+              'mdi:calendar-clock',
+
+            tone:
+              'information',
+
+            active:
+              true
+          }
+        : neutral(
+            state
+          );
+    }
+
+    if (
+      id === 'music'
+    ) {
+      const entity =
+        this._config
+          .context_actions
+          ?.music
+          ?.entity ||
+        this._config
+          .utility_header
+          .music_entity;
+
+      const player =
+        this._state(entity);
+
+      const value =
+        String(
+          player?.state ||
+          'unavailable'
+        ).toLowerCase();
+
+      if (
+        value ===
+        'playing'
+      ) {
         return {
-          state: watering.length === 1 ? 'Watering' : `Watering ${watering.length} Zones`,
-          icon: 'mdi:sprinkler-variant',
-          tone: 'information',
-          active: true
+          state:
+            player
+              ?.attributes
+              ?.media_title ||
+            'Playing',
+
+          icon:
+            'mdi:music-circle',
+
+          tone:
+            'success',
+
+          active:
+            true
         };
       }
-      const rainDelay = this._config.context_actions?.sprinklers?.rain_delay_entity;
-      if (rainDelay && this._state(rainDelay)?.state === 'on') {
-        return { state: 'Rain Delay', icon: 'mdi:weather-rainy', tone: 'attention', active: true };
+
+      if (
+        value ===
+        'paused'
+      ) {
+        return {
+          state:
+            'Paused',
+
+          icon:
+            'mdi:pause-circle',
+
+          tone:
+            'information',
+
+          active:
+            true
+        };
       }
-      return neutral('Idle');
+
+      return neutral(
+        value ===
+        'unavailable'
+          ? 'Unavailable'
+          : 'Idle'
+      );
     }
-    if (id === 'energy') return neutral('Open Energy');
-    if (id === 'movies') return neutral('Browse');
-    return neutral('Open');
+
+    if (
+      id === 'location'
+    ) {
+      const people =
+        Object.values(
+          this._hass?.states ||
+          {}
+        ).filter(
+          state =>
+            state?.entity_id
+              ?.startsWith(
+                'person.'
+              ) &&
+            ![
+              'unknown',
+              'unavailable'
+            ].includes(
+              state.state
+            )
+        );
+
+      if (
+        !people.length
+      ) {
+        return neutral(
+          'Unavailable'
+        );
+      }
+
+      const home =
+        people.filter(
+          state =>
+            state.state ===
+            'home'
+        ).length;
+
+      return {
+        state:
+          home ===
+          people.length
+            ? 'Everyone Home'
+            : home === 0
+              ? 'Everyone Away'
+              : `${home} of ${people.length} Home`,
+
+        icon:
+          home ===
+          people.length
+            ? 'mdi:home-account'
+            : 'mdi:map-marker-account',
+
+        tone:
+          home ===
+          people.length
+            ? 'neutral'
+            : 'information',
+
+        active:
+          home !==
+          people.length
+      };
+    }
+
+    if (
+      id ===
+      'sprinklers'
+    ) {
+      const configured =
+        this._config
+          .context_actions
+          ?.sprinklers
+          ?.entities;
+
+      const entities =
+        Array.isArray(
+          configured
+        )
+          ? configured
+          : [];
+
+      if (
+        !entities.length
+      ) {
+        return neutral(
+          'Not configured'
+        );
+      }
+
+      const watering =
+        entities.filter(
+          entity =>
+            [
+              'open',
+              'opening',
+              'on'
+            ].includes(
+              String(
+                this._state(
+                  entity
+                )?.state ||
+                ''
+              ).toLowerCase()
+            )
+        );
+
+      if (
+        watering.length
+      ) {
+        return {
+          state:
+            watering.length ===
+            1
+              ? 'Watering'
+              : `Watering ${watering.length} Zones`,
+
+          icon:
+            'mdi:sprinkler-variant',
+
+          tone:
+            'information',
+
+          active:
+            true
+        };
+      }
+
+      const rainDelay =
+        this._config
+          .context_actions
+          ?.sprinklers
+          ?.rain_delay_entity;
+
+      if (
+        rainDelay &&
+        this._state(
+          rainDelay
+        )?.state ===
+          'on'
+      ) {
+        return {
+          state:
+            'Rain Delay',
+
+          icon:
+            'mdi:weather-rainy',
+
+          tone:
+            'attention',
+
+          active:
+            true
+        };
+      }
+
+      return neutral(
+        'Idle'
+      );
+    }
+
+    if (
+      id === 'energy'
+    ) {
+      return neutral(
+        'Open Energy'
+      );
+    }
+
+    if (
+      id === 'movies'
+    ) {
+      return neutral(
+        'Browse'
+      );
+    }
+
+    return neutral(
+      'Open'
+    );
   }
 
   _event(item, active) {
-    const category = item?.category || 'Unknown';
-    const stamp = this._timestamp(item, active);
-    const id = item?.id || `${item?.event_type || 'event'}|${item?.message || ''}|${item?.created_at || ''}`;
-    const expanded = this._expandedEventIds.has(id);
-    const status = item?.active === true ? 'Active' : item?.active === false ? 'Resolved' : '';
-    const detail = item?.detail || item?.details || item?.description || '';
-    const entityId = item?.entity_id || item?.entity || '';
-    const fields = [
-      ['Time', stamp ? `${active ? 'Detected' : 'Resolved'} ${this._time(stamp)}` : ''],
-      ['Relative', stamp ? this._relative(stamp) : ''],
-      ['Status', status], ['Category', category], ['Device', item?.device || ''], ['Area', item?.area || ''], ['Details', detail]
-    ].filter(([, value]) => value !== '');
+    const category =
+      item?.category ||
+      'Unknown';
+
+    const stamp =
+      this._timestamp(
+        item,
+        active
+      );
+
+    const relativeStamp =
+      item?.timestamp_mode === 'relative'
+        ? stamp
+        : null;
+
+    const id =
+      item?.id ||
+      `${item?.event_type || 'event'}|${item?.message || ''}|${item?.created_at || ''}`;
+
+    const expanded =
+      this._expandedEventIds.has(
+        id
+      );
+
+    const status =
+      item?.active === true
+        ? 'Active'
+        : item?.active === false
+          ? 'Resolved'
+          : '';
+
+    const detail =
+      item?.detail ||
+      item?.details ||
+      item?.description ||
+      '';
+
+    const entityId =
+      item?.entity_id ||
+      item?.entity ||
+      '';
+
+    const fields =
+      [
+        [
+          'Time',
+          stamp
+            ? `${active ? 'Detected' : 'Resolved'} ${this._time(stamp)}`
+            : ''
+        ],
+
+        [
+          'Relative',
+          relativeStamp
+            ? this._relative(relativeStamp)
+            : ''
+        ],
+
+        [
+          'Status',
+          status
+        ],
+
+        [
+          'Category',
+          category
+        ],
+
+        [
+          'Device',
+          item?.device ||
+          ''
+        ],
+
+        [
+          'Area',
+          item?.area ||
+          ''
+        ],
+
+        [
+          'Details',
+          detail
+        ]
+      ].filter(
+        (
+          [, value]
+        ) =>
+          value !== ''
+      );
+
     return `<article class="event ${expanded ? 'expanded' : ''}" data-id="${this._escape(id)}" style="--event-color:${this._color(category)}">
-      <button class="event-head" type="button" aria-expanded="${expanded}"><span class="event-icon"><ha-icon icon="${this._escape(item?.icon || 'mdi:bell-outline')}"></ha-icon></span><span class="event-copy"><strong>${this._escape(this._label(item))}</strong><small>${this._escape(category)}${stamp ? ` • ${this._escape(this._relative(stamp))}` : ''}</small></span><ha-icon class="chevron" icon="mdi:chevron-right"></ha-icon></button>
+      <button class="event-head" type="button" aria-expanded="${expanded}"><span class="event-icon"><ha-icon icon="${this._escape(item?.icon || 'mdi:bell-outline')}"></ha-icon></span><span class="event-copy"><strong>${this._escape(this._label(item))}</strong><small>${this._escape(category)}${relativeStamp ? ` • ${this._escape(this._relative(relativeStamp))}` : ''}</small></span><ha-icon class="chevron" icon="mdi:chevron-right"></ha-icon></button>
       <div class="event-details">${fields.map(([label, value]) => `<div class="field"><small>${this._escape(label)}</small><span>${this._escape(value)}</span></div>`).join('')}${entityId ? `<button class="open-device" type="button" data-entity="${this._escape(entityId)}"><ha-icon icon="mdi:open-in-new"></ha-icon>Open Device</button>` : ''}</div>
     </article>`;
   }
@@ -2362,7 +5860,6 @@ class HomeStatusCard extends HTMLElement {
   width:40px !important; height:40px !important; --mdc-icon-size:40px !important;
 }
 
-
 /* User-configurable presentation contract. These rules intentionally come last. */
 :host([data-profile="auto"]) .ticker,
 :host([data-profile="tablet"]) .ticker,
@@ -2462,103 +5959,373 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _stopZoneRotations() {
-    Object.values(this._zoneTimers).forEach(timer => clearInterval(timer));
+    Object.values(
+      this._zoneTimers
+    ).forEach(
+      timer =>
+        clearInterval(timer)
+    );
+
     this._zoneTimers = {};
-    Object.values(this._zoneRenderTimers).forEach(timer => clearTimeout(timer));
-    this._zoneRenderTimers = {};
-    this._zoneRenderGenerations = { left: 0, right: 0 };
+
+    Object.values(
+      this._zoneRenderTimers
+    ).forEach(
+      timer =>
+        clearTimeout(timer)
+    );
+
+    this._zoneRenderTimers =
+      {};
+
+    this._zoneRenderGenerations = {
+      left: 0,
+      right: 0
+    };
   }
 
   _renderCategoryLayout(data) {
     this._ensureVisibilityObserver();
-    const configuredMedia = this._config.display?.media_enabled;
-    this._mediaEnabled = configuredMedia === undefined
-      ? data.display?.media_enabled !== false
-      : configuredMedia !== false;
+
+    const configuredMedia =
+      this._config.display
+        ?.media_enabled;
+
+    this._mediaEnabled =
+      configuredMedia === undefined
+        ? data.display
+            ?.media_enabled !==
+          false
+        : configuredMedia !==
+          false;
+
     if (data.unavailable) {
-      this.shadowRoot.innerHTML = `${this._styles()}<ha-card class="home-status-unavailable"><div><strong>Home Status is unavailable</strong><span>Choose a valid Home Status sensor in the card editor, or finish setting up the integration.</span><code>${this._escape(this._config.entity)}</code></div></ha-card>`;
+      this.shadowRoot.innerHTML =
+        `${this._styles()}<ha-card class="home-status-unavailable"><div><strong>Home Status is unavailable</strong><span>Choose a valid Home Status sensor in the card editor, or finish setting up the integration.</span><code>${this._escape(this._config.entity)}</code></div></ha-card>`;
+
       return;
     }
-    const utilityMarkup = this._utilityHeaderMarkup();
-    const visualEffect = this._weatherVisualEffect(data);
-    this.shadowRoot.innerHTML = `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
-    this._renderPhoneStatus(data);
-    this._weatherRenderer.mount(this.shadowRoot.querySelector('.ticker'));
-    this._weatherRenderer.setEffect(visualEffect);
-    this._weatherRenderer.setVisible(this._ambientVisible);
-    this._baseVisual = data.visual;
-    this._startZoneRotations(data);
+
+    const utilityMarkup =
+      this._utilityHeaderMarkup();
+
+    const visualEffect =
+      this._weatherVisualEffect(
+        data
+      );
+
+    this.shadowRoot.innerHTML =
+      `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
+
+    this._renderPhoneStatus(
+      data
+    );
+
+    this._weatherRenderer.mount(
+      this.shadowRoot.querySelector(
+        '.ticker'
+      )
+    );
+
+    this._weatherRenderer.setEffect(
+      visualEffect
+    );
+
+    this._weatherRenderer.setVisible(
+      this._ambientVisible
+    );
+
+    this._baseVisual =
+      data.visual;
+
+    this._startZoneRotations(
+      data
+    );
+
     this._syncDisplayedVisual();
-    this._renderFooterStream(this._buildFooterStream(data));
-    this._updateDrawer(data);
+
+    this._renderFooterStream(
+      this._buildFooterStream(
+        data
+      )
+    );
+
+    this._updateDrawer(
+      data
+    );
+
     this._bind();
     this._startUtilityClock();
   }
 
   _ensureVisibilityObserver() {
-    if (this._visibilityObserver || typeof IntersectionObserver === 'undefined') return;
-    this._visibilityObserver = new IntersectionObserver(entries => {
-      this._ambientVisible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0);
-      this._weatherRenderer.setVisible(this._ambientVisible);
-    }, { threshold: 0 });
-    this._visibilityObserver.observe(this);
+    if (
+      this._visibilityObserver ||
+      typeof IntersectionObserver ===
+        'undefined'
+    ) {
+      return;
+    }
+
+    this._visibilityObserver =
+      new IntersectionObserver(
+        entries => {
+          this._ambientVisible =
+            entries.some(
+              entry =>
+                entry.isIntersecting &&
+                entry.intersectionRatio >
+                  0
+            );
+
+          this._weatherRenderer.setVisible(
+            this._ambientVisible
+          );
+        },
+        {
+          threshold: 0
+        }
+      );
+
+    this._visibilityObserver.observe(
+      this
+    );
   }
 
   _weatherVisualEffect(data) {
-    if (this._config.animation.level === 'none') return 'none';
-    if (this._config.weather_effect !== 'auto') return this._config.weather_effect;
-    const items = [...(data.left || []), ...(data.right || []), ...(data.bottom || [])];
-    const weather = items.find(item => item?.category === 'weather' && item?.visual_effect);
-    return data.weather_visual_effect || weather?.visual_effect || 'none';
+    if (
+      this._config.animation
+        .level ===
+      'none'
+    ) {
+      return 'none';
+    }
+
+    if (
+      this._config
+        .weather_effect !==
+      'auto'
+    ) {
+      return (
+        this._config
+          .weather_effect
+      );
+    }
+
+    const items = [
+      ...(data.left || []),
+      ...(data.right || []),
+      ...(data.bottom || [])
+    ];
+
+    const weather =
+      items.find(
+        item =>
+          item?.category ===
+            'weather' &&
+          item?.visual_effect
+      );
+
+    return (
+      data.weather_visual_effect ||
+      weather?.visual_effect ||
+      'none'
+    );
   }
 
-  _updateDrawer(data = this._getRuntimeData()) {
-    const host = this.shadowRoot.querySelector('.drawer-host');
-    const ticker = this.shadowRoot.querySelector('.ticker');
-    if (!host || !ticker) return;
-    ticker.setAttribute('aria-expanded', String(this._drawerOpen));
+  _updateDrawer(
+    data =
+      this._getRuntimeData()
+  ) {
+    const host =
+      this.shadowRoot.querySelector(
+        '.drawer-host'
+      );
+
+    const ticker =
+      this.shadowRoot.querySelector(
+        '.ticker'
+      );
+
+    if (
+      !host ||
+      !ticker
+    ) {
+      return;
+    }
+
+    ticker.setAttribute(
+      'aria-expanded',
+      String(
+        this._drawerOpen
+      )
+    );
+
     if (!this._drawerOpen) {
-      host.classList.remove('drawer-active');
-      if (!host.querySelector('.context-bar') && !this.hasAttribute('data-drawer-open')) return;
-      let finished = false;
-      const finishClose = () => {
-        if (finished || this._drawerOpen) return;
-        finished = true;
-        if (this._drawerCloseTimer) {
-          clearTimeout(this._drawerCloseTimer);
-          this._drawerCloseTimer = null;
-        }
-        if (this._drawerOpen) return;
-        host.innerHTML = '';
-        this._drawerSignature = '';
-        this.removeAttribute('data-drawer-open');
-        this.style.removeProperty('--home-status-drawer-inline-size');
-      };
-      host.addEventListener('transitionend', finishClose, { once: true });
-      this._drawerCloseTimer = setTimeout(finishClose, 620);
-      return;
-    }
-    const actions = this._contextActions(data);
-    const signature = actions.map(action => `${action.id}|${action.label}`).join('||');
-    if (signature === this._drawerSignature && host.querySelector('.context-bar')) {
-      this._updateContextActionStates(actions);
-      if (!host.classList.contains('drawer-active')) {
-        const panel = host.querySelector('.context-bar');
-        if (panel) void panel.offsetHeight;
-        requestAnimationFrame(() => {
-          if (this._drawerOpen) host.classList.add('drawer-active');
-        });
+      host.classList.remove(
+        'drawer-active'
+      );
+
+      if (
+        !host.querySelector(
+          '.context-bar'
+        ) &&
+        !this.hasAttribute(
+          'data-drawer-open'
+        )
+      ) {
+        return;
       }
+
+      let finished =
+        false;
+
+      const finishClose =
+        () => {
+          if (
+            finished ||
+            this._drawerOpen
+          ) {
+            return;
+          }
+
+          finished =
+            true;
+
+          if (
+            this._drawerCloseTimer
+          ) {
+            clearTimeout(
+              this._drawerCloseTimer
+            );
+
+            this._drawerCloseTimer =
+              null;
+          }
+
+          if (
+            this._drawerOpen
+          ) {
+            return;
+          }
+
+          host.innerHTML =
+            '';
+
+          this._drawerSignature =
+            '';
+
+          this.removeAttribute(
+            'data-drawer-open'
+          );
+
+          this.style.removeProperty(
+            '--home-status-drawer-inline-size'
+          );
+        };
+
+      host.addEventListener(
+        'transitionend',
+        finishClose,
+        {
+          once: true
+        }
+      );
+
+      this._drawerCloseTimer =
+        setTimeout(
+          finishClose,
+          620
+        );
+
       return;
     }
-    this._drawerSignature = signature;
-    host.classList.remove('drawer-active');
-    host.innerHTML = `<section class="context-bar" aria-label="Home controls">${actions.map(action => this._contextActionMarkup(action)).join('')}</section>`;
-    const panel = host.querySelector('.context-bar');
-    if (panel) void panel.offsetHeight;
-    requestAnimationFrame(() => {
-      if (this._drawerOpen) host.classList.add('drawer-active');
-    });
+
+    const actions =
+      this._contextActions(
+        data
+      );
+
+    const signature =
+      actions
+        .map(
+          action =>
+            `${action.id}|${action.label}`
+        )
+        .join('||');
+
+    if (
+      signature ===
+        this._drawerSignature &&
+      host.querySelector(
+        '.context-bar'
+      )
+    ) {
+      this._updateContextActionStates(
+        actions
+      );
+
+      if (
+        !host.classList.contains(
+          'drawer-active'
+        )
+      ) {
+        const panel =
+          host.querySelector(
+            '.context-bar'
+          );
+
+        if (panel) {
+          void panel.offsetHeight;
+        }
+
+        requestAnimationFrame(
+          () => {
+            if (
+              this._drawerOpen
+            ) {
+              host.classList.add(
+                'drawer-active'
+              );
+            }
+          }
+        );
+      }
+
+      return;
+    }
+
+    this._drawerSignature =
+      signature;
+
+    host.classList.remove(
+      'drawer-active'
+    );
+
+    host.innerHTML =
+      `<section class="context-bar" aria-label="Home controls">${actions.map(action => this._contextActionMarkup(action)).join('')}</section>`;
+
+    const panel =
+      host.querySelector(
+        '.context-bar'
+      );
+
+    if (panel) {
+      void panel.offsetHeight;
+    }
+
+    requestAnimationFrame(
+      () => {
+        if (
+          this._drawerOpen
+        ) {
+          host.classList.add(
+            'drawer-active'
+          );
+        }
+      }
+    );
+
     this._bindEventsOnly();
   }
 
@@ -2566,85 +6333,245 @@ class HomeStatusCard extends HTMLElement {
     return `<button class="context-action tone-${this._escape(action.tone)}${action.active ? ' active' : ''}" type="button" data-context-action="${this._escape(action.id)}" aria-label="${this._escape(`${action.label}: ${action.state}`)}"><ha-icon icon="${this._escape(action.icon)}"></ha-icon><span class="context-action-copy"><strong>${this._escape(action.label)}</strong><small>${this._escape(action.state)}</small></span></button>`;
   }
 
-  _updateContextActionStates(actions) {
-    actions.forEach(action => {
-      const button = [...this.shadowRoot.querySelectorAll('.context-action')]
-        .find(candidate => candidate.dataset.contextAction === action.id);
-      if (!button) return;
-      const className = `context-action tone-${action.tone}${action.active ? ' active' : ''}`;
-      if (button.className !== className) button.className = className;
-      const icon = button.querySelector('ha-icon');
-      if (icon?.getAttribute('icon') !== action.icon) icon?.setAttribute('icon', action.icon);
-      const label = button.querySelector('.context-action-copy strong');
-      if (label && label.textContent !== action.label) label.textContent = action.label;
-      const state = button.querySelector('.context-action-copy small');
-      if (state && state.textContent !== action.state) state.textContent = action.state;
-      button.setAttribute('aria-label', `${action.label}: ${action.state}`);
-    });
+  _updateContextActionStates(
+    actions
+  ) {
+    actions.forEach(
+      action => {
+        const button =
+          [
+            ...this.shadowRoot.querySelectorAll(
+              '.context-action'
+            )
+          ].find(
+            candidate =>
+              candidate.dataset
+                .contextAction ===
+              action.id
+          );
+
+        if (!button) return;
+
+        const className =
+          `context-action tone-${action.tone}${action.active ? ' active' : ''}`;
+
+        if (
+          button.className !==
+          className
+        ) {
+          button.className =
+            className;
+        }
+
+        const icon =
+          button.querySelector(
+            'ha-icon'
+          );
+
+        if (
+          icon?.getAttribute(
+            'icon'
+          ) !== action.icon
+        ) {
+          icon?.setAttribute(
+            'icon',
+            action.icon
+          );
+        }
+
+        const label =
+          button.querySelector(
+            '.context-action-copy strong'
+          );
+
+        if (
+          label &&
+          label.textContent !==
+          action.label
+        ) {
+          label.textContent =
+            action.label;
+        }
+
+        const state =
+          button.querySelector(
+            '.context-action-copy small'
+          );
+
+        if (
+          state &&
+          state.textContent !==
+          action.state
+        ) {
+          state.textContent =
+            action.state;
+        }
+
+        button.setAttribute(
+          'aria-label',
+          `${action.label}: ${action.state}`
+        );
+      }
+    );
   }
 
   _toggleDrawer() {
-    const opening = !this._drawerOpen;
+    const opening =
+      !this._drawerOpen;
+
     if (opening) {
-      if (this._drawerCloseTimer) {
-        clearTimeout(this._drawerCloseTimer);
-        this._drawerCloseTimer = null;
+      if (
+        this._drawerCloseTimer
+      ) {
+        clearTimeout(
+          this._drawerCloseTimer
+        );
+
+        this._drawerCloseTimer =
+          null;
       }
-      const inlineSize = this.getBoundingClientRect().width;
-      if (inlineSize > 0) {
-        this.style.setProperty('--home-status-drawer-inline-size', `${inlineSize}px`);
-        this.setAttribute('data-drawer-open', '');
+
+      const inlineSize =
+        this.getBoundingClientRect()
+          .width;
+
+      if (
+        inlineSize > 0
+      ) {
+        this.style.setProperty(
+          '--home-status-drawer-inline-size',
+          `${inlineSize}px`
+        );
+
+        this.setAttribute(
+          'data-drawer-open',
+          ''
+        );
       }
     }
-    this._drawerOpen = opening;
-    this._rotationPaused = this._drawerOpen;
+
+    this._drawerOpen =
+      opening;
+
+    // Opening or closing the drawer is navigation, not a reason to stop
+    // any of the presentation streams. Clear a pointer/focus pause that may
+    // have been set by the same interaction that toggled the drawer.
+    this._rotationPaused =
+      false;
+
     this._updateDrawer();
   }
 
   render() {
-    if (!this._config || !this._hass) return;
-    const data = this._getRuntimeData();
-    this._applyPresentationPreferences(data);
-    this._renderCategoryLayout(data);
+    if (
+      !this._config ||
+      !this._hass
+    ) {
+      return;
+    }
+
+    const data =
+      this._getRuntimeData();
+
+    this._applyPresentationPreferences(
+      data
+    );
+
+    this._renderCategoryLayout(
+      data
+    );
   }
 
   _update() {
-    const data = this._getRuntimeData();
-    this._applyPresentationPreferences(data);
-    if (!this.shadowRoot.querySelector('.ticker')) return this.render();
-    this._renderPhoneStatus(data);
-    const tickerButton = this.shadowRoot.querySelector('.ticker');
-    const configuredMedia = this._config.display?.media_enabled;
-    const mediaEnabled = configuredMedia === undefined
-      ? data.display?.media_enabled !== false
-      : configuredMedia !== false;
-    if (mediaEnabled !== this._mediaEnabled) this._zoneSignatures = { left: '', right: '' };
-    this._mediaEnabled = mediaEnabled;
-    const visualEffect = this._weatherVisualEffect(data);
-    tickerButton.className = `ticker priority-${this._escape(data.priority)}`;
-    this._weatherRenderer.mount(tickerButton);
-    this._weatherRenderer.setEffect(visualEffect);
-    this._weatherRenderer.setVisible(this._ambientVisible);
-    this._baseVisual = data.visual;
+    const data =
+      this._getRuntimeData();
+
+    this._applyPresentationPreferences(
+      data
+    );
+
+    if (
+      !this.shadowRoot.querySelector(
+        '.ticker'
+      )
+    ) {
+      return this.render();
+    }
+
+    this._renderPhoneStatus(
+      data
+    );
+
+    const tickerButton =
+      this.shadowRoot.querySelector(
+        '.ticker'
+      );
+
+    const configuredMedia =
+      this._config.display
+        ?.media_enabled;
+
+    const mediaEnabled =
+      configuredMedia === undefined
+        ? data.display
+            ?.media_enabled !==
+          false
+        : configuredMedia !==
+          false;
+
+    if (
+      mediaEnabled !==
+      this._mediaEnabled
+    ) {
+      this._zoneSignatures = {
+        left: '',
+        right: ''
+      };
+    }
+
+    this._mediaEnabled =
+      mediaEnabled;
+
+    const visualEffect =
+      this._weatherVisualEffect(
+        data
+      );
+
+    tickerButton.className =
+      `ticker priority-${this._escape(data.priority)}`;
+
+    this._weatherRenderer.mount(
+      tickerButton
+    );
+
+    this._weatherRenderer.setEffect(
+      visualEffect
+    );
+
+    this._weatherRenderer.setVisible(
+      this._ambientVisible
+    );
+
+    this._baseVisual =
+      data.visual;
+
     this._updateUtilityHeader();
-    this._startZoneRotations(data);
+
+    this._startZoneRotations(
+      data
+    );
+
     this._syncDisplayedVisual();
-    this._renderFooterStream(this._buildFooterStream(data));
 
-    this._updateDrawer(data);
-  }
+    this._renderFooterStream(
+      this._buildFooterStream(
+        data
+      )
+    );
 
-  _setFooterDebug(changes = {}) {
-    return;
-    this._footerDebugState = { ...this._footerDebugState, ...changes };
-    const panel = this.shadowRoot?.querySelector('.footer-debug-panel');
-    if (!panel) return;
-    const state = this._footerDebugState;
-    const last = this._footerLastRebuild;
-    const lastMarkup = last
-      ? `<div class="footer-debug-last"><strong>Last Footer Rebuild</strong><span>${this._escape(last.timestamp)} · ${this._escape(last.item)}.${this._escape(last.field)}: ${this._escape(last.previousValue)} → ${this._escape(last.newValue)}</span><span>DOM ${last.domRebuilds} · Animation ${last.animationInits} · Width ${this._escape(last.widthBefore)} → ${this._escape(last.widthAfter)}</span><span>Previous signature: ${this._escape(last.previousSignature)}</span><span>New signature: ${this._escape(last.newSignature)}</span></div>`
-      : '<div class="footer-debug-last"><strong>Last Footer Rebuild</strong><span>none recorded</span></div>';
-    panel.innerHTML = `<div class="footer-debug-live"><strong>Footer diagnostic</strong><span>Reason: ${this._escape(state.reason)}</span><span>Signature: ${this._escape(state.signature)}</span><span>Width: ${this._escape(state.width)} (${this._escape(state.widthChange)})</span><span>Animation: ${this._escape(state.animation)}</span><span>DOM rebuilds: ${state.domRebuilds} · Animation inits: ${state.animationRestarts}</span></div>${lastMarkup}`;
+    this._updateDrawer(
+      data
+    );
   }
 
   _bind() {
@@ -2652,254 +6579,970 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _bindEventsOnly() {
-    const security = this.shadowRoot.querySelector('[data-utility-security]');
-    if (security && !security.dataset.bound) {
-      security.dataset.bound = 'true';
-      security.addEventListener('click', event => {
-        event.stopPropagation();
-        const configured = this._config.context_actions.security;
-        this._navigateUtility(
-          configured?.type === 'navigate' && configured.path
-            ? configured.path
-            : this._config.utility_header.security_path
-        );
-      });
-    }
-    const musicSummary = this.shadowRoot.querySelector('[data-utility-music-nav]');
-    if (musicSummary && !musicSummary.dataset.bound) {
-      musicSummary.dataset.bound = 'true';
-      musicSummary.addEventListener('click', event => {
-        event.stopPropagation();
-        const configured = this._config.context_actions.music;
-        this._navigateUtility(
-          configured?.type === 'navigate' && configured.path
-            ? configured.path
-            : this._config.utility_header.music_path
-        );
-      });
-    }
-    const musicArtwork = musicSummary?.querySelector('[data-music-art]');
-    if (musicArtwork && !musicArtwork.dataset.bound) {
-      musicArtwork.dataset.bound = 'true';
-      musicArtwork.addEventListener('error', () => {
-        musicArtwork.hidden = true;
-        musicArtwork.closest('.utility-music-art')?.classList.remove('has-art');
-      });
-    }
-    this.shadowRoot.querySelectorAll('[data-music-command]').forEach(button => {
-      if (button.dataset.bound) return;
-      button.dataset.bound = 'true';
-      button.addEventListener('click', event => {
-        event.stopPropagation();
-        const service = button.dataset.musicCommand;
-        const entityId = this._config.utility_header.music_entity;
-        if (service && entityId) {
-          this._hass?.callService('media_player', service, { entity_id: entityId });
+    const security =
+      this.shadowRoot.querySelector(
+        '[data-utility-security]'
+      );
+
+    if (
+      security &&
+      !security.dataset.bound
+    ) {
+      security.dataset.bound =
+        'true';
+
+      security.addEventListener(
+        'click',
+        event => {
+          event.stopPropagation();
+
+          const configured =
+            this._config
+              .context_actions
+              .security;
+
+          this._navigateUtility(
+            configured?.type ===
+              'navigate' &&
+            configured.path
+              ? configured.path
+              : this._config
+                  .utility_header
+                  .security_path
+          );
         }
-      });
-    });
-    const volume = this.shadowRoot.querySelector('.music-volume');
-    if (volume && !volume.dataset.bound) {
-      volume.dataset.bound = 'true';
-      volume.addEventListener('input', event => {
-        event.stopPropagation();
-        const value = Number(volume.value);
-        this.shadowRoot.querySelector('.music-volume-icon')?.setAttribute(
-          'icon',
-          value === 0 ? 'mdi:volume-off' : value < .5 ? 'mdi:volume-medium' : 'mdi:volume-high'
-        );
-        volume.setAttribute('aria-valuetext', `${Math.round(value * 100)} percent`);
-      });
-      volume.addEventListener('change', event => {
-        event.stopPropagation();
-        this._hass?.callService('media_player', 'volume_set', {
-          entity_id: this._config.utility_header.music_entity,
-          volume_level: Number(volume.value)
-        });
-      });
-      volume.addEventListener('click', event => event.stopPropagation());
+      );
     }
-    const source = this.shadowRoot.querySelector('[data-music-source]');
-    if (source && !source.dataset.bound) {
-      source.dataset.bound = 'true';
-      source.addEventListener('click', event => event.stopPropagation());
-      source.addEventListener('change', event => {
-        event.stopPropagation();
-        if (!source.value) return;
-        this._hass?.callService('media_player', 'select_source', {
-          entity_id: this._config.utility_header.music_entity,
-          source: source.value
-        });
-      });
-    }
-    const ticker = this.shadowRoot.querySelector('.ticker');
-    if (ticker && !ticker.dataset.bound) {
-      ticker.dataset.bound = 'true';
-      ticker.addEventListener('mouseenter', () => {
-        if (this._config.pause_on_hover) this._rotationPaused = true;
-      });
-      ticker.addEventListener('mouseleave', () => { this._rotationPaused = false; });
-      ticker.addEventListener('focusin', () => { this._rotationPaused = this._drawerOpen; });
-      ticker.addEventListener('focusout', () => { this._rotationPaused = false; });
-      ticker.addEventListener('touchstart', () => { this._rotationPaused = true; }, { passive: true });
-      ticker.addEventListener('touchend', () => { this._rotationPaused = false; }, { passive: true });
-      ticker.addEventListener('click', () => {
-        if (this._config.home_status_visibility.drawer) this._toggleDrawer();
-      });
-      ticker.addEventListener('keydown', event => {
-        if (this._config.home_status_visibility.drawer && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          this._toggleDrawer();
+
+    const musicSummary =
+      this.shadowRoot.querySelector(
+        '[data-utility-music-nav]'
+      );
+
+    if (
+      musicSummary &&
+      !musicSummary.dataset.bound
+    ) {
+      musicSummary.dataset.bound =
+        'true';
+
+      musicSummary.addEventListener(
+        'click',
+        event => {
+          event.stopPropagation();
+
+          const configured =
+            this._config
+              .context_actions
+              .music;
+
+          this._navigateUtility(
+            configured?.type ===
+              'navigate' &&
+            configured.path
+              ? configured.path
+              : this._config
+                  .utility_header
+                  .music_path
+          );
         }
-      });
+      );
     }
-    this.shadowRoot.querySelectorAll('.event-head').forEach(button => button.addEventListener('click', event => {
-      event.stopPropagation();
-      const article = button.closest('.event');
-      const id = article.dataset.id;
-      const isExpanded = this._expandedEventIds.has(id);
-      isExpanded ? this._expandedEventIds.delete(id) : this._expandedEventIds.add(id);
-      article.classList.toggle('expanded', !isExpanded);
-      button.setAttribute('aria-expanded', String(!isExpanded));
-    }));
-    this.shadowRoot.querySelectorAll('.open-device').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: button.dataset.entity } })); }));
-    this.shadowRoot.querySelectorAll('.context-action').forEach(button => button.addEventListener('click', event => {
-      event.stopPropagation();
-      if (button.dataset.entity) {
-        this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: button.dataset.entity } }));
-      } else {
-        const action = button.dataset.contextAction;
-        const configured = this._config.context_actions[action]
-          || this._contextActions(null).find(candidate => candidate.id === action)?.config;
-        const config = configured && !configured.type && configured.path
-          ? { ...configured, type: 'navigate' }
-          : configured;
-        if (!config?.type) {
-          this.dispatchEvent(new CustomEvent('home-status-action', { bubbles: true, composed: true, detail: { action, config: config || {} } }));
-          return;
+
+    const musicArtwork =
+      musicSummary?.querySelector(
+        '[data-music-art]'
+      );
+
+    if (
+      musicArtwork &&
+      !musicArtwork.dataset.bound
+    ) {
+      musicArtwork.dataset.bound =
+        'true';
+
+      musicArtwork.addEventListener(
+        'error',
+        () => {
+          musicArtwork.hidden =
+            true;
+
+          musicArtwork
+            .closest(
+              '.utility-music-art'
+            )
+            ?.classList.remove(
+              'has-art'
+            );
         }
-        if (config.confirmation?.text && !window.confirm(config.confirmation.text)) return;
-        if (config.type === 'navigate' && config.path) {
-          const path = String(config.path);
-          if (/^https?:\/\//i.test(path)) {
-            window.open(path, '_blank', 'noopener,noreferrer');
-          } else {
-            window.history.pushState({}, '', path);
-            this.dispatchEvent(new Event('location-changed', { bubbles: true, composed: true }));
+      );
+    }
+
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-music-command]'
+      )
+      .forEach(
+        button => {
+          if (
+            button.dataset.bound
+          ) {
+            return;
           }
-        } else if (config.type === 'service' && config.service) {
-          const [domain, service] = String(config.service).split('.', 2);
-          if (domain && service) this._hass?.callService(domain, service, config.target || {});
-        } else {
-          this.dispatchEvent(new CustomEvent('home-status-action', { bubbles: true, composed: true, detail: { action, config } }));
+
+          button.dataset.bound =
+            'true';
+
+          button.addEventListener(
+            'click',
+            event => {
+              event.stopPropagation();
+
+              const service =
+                button.dataset
+                  .musicCommand;
+
+              const entityId =
+                this._config
+                  .utility_header
+                  .music_entity;
+
+              if (
+                service &&
+                entityId
+              ) {
+                this._hass?.callService(
+                  'media_player',
+                  service,
+                  {
+                    entity_id:
+                      entityId
+                  }
+                );
+              }
+            }
+          );
         }
-      }
-    }));
+      );
+
+    const volume =
+      this.shadowRoot.querySelector(
+        '.music-volume'
+      );
+
+    if (
+      volume &&
+      !volume.dataset.bound
+    ) {
+      volume.dataset.bound =
+        'true';
+
+      volume.addEventListener(
+        'input',
+        event => {
+          event.stopPropagation();
+
+          const value =
+            Number(
+              volume.value
+            );
+
+          this.shadowRoot
+            .querySelector(
+              '.music-volume-icon'
+            )
+            ?.setAttribute(
+              'icon',
+              value === 0
+                ? 'mdi:volume-off'
+                : value < .5
+                  ? 'mdi:volume-medium'
+                  : 'mdi:volume-high'
+            );
+
+          volume.setAttribute(
+            'aria-valuetext',
+            `${Math.round(value * 100)} percent`
+          );
+        }
+      );
+
+      volume.addEventListener(
+        'change',
+        event => {
+          event.stopPropagation();
+
+          this._hass?.callService(
+            'media_player',
+            'volume_set',
+            {
+              entity_id:
+                this._config
+                  .utility_header
+                  .music_entity,
+
+              volume_level:
+                Number(
+                  volume.value
+                )
+            }
+          );
+        }
+      );
+
+      volume.addEventListener(
+        'click',
+        event =>
+          event.stopPropagation()
+      );
+    }
+
+    const source =
+      this.shadowRoot.querySelector(
+        '[data-music-source]'
+      );
+
+    if (
+      source &&
+      !source.dataset.bound
+    ) {
+      source.dataset.bound =
+        'true';
+
+      source.addEventListener(
+        'click',
+        event =>
+          event.stopPropagation()
+      );
+
+      source.addEventListener(
+        'change',
+        event => {
+          event.stopPropagation();
+
+          if (
+            !source.value
+          ) {
+            return;
+          }
+
+          this._hass?.callService(
+            'media_player',
+            'select_source',
+            {
+              entity_id:
+                this._config
+                  .utility_header
+                  .music_entity,
+
+              source:
+                source.value
+            }
+          );
+        }
+      );
+    }
+
+    const ticker =
+      this.shadowRoot.querySelector(
+        '.ticker'
+      );
+
+    if (
+      ticker &&
+      !ticker.dataset.bound
+    ) {
+      ticker.dataset.bound =
+        'true';
+
+      ticker.addEventListener(
+        'mouseenter',
+        () => {
+          if (
+            this._config
+              .pause_on_hover &&
+            !this._drawerOpen
+          ) {
+            this._rotationPaused =
+              true;
+          }
+        }
+      );
+
+      ticker.addEventListener(
+        'mouseleave',
+        () => {
+          this._rotationPaused =
+            false;
+        }
+      );
+
+      ticker.addEventListener(
+        'focusin',
+        () => {
+          this._rotationPaused =
+            false;
+        }
+      );
+
+      ticker.addEventListener(
+        'focusout',
+        () => {
+          this._rotationPaused =
+            false;
+        }
+      );
+
+      ticker.addEventListener(
+        'touchstart',
+        () => {
+          this._rotationPaused =
+            true;
+        },
+        {
+          passive: true
+        }
+      );
+
+      ticker.addEventListener(
+        'touchend',
+        () => {
+          this._rotationPaused =
+            false;
+        },
+        {
+          passive: true
+        }
+      );
+
+      ticker.addEventListener(
+        'click',
+        () => {
+          if (
+            this._config
+              .home_status_visibility
+              .drawer
+          ) {
+            this._toggleDrawer();
+          }
+        }
+      );
+
+      ticker.addEventListener(
+        'keydown',
+        event => {
+          if (
+            this._config
+              .home_status_visibility
+              .drawer &&
+            (
+              event.key ===
+                'Enter' ||
+              event.key ===
+                ' '
+            )
+          ) {
+            event.preventDefault();
+            this._toggleDrawer();
+          }
+        }
+      );
+    }
+
+    this.shadowRoot
+      .querySelectorAll(
+        '.event-head'
+      )
+      .forEach(
+        button =>
+          button.addEventListener(
+            'click',
+            event => {
+              event.stopPropagation();
+
+              const article =
+                button.closest(
+                  '.event'
+                );
+
+              const id =
+                article.dataset.id;
+
+              const isExpanded =
+                this._expandedEventIds.has(
+                  id
+                );
+
+              isExpanded
+                ? this._expandedEventIds.delete(
+                    id
+                  )
+                : this._expandedEventIds.add(
+                    id
+                  );
+
+              article.classList.toggle(
+                'expanded',
+                !isExpanded
+              );
+
+              button.setAttribute(
+                'aria-expanded',
+                String(
+                  !isExpanded
+                )
+              );
+            }
+          )
+      );
+
+    this.shadowRoot
+      .querySelectorAll(
+        '.open-device'
+      )
+      .forEach(
+        button =>
+          button.addEventListener(
+            'click',
+            event => {
+              event.stopPropagation();
+
+              this.dispatchEvent(
+                new CustomEvent(
+                  'hass-more-info',
+                  {
+                    bubbles: true,
+                    composed: true,
+
+                    detail: {
+                      entityId:
+                        button.dataset.entity
+                    }
+                  }
+                )
+              );
+            }
+          )
+      );
+
+    this.shadowRoot
+      .querySelectorAll(
+        '.context-action'
+      )
+      .forEach(
+        button =>
+          button.addEventListener(
+            'click',
+            event => {
+              event.stopPropagation();
+
+              if (
+                button.dataset.entity
+              ) {
+                this.dispatchEvent(
+                  new CustomEvent(
+                    'hass-more-info',
+                    {
+                      bubbles: true,
+                      composed: true,
+
+                      detail: {
+                        entityId:
+                          button.dataset.entity
+                      }
+                    }
+                  )
+                );
+              } else {
+                const action =
+                  button.dataset
+                    .contextAction;
+
+                const configured =
+                  this._config
+                    .context_actions[
+                      action
+                    ] ||
+                  this._contextActions(
+                    null
+                  ).find(
+                    candidate =>
+                      candidate.id ===
+                      action
+                  )?.config;
+
+                const config =
+                  configured &&
+                  !configured.type &&
+                  configured.path
+                    ? {
+                        ...configured,
+                        type:
+                          'navigate'
+                      }
+                    : configured;
+
+                if (
+                  !config?.type
+                ) {
+                  this.dispatchEvent(
+                    new CustomEvent(
+                      'home-status-action',
+                      {
+                        bubbles: true,
+                        composed: true,
+
+                        detail: {
+                          action,
+                          config:
+                            config ||
+                            {}
+                        }
+                      }
+                    )
+                  );
+
+                  return;
+                }
+
+                if (
+                  config.confirmation
+                    ?.text &&
+                  !window.confirm(
+                    config.confirmation
+                      .text
+                  )
+                ) {
+                  return;
+                }
+
+                if (
+                  config.type ===
+                    'navigate' &&
+                  config.path
+                ) {
+                  const path =
+                    String(
+                      config.path
+                    );
+
+                  if (
+                    /^https?:\/\//i
+                      .test(path)
+                  ) {
+                    window.open(
+                      path,
+                      '_blank',
+                      'noopener,noreferrer'
+                    );
+                  } else {
+                    window.history.pushState(
+                      {},
+                      '',
+                      path
+                    );
+
+                    this.dispatchEvent(
+                      new Event(
+                        'location-changed',
+                        {
+                          bubbles:
+                            true,
+
+                          composed:
+                            true
+                        }
+                      )
+                    );
+                  }
+                } else if (
+                  config.type ===
+                    'service' &&
+                  config.service
+                ) {
+                  const [
+                    domain,
+                    service
+                  ] =
+                    String(
+                      config.service
+                    ).split(
+                      '.',
+                      2
+                    );
+
+                  if (
+                    domain &&
+                    service
+                  ) {
+                    this._hass?.callService(
+                      domain,
+                      service,
+                      config.target ||
+                        {}
+                    );
+                  }
+                } else {
+                  this.dispatchEvent(
+                    new CustomEvent(
+                      'home-status-action',
+                      {
+                        bubbles: true,
+                        composed: true,
+
+                        detail: {
+                          action,
+                          config
+                        }
+                      }
+                    )
+                  );
+                }
+              }
+            }
+          )
+      );
+
     this._bindStreamItems();
   }
 
   _bindStreamItems() {
-    this.shadowRoot.querySelectorAll('.zone-item, .phone-status-current, .phone-status-ticker-item, [data-footer-group-labels], [data-stream-navigation], [data-stream-entity]').forEach(item => {
-      if (item.dataset.bound) return;
-      item.dataset.bound = 'true';
-      item.addEventListener('click', event => {
-        event.stopPropagation();
-        if (item.dataset.footerGroupLabels) {
-          const marquee = item.closest('.footer-marquee');
-          const expanded = !item.classList.contains('footer-group-expanded');
-          const streamId = item.dataset.streamId || '';
-          marquee?.classList.add('group-details-open');
-          marquee?.querySelectorAll('[data-footer-group-labels]').forEach(copy => {
-            if ((copy.dataset.streamId || '') === streamId) {
-              copy.classList.toggle('footer-group-expanded', expanded);
-            }
-          });
-          const title = item.querySelector('.footer-marquee-copy strong');
-          if (title) {
-            let labels = [];
-            try {
-              labels = JSON.parse(item.dataset.footerGroupLabels);
-            } catch (_error) {
-              labels = [];
-            }
-            title.textContent = expanded && labels.length
-              ? labels.join(' • ')
-              : item.dataset.footerGroupTitle || title.textContent;
+    this.shadowRoot
+      .querySelectorAll(
+        '.zone-item, .phone-status-current, .phone-status-ticker-item, [data-footer-group-labels], [data-stream-navigation], [data-stream-entity]'
+      )
+      .forEach(
+        item => {
+          if (
+            item.dataset.bound
+          ) {
+            return;
           }
-          marquee?.querySelectorAll('[data-footer-group-labels]').forEach(copy => {
-            if ((copy.dataset.streamId || '') !== streamId || copy === item) return;
-            const copyTitle = copy.querySelector('.footer-marquee-copy strong');
-            if (copyTitle && title) copyTitle.textContent = title.textContent;
-          });
-          item.closest('.footer-marquee')?.classList.toggle(
-            'group-details-open',
-            Boolean(item.closest('.footer-marquee')?.querySelector('.footer-group-expanded'))
+
+          item.dataset.bound =
+            'true';
+
+          item.addEventListener(
+            'click',
+            event => {
+              event.stopPropagation();
+
+              if (
+                item.dataset
+                  .footerGroupLabels
+              ) {
+                const marquee =
+                  item.closest(
+                    '.footer-marquee'
+                  );
+                const streamId =
+                  item.dataset
+                    .streamId ||
+                  '';
+
+                if (!marquee) return;
+
+                const closeDetails = () => {
+                  marquee.classList.remove(
+                    'group-details-open'
+                  );
+                  delete marquee.dataset.groupDetailId;
+                  marquee.querySelector(
+                    '[data-footer-group-detail]'
+                  )?.remove();
+                  marquee.querySelectorAll(
+                    '[data-footer-group-labels]'
+                  ).forEach(copy =>
+                    copy.classList.remove(
+                      'footer-group-expanded'
+                    )
+                  );
+                };
+
+                if (
+                  marquee.dataset.groupDetailId ===
+                  streamId
+                ) {
+                  closeDetails();
+                  return;
+                }
+
+                let labels = [];
+                try {
+                  labels = JSON.parse(
+                    decodeURIComponent(
+                      item.dataset.footerGroupLabels
+                    )
+                  );
+                } catch (_error) {
+                  labels = [];
+                }
+
+                closeDetails();
+                marquee.dataset.groupDetailId = streamId;
+                marquee.classList.add(
+                  'group-details-open'
+                );
+                marquee.querySelectorAll(
+                  '[data-footer-group-labels]'
+                ).forEach(copy => {
+                  if (
+                    String(copy.dataset.streamId || '') ===
+                    streamId
+                  ) {
+                    copy.classList.add(
+                      'footer-group-expanded'
+                    );
+                  }
+                });
+
+                const details = document.createElement(
+                  'button'
+                );
+                details.type = 'button';
+                details.className = 'footer-group-detail';
+                details.dataset.footerGroupDetail = 'true';
+
+                const heading = document.createElement(
+                  'strong'
+                );
+                heading.textContent =
+                  decodeURIComponent(
+                    item.dataset.footerGroupTitle ||
+                    ''
+                  ) ||
+                  'Grouped openings';
+
+                const names = document.createElement(
+                  'small'
+                );
+                names.textContent = labels.length
+                  ? labels.join(' • ')
+                  : 'No grouped names available';
+
+                details.append(heading, names);
+                details.addEventListener(
+                  'click',
+                  detailEvent => {
+                    detailEvent.stopPropagation();
+                    closeDetails();
+                  }
+                );
+                marquee.append(details);
+
+                return;
+              }
+
+              const path =
+                item.dataset
+                  .streamNavigation;
+
+              if (path) {
+                window.history.pushState(
+                  {},
+                  '',
+                  path
+                );
+
+                this.dispatchEvent(
+                  new Event(
+                    'location-changed',
+                    {
+                      bubbles: true,
+                      composed: true
+                    }
+                  )
+                );
+              } else if (
+                item.dataset
+                  .streamEntity
+              ) {
+                this.dispatchEvent(
+                  new CustomEvent(
+                    'hass-more-info',
+                    {
+                      bubbles: true,
+                      composed: true,
+
+                      detail: {
+                        entityId:
+                          item.dataset
+                            .streamEntity
+                      }
+                    }
+                  )
+                );
+              }
+            }
           );
-          return;
         }
-        const path = item.dataset.streamNavigation;
-        if (path) {
-          window.history.pushState({}, '', path);
-          this.dispatchEvent(new Event('location-changed', { bubbles: true, composed: true }));
-        } else if (item.dataset.streamEntity) {
-          this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: item.dataset.streamEntity } }));
-        }
-      });
-    });
+      );
   }
 
   getCardSize() {
-    const configured = Number(this._config?.card_size);
-    return Number.isFinite(configured) && configured > 0
+    const configured =
+      Number(
+        this._config?.card_size
+      );
+
+    return (
+      Number.isFinite(
+        configured
+      ) &&
+      configured > 0
+    )
       ? configured
-      : this._drawerOpen ? 8 : this._config?.profile === 'phone' ? 2 : 4;
+      : this._drawerOpen
+        ? 8
+        : this._config?.profile ===
+            'phone'
+          ? 2
+          : 4;
   }
 
   getGridOptions() {
-    const configured = homeStatusObject(this._rawConfig?.grid_options);
+    const configured =
+      homeStatusObject(
+        this._rawConfig
+          ?.grid_options
+      );
+
     return {
-      // Sections expects numeric grid dimensions. Values such as "full" and
-      // "auto" are valid in some card configs but break HA's section layout
-      // renderer when this card is re-created after switching views.
-      columns: Number.isFinite(Number(configured.columns))
-        ? Math.max(3, Math.min(36, Number(configured.columns)))
-        : 36,
-      rows: Number.isFinite(Number(configured.rows))
-        ? Math.max(2, Number(configured.rows))
-        : 7,
+      columns:
+        Number.isFinite(
+          Number(
+            configured.columns
+          )
+        )
+          ? Math.max(
+              3,
+              Math.min(
+                36,
+                Number(
+                  configured.columns
+                )
+              )
+            )
+          : 36,
+
+      rows:
+        Number.isFinite(
+          Number(
+            configured.rows
+          )
+        )
+          ? Math.max(
+              2,
+              Number(
+                configured.rows
+              )
+            )
+          : 7,
+
       min_columns: 3,
       min_rows: 2
     };
   }
 
   static async getConfigElement() {
-    return document.createElement('home-status-card-editor');
+    return document.createElement(
+      'home-status-card-editor'
+    );
   }
 
   static getStubConfig() {
     return {
-      entity: 'sensor.home_status',
-      profile: 'auto',
-      layout: 'responsive',
-      time_entity: '',
-      recent_drawer_limit: 10,
-      rotation_seconds: 4,
-      utility_header: { enabled: false },
-      left: { rotate: true, interval: 7 },
-      right: { rotate: true },
-      bottom: { rotate: false, speed: 35 },
-      grid_options: { columns: 36, rows: 7 },
-      sizing: { max_width: 0, min_height: 0 },
-      animation: { level: 'full' },
-      display: { media_enabled: true },
-      weather_effect: 'auto',
-      pause_on_hover: true,
+      entity:
+        'sensor.home_status',
+
+      profile:
+        'auto',
+
+      layout:
+        'responsive',
+
+      time_entity:
+        '',
+
+      recent_drawer_limit:
+        10,
+
+      rotation_seconds:
+        4,
+
+      utility_header: {
+        enabled:
+          false
+      },
+
+      left: {
+        rotate:
+          true,
+
+        interval:
+          7
+      },
+
+      right: {
+        rotate:
+          true
+      },
+
+      bottom: {
+        rotate:
+          false,
+
+        speed:
+          35
+      },
+
+      grid_options: {
+        columns:
+          36,
+
+        rows:
+          7
+      },
+
+      sizing: {
+        max_width:
+          0,
+
+        min_height:
+          0
+      },
+
+      animation: {
+        level:
+          'full'
+      },
+
+      display: {
+        media_enabled:
+          true
+      },
+
+      weather_effect:
+        'auto',
+
+      pause_on_hover:
+        true,
+
       home_status_visibility: {
-        left: true,
-        right: true,
-        bottom: true,
-        phone_ticker: true,
-        drawer: false
+        left:
+          true,
+
+        right:
+          true,
+
+        bottom:
+          true,
+
+        phone_ticker:
+          true,
+
+        drawer:
+          false
       }
     };
   }
@@ -2908,10 +7551,18 @@ class HomeStatusCard extends HTMLElement {
 class HomeStatusCardEditor extends HTMLElement {
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
-    this._config = HomeStatusCard.getStubConfig();
+
+    this.attachShadow({
+      mode: 'open'
+    });
+
+    this._config =
+      HomeStatusCard.getStubConfig();
+
     this._hass = null;
-    this._editorLevel = 'recommended';
+
+    this._editorLevel =
+      'recommended';
   }
 
   set hass(value) {
@@ -2924,14 +7575,54 @@ class HomeStatusCardEditor extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = homeStatusClone(homeStatusObject(config));
-    const legacyVisibility = homeStatusObject(this._config.visibility);
-    const namespacedVisibility = homeStatusObject(this._config.home_status_visibility);
-    if (Object.keys(legacyVisibility).length && !Object.keys(namespacedVisibility).length) {
-      this._config.home_status_visibility = homeStatusClone(legacyVisibility);
+    this._config =
+      homeStatusClone(
+        homeStatusObject(
+          config
+        )
+      );
+
+    const legacyVisibility =
+      homeStatusObject(
+        this._config
+          .visibility
+      );
+
+    const namespacedVisibility =
+      homeStatusObject(
+        this._config
+          .home_status_visibility
+      );
+
+    if (
+      Object.keys(
+        legacyVisibility
+      ).length &&
+      !Object.keys(
+        namespacedVisibility
+      ).length
+    ) {
+      this._config
+        .home_status_visibility =
+        homeStatusClone(
+          legacyVisibility
+        );
     }
-    if (this._config.visibility === legacyVisibility) delete this._config.visibility;
-    if (!this._config.type) this._config.type = 'custom:home-status-card';
+
+    if (
+      this._config.visibility ===
+      legacyVisibility
+    ) {
+      delete this._config.visibility;
+    }
+
+    if (
+      !this._config.type
+    ) {
+      this._config.type =
+        'custom:home-status-card';
+    }
+
     this._render();
   }
 
@@ -2940,94 +7631,342 @@ class HomeStatusCardEditor extends HTMLElement {
   }
 
   _escape(value) {
-    const node = document.createElement('span');
-    node.textContent = String(value ?? '');
+    const node =
+      document.createElement(
+        'span'
+      );
+
+    node.textContent =
+      String(
+        value ?? ''
+      );
+
     return node.innerHTML;
   }
 
-  _value(path, fallback = '') {
-    const value = homeStatusGetPath(this._config, path, undefined);
-    if (value !== undefined) return value;
-    const compatibilityPaths = {
-      left: 'sidebar',
-      right: 'hero',
-      bottom: 'footer',
-      'home_status_visibility.left': 'home_status_visibility.sidebar',
-      'home_status_visibility.right': 'home_status_visibility.hero',
-      'home_status_visibility.bottom': 'home_status_visibility.footer',
-      'left.rotate': 'sidebar.rotate',
-      'left.interval': 'sidebar.interval',
-      'right.rotate': 'hero.rotate',
-      'right.interval': 'hero.interval',
-      'bottom.rotate': 'footer.rotate',
-      'bottom.speed': 'footer.speed'
-    };
-    const legacyPath = compatibilityPaths[path];
-    if (legacyPath) {
-      const legacyValue = homeStatusGetPath(this._config, legacyPath, undefined);
-      if (legacyValue !== undefined) return legacyValue;
+  _value(
+    path,
+    fallback = ''
+  ) {
+    const value =
+      homeStatusGetPath(
+        this._config,
+        path,
+        undefined
+      );
+
+    if (
+      value !== undefined
+    ) {
+      return value;
     }
-    if (path === 'right.interval') return homeStatusGetPath(this._config, 'rotation_seconds', fallback);
+
+    const compatibilityPaths = {
+      left:
+        'sidebar',
+
+      right:
+        'hero',
+
+      bottom:
+        'footer',
+
+      'home_status_visibility.left':
+        'home_status_visibility.sidebar',
+
+      'home_status_visibility.right':
+        'home_status_visibility.hero',
+
+      'home_status_visibility.bottom':
+        'home_status_visibility.footer',
+
+      'left.rotate':
+        'sidebar.rotate',
+
+      'left.interval':
+        'sidebar.interval',
+
+      'right.rotate':
+        'hero.rotate',
+
+      'right.interval':
+        'hero.interval',
+
+      'bottom.rotate':
+        'footer.rotate',
+
+      'bottom.speed':
+        'footer.speed'
+    };
+
+    const legacyPath =
+      compatibilityPaths[
+        path
+      ];
+
+    if (legacyPath) {
+      const legacyValue =
+        homeStatusGetPath(
+          this._config,
+          legacyPath,
+          undefined
+        );
+
+      if (
+        legacyValue !==
+        undefined
+      ) {
+        return legacyValue;
+      }
+    }
+
+    if (
+      path ===
+      'right.interval'
+    ) {
+      return homeStatusGetPath(
+        this._config,
+        'rotation_seconds',
+        fallback
+      );
+    }
+
     return fallback;
   }
 
-  _select(path, label, options, fallback, help = '') {
-    const value = String(this._value(path, fallback));
+  _select(
+    path,
+    label,
+    options,
+    fallback,
+    help = ''
+  ) {
+    const value =
+      String(
+        this._value(
+          path,
+          fallback
+        )
+      );
+
     return `<label><span>${this._escape(label)}</span><select data-path="${this._escape(path)}">${options.map(
       option => {
-        const current = typeof option === 'string' ? { value: option, label: option } : option;
+        const current =
+          typeof option === 'string'
+            ? {
+                value:
+                  option,
+
+                label:
+                  option
+              }
+            : option;
+
         return `<option value="${this._escape(current.value)}"${String(current.value) === value ? ' selected' : ''}>${this._escape(current.label)}</option>`;
       }
     ).join('')}</select>${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
   }
 
-  _text(path, label, fallback = '', help = '', list = '') {
+  _text(
+    path,
+    label,
+    fallback = '',
+    help = '',
+    list = ''
+  ) {
     return `<label><span>${this._escape(label)}</span><input type="text" data-path="${this._escape(path)}" value="${this._escape(this._value(path, fallback))}"${list ? ` list="${this._escape(list)}"` : ''}>${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
   }
 
-  _number(path, label, fallback, min, max, help = '') {
+  _number(
+    path,
+    label,
+    fallback,
+    min,
+    max,
+    help = ''
+  ) {
     return `<label><span>${this._escape(label)}</span><input type="number" data-path="${this._escape(path)}" data-value-type="number" value="${this._escape(this._value(path, fallback))}" min="${min}" max="${max}">${help ? `<small>${this._escape(help)}</small>` : ''}</label>`;
   }
 
-  _toggle(path, label, fallback = true, help = '') {
+  _toggle(
+    path,
+    label,
+    fallback = true,
+    help = ''
+  ) {
     return `<label class="toggle"><input type="checkbox" data-path="${this._escape(path)}" data-value-type="boolean"${this._value(path, fallback) !== false ? ' checked' : ''}><span><strong>${this._escape(label)}</strong>${help ? `<small>${this._escape(help)}</small>` : ''}</span></label>`;
   }
 
-  _entityList(id, domain = '') {
-    const entities = Object.keys(this._hass?.states || {})
-      .filter(entity => !domain || entity.startsWith(`${domain}.`))
-      .sort();
+  _entityList(
+    id,
+    domain = ''
+  ) {
+    const entities =
+      Object.keys(
+        this._hass?.states ||
+        {}
+      )
+        .filter(
+          entity =>
+            !domain ||
+            entity.startsWith(
+              `${domain}.`
+            )
+        )
+        .sort();
+
     return `<datalist id="${this._escape(id)}">${entities.map(
-      entity => `<option value="${this._escape(entity)}"></option>`
+      entity =>
+        `<option value="${this._escape(entity)}"></option>`
     ).join('')}</datalist>`;
   }
 
   _unknownKeys() {
-    return Object.keys(this._config).filter(key => !HOME_STATUS_KNOWN_TOP_LEVEL_KEYS.has(key));
+    return Object.keys(
+      this._config
+    ).filter(
+      key =>
+        !HOME_STATUS_KNOWN_TOP_LEVEL_KEYS
+          .has(key)
+    );
   }
 
   _validationWarnings() {
     const warnings = [];
-    const entity = String(this._value('entity', 'sensor.home_status'));
-    if (!entity.includes('.')) warnings.push('The Home Status sensor must be a valid entity ID.');
-    const profile = String(this._value('profile', 'auto'));
-    const columns = Number(this._value('grid_options.columns', 36));
-    const rows = Number(this._value('grid_options.rows', 7));
-    if (['auto', 'tablet', 'desktop'].includes(profile) && Number.isFinite(columns) && columns < 24) {
-      warnings.push('This width may force the compact phone presentation or clip the full Tablet/Desktop layout. Use 36 columns for the recommended Sections view.');
+
+    const entity =
+      String(
+        this._value(
+          'entity',
+          'sensor.home_status'
+        )
+      );
+
+    if (
+      !entity.includes('.')
+    ) {
+      warnings.push(
+        'The Home Status sensor must be a valid entity ID.'
+      );
     }
-    if (['auto', 'tablet', 'desktop'].includes(profile) && Number.isFinite(rows) && rows < 7) {
-      warnings.push('The full layout needs at least 7 rows. A shorter grid can overlap the next dashboard section.');
+
+    const profile =
+      String(
+        this._value(
+          'profile',
+          'auto'
+        )
+      );
+
+    const columns =
+      Number(
+        this._value(
+          'grid_options.columns',
+          36
+        )
+      );
+
+    const rows =
+      Number(
+        this._value(
+          'grid_options.rows',
+          7
+        )
+      );
+
+    if (
+      [
+        'auto',
+        'tablet',
+        'desktop'
+      ].includes(profile) &&
+      Number.isFinite(
+        columns
+      ) &&
+      columns < 24
+    ) {
+      warnings.push(
+        'This width may force the compact phone presentation or clip the full Tablet/Desktop layout. Use 36 columns for the recommended Sections view.'
+      );
     }
-    const visibility = homeStatusObject(this._value('home_status_visibility', {}));
-    if ([this._value('home_status_visibility.left', true), this._value('home_status_visibility.right', true), this._value('home_status_visibility.bottom', true), visibility.phone_ticker].every(value => value === false)) {
-      warnings.push('Every information area is hidden, so the card may appear empty. Enable at least one presentation area.');
+
+    if (
+      [
+        'auto',
+        'tablet',
+        'desktop'
+      ].includes(profile) &&
+      Number.isFinite(
+        rows
+      ) &&
+      rows < 7
+    ) {
+      warnings.push(
+        'The full layout needs at least 7 rows. A shorter grid can overlap the next dashboard section.'
+      );
     }
-    const configuredActions = Object.values(homeStatusObject(this._value('context_actions', {})))
-      .filter(action => homeStatusObject(action).path || homeStatusObject(action).type);
-    if (visibility.drawer !== false && !configuredActions.length) {
-      warnings.push('The drawer is enabled but has no navigation buttons. Add destinations in Advanced, or turn the drawer off.');
+
+    const visibility =
+      homeStatusObject(
+        this._value(
+          'home_status_visibility',
+          {}
+        )
+      );
+
+    if (
+      [
+        this._value(
+          'home_status_visibility.left',
+          true
+        ),
+
+        this._value(
+          'home_status_visibility.right',
+          true
+        ),
+
+        this._value(
+          'home_status_visibility.bottom',
+          true
+        ),
+
+        visibility.phone_ticker
+      ].every(
+        value =>
+          value === false
+      )
+    ) {
+      warnings.push(
+        'Every information area is hidden, so the card may appear empty. Enable at least one presentation area.'
+      );
     }
+
+    const configuredActions =
+      Object.values(
+        homeStatusObject(
+          this._value(
+            'context_actions',
+            {}
+          )
+        )
+      ).filter(
+        action =>
+          homeStatusObject(action)
+            .path ||
+          homeStatusObject(action)
+            .type
+      );
+
+    if (
+      visibility.drawer !== false &&
+      !configuredActions.length
+    ) {
+      warnings.push(
+        'The drawer is enabled but has no navigation buttons. Add destinations in Advanced, or turn the drawer off.'
+      );
+    }
+
     const paths = [
       'utility_header.security_path',
       'utility_header.music_path',
@@ -3035,47 +7974,159 @@ class HomeStatusCardEditor extends HTMLElement {
       'context_actions.cameras.path',
       'context_actions.lighting.path'
     ];
-    paths.forEach(path => {
-      const value = String(this._value(path, '') || '').trim();
-      if (value && !value.startsWith('/') && !/^https?:\/\//i.test(value)) {
-        warnings.push(`${path.split('.').slice(-2, -1)[0].replaceAll('_', ' ')} page must begin with / or use a full web address.`);
+
+    paths.forEach(
+      path => {
+        const value =
+          String(
+            this._value(
+              path,
+              ''
+            ) || ''
+          ).trim();
+
+        if (
+          value &&
+          !value.startsWith(
+            '/'
+          ) &&
+          !/^https?:\/\//i
+            .test(value)
+        ) {
+          warnings.push(
+            `${path.split('.').slice(-2, -1)[0].replaceAll('_', ' ')} page must begin with / or use a full web address.`
+          );
+        }
       }
-    });
+    );
+
     return warnings;
   }
 
- _render() {
-   if (!this.shadowRoot) return;
-    const hadEditor = Boolean(this.shadowRoot.querySelector('.editor'));
-    const openSections = new Set(
-      [...this.shadowRoot.querySelectorAll('details[data-section][open]')]
-        .map(section => section.dataset.section)
-    );
-    const sectionOpen = (section, defaultOpen = false) => hadEditor
-      ? openSections.has(section)
-      : defaultOpen;
-    const levelHidden = level => this._editorLevel === level ? '' : ' hidden';
-   const entity = String(this._value('entity', 'sensor.home_status'));
-    const entityMissing = Boolean(this._hass && !this._hass.states?.[entity]);
-    const unknown = this._unknownKeys();
-    const validationWarnings = this._validationWarnings();
+  _render() {
+    if (
+      !this.shadowRoot
+    ) {
+      return;
+    }
+
+    const hadEditor =
+      Boolean(
+        this.shadowRoot.querySelector(
+          '.editor'
+        )
+      );
+
+    const openSections =
+      new Set(
+        [
+          ...this.shadowRoot.querySelectorAll(
+            'details[data-section][open]'
+          )
+        ].map(
+          section =>
+            section.dataset.section
+        )
+      );
+
+    const sectionOpen =
+      (
+        section,
+        defaultOpen = false
+      ) =>
+        hadEditor
+          ? openSections.has(
+              section
+            )
+          : defaultOpen;
+
+    const levelHidden =
+      level =>
+        this._editorLevel ===
+        level
+          ? ''
+          : ' hidden';
+
+    const entity =
+      String(
+        this._value(
+          'entity',
+          'sensor.home_status'
+        )
+      );
+
+    const entityMissing =
+      Boolean(
+        this._hass &&
+        !this._hass.states?.[
+          entity
+        ]
+      );
+
+    const unknown =
+      this._unknownKeys();
+
+    const validationWarnings =
+      this._validationWarnings();
+
     const profiles = [
-      { value: 'auto', label: 'Responsive (recommended)' },
-      { value: 'phone', label: 'Phone' },
-      { value: 'tablet', label: 'Tablet' },
-      { value: 'desktop', label: 'Desktop' }
+      {
+        value: 'auto',
+        label: 'Responsive (recommended)'
+      },
+      {
+        value: 'phone',
+        label: 'Phone'
+      },
+      {
+        value: 'tablet',
+        label: 'Tablet'
+      },
+      {
+        value: 'desktop',
+        label: 'Desktop'
+      }
     ];
+
     const weatherEffects = [
-      { value: 'auto', label: 'Automatic from Home Status' },
-      { value: 'none', label: 'None' },
-      { value: 'rain', label: 'Rain' },
-      { value: 'clouds', label: 'Clouds' },
-      { value: 'storm', label: 'Storm' },
-      { value: 'wind', label: 'Wind' },
-      { value: 'fog', label: 'Fog' },
-      { value: 'night', label: 'Night' },
-      { value: 'clear', label: 'Clear' }
+      {
+        value: 'auto',
+        label: 'Automatic from Home Status'
+      },
+      {
+        value: 'none',
+        label: 'None'
+      },
+      {
+        value: 'rain',
+        label: 'Rain'
+      },
+      {
+        value: 'clouds',
+        label: 'Clouds'
+      },
+      {
+        value: 'storm',
+        label: 'Storm'
+      },
+      {
+        value: 'wind',
+        label: 'Wind'
+      },
+      {
+        value: 'fog',
+        label: 'Fog'
+      },
+      {
+        value: 'night',
+        label: 'Night'
+      },
+      {
+        value: 'clear',
+        label: 'Clear'
+      }
     ];
+
     this.shadowRoot.innerHTML = `<style>
       :host { display:block; color:var(--primary-text-color); }
       .editor { display:grid; gap:12px; padding:4px 0 12px; }
@@ -3199,56 +8250,189 @@ class HomeStatusCardEditor extends HTMLElement {
       ${this._entityList('home-status-media', 'media_player')}
       ${this._entityList('home-status-alarms', 'alarm_control_panel')}
     </div>`;
+
     this._bind();
   }
 
   _bind() {
-    this.shadowRoot.querySelectorAll('[data-editor-level]').forEach(button => {
-      button.addEventListener('click', () => {
-        this._editorLevel = button.dataset.editorLevel;
-        this._render();
-      });
-    });
-    this.shadowRoot.querySelector('[data-restore-recommended]')?.addEventListener('click', () => {
-      this._config = homeStatusMerge(this._config, HomeStatusCard.getStubConfig());
-      this._emit();
-      this._render();
-    });
-    this.shadowRoot.querySelectorAll('[data-path]').forEach(control => {
-      control.addEventListener('change', event => {
-        const target = event.currentTarget;
-        const path = target.dataset.path;
-        let value = target.value;
-        if (target.dataset.valueType === 'boolean') value = target.checked;
-        if (target.dataset.valueType === 'number') {
-          value = target.value === '' ? undefined : Number(target.value);
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-editor-level]'
+      )
+      .forEach(
+        button => {
+          button.addEventListener(
+            'click',
+            () => {
+              this._editorLevel =
+                button.dataset
+                  .editorLevel;
+
+              this._render();
+            }
+          );
         }
-        if (path.startsWith('grid_options.') && !['full', 'auto'].includes(value)) {
-          value = Number(value);
+      );
+
+    this.shadowRoot
+      .querySelector(
+        '[data-restore-recommended]'
+      )
+      ?.addEventListener(
+        'click',
+        () => {
+          this._config =
+            homeStatusMerge(
+              this._config,
+              HomeStatusCard.getStubConfig()
+            );
+
+          this._emit();
+          this._render();
         }
-        if (path.startsWith('context_actions.') && path.endsWith('.path') && value) {
-          const actionPath = path.split('.').slice(0, -1).join('.');
-          this._config = homeStatusSetPath(this._config, `${actionPath}.type`, 'navigate');
+      );
+
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-path]'
+      )
+      .forEach(
+        control => {
+          control.addEventListener(
+            'change',
+            event => {
+              const target =
+                event.currentTarget;
+
+              const path =
+                target.dataset.path;
+
+              let value =
+                target.value;
+
+              if (
+                target.dataset
+                  .valueType ===
+                'boolean'
+              ) {
+                value =
+                  target.checked;
+              }
+
+              if (
+                target.dataset
+                  .valueType ===
+                'number'
+              ) {
+                value =
+                  target.value ===
+                  ''
+                    ? undefined
+                    : Number(
+                        target.value
+                      );
+              }
+
+              if (
+                path.startsWith(
+                  'grid_options.'
+                ) &&
+                ![
+                  'full',
+                  'auto'
+                ].includes(value)
+              ) {
+                value =
+                  Number(value);
+              }
+
+              if (
+                path.startsWith(
+                  'context_actions.'
+                ) &&
+                path.endsWith(
+                  '.path'
+                ) &&
+                value
+              ) {
+                const actionPath =
+                  path
+                    .split('.')
+                    .slice(
+                      0,
+                      -1
+                    )
+                    .join('.');
+
+                this._config =
+                  homeStatusSetPath(
+                    this._config,
+                    `${actionPath}.type`,
+                    'navigate'
+                  );
+              }
+
+              this._config =
+                homeStatusSetPath(
+                  this._config,
+                  path,
+                  value,
+                  target.type ===
+                    'text'
+                );
+
+              this._emit();
+              this._render();
+            }
+          );
         }
-        this._config = homeStatusSetPath(this._config, path, value, target.type === 'text');
-        this._emit();
-        this._render();
-      });
-    });
-    this.shadowRoot.querySelector('[data-apply-profile]')?.addEventListener('click', () => {
-      const profile = this.shadowRoot.querySelector('[data-profile-picker]')?.value || 'auto';
-      this._config = homeStatusApplyProfile(this._config, profile);
-      this._emit();
-      this._render();
-    });
+      );
+
+    this.shadowRoot
+      .querySelector(
+        '[data-apply-profile]'
+      )
+      ?.addEventListener(
+        'click',
+        () => {
+          const profile =
+            this.shadowRoot.querySelector(
+              '[data-profile-picker]'
+            )?.value ||
+            'auto';
+
+          this._config =
+            homeStatusApplyProfile(
+              this._config,
+              profile
+            );
+
+          this._emit();
+          this._render();
+        }
+      );
   }
 
   _emit() {
-    this.dispatchEvent(new CustomEvent('config-changed', {
-      detail: { config: homeStatusClone(this._config) },
-      bubbles: true,
-      composed: true
-    }));
+    this.dispatchEvent(
+      new CustomEvent(
+        'config-changed',
+        {
+          detail: {
+            config:
+              homeStatusClone(
+                this._config
+              )
+          },
+
+          bubbles:
+            true,
+
+          composed:
+            true
+        }
+      )
+    );
   }
 }
 
@@ -3307,67 +8491,836 @@ const CSS = `
 .music-source select { width:100%; min-width:0; height:32px; padding:0 28px 0 10px; border:1px solid rgba(255,255,255,.09); border-radius:9px; background:rgba(255,255,255,.06); color:rgba(255,255,255,.88); font:inherit; font-size:13px; outline:none; }
 .music-source select:focus { border-color:rgba(102,187,106,.45); }
 .music-source select:disabled { opacity:.4; }
+
 .ticker { position:relative; }
-@media (prefers-reduced-motion: reduce) { .drawer-host .context-bar, .drawer-host.drawer-active .context-bar { transition:none; } }
-:host { display:block; width:100%; container-type:inline-size; }
-:host([data-drawer-open]) { width:var(--home-status-drawer-inline-size) !important; min-width:var(--home-status-drawer-inline-size) !important; max-width:var(--home-status-drawer-inline-size) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-host .context-bar,
+  .drawer-host.drawer-active .context-bar {
+    transition:none;
+  }
+}
+
+:host {
+  display:block;
+  width:100%;
+  container-type:inline-size;
+}
+
+:host([data-drawer-open]) {
+  width:var(--home-status-drawer-inline-size) !important;
+  min-width:var(--home-status-drawer-inline-size) !important;
+  max-width:var(--home-status-drawer-inline-size) !important;
+}
+
 .home-status-unavailable { min-height:132px; }
 .home-status-unavailable > div { display:flex; flex-direction:column; gap:7px; padding:22px; }
 .home-status-unavailable strong { font-size:18px; }
 .home-status-unavailable span,.home-status-unavailable code { color:var(--secondary-text-color); }
-:host([data-animation="none"]) * { animation:none !important; transition:none !important; }
+
+:host([data-animation="none"]) * {
+  animation:none !important;
+  transition:none !important;
+}
+
 :host([data-animation="reduced"]) .weather-renderer-layer,
-:host([data-animation="reduced"]) .utility-security { animation:none !important; }
-:host, ha-card { display:block; overflow:hidden; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family, sans-serif); }
+:host([data-animation="reduced"]) .utility-security {
+  animation:none !important;
+}
+
+:host, ha-card {
+  display:block;
+  overflow:hidden;
+  color:var(--primary-text-color);
+  font-family:var(--paper-font-body1_-_font-family, sans-serif);
+}
+
 .phone-status-host { display:none; }
-.ticker { height:380px !important; min-height:380px !important; }
-.primary-zone:has(.has-hero-media) { height:176px; } .hero-zone-item.has-hero-media { height:176px; } .primary-zone .zone-title { font-size:31px !important; } .primary-zone .zone-summary { font-size:18px !important; line-height:1.45; }
-.primary-zone .zone-title ha-icon { width:31px !important; height:31px !important; } .secondary-zone .zone-title ha-icon { width:31px !important; height:31px !important; }
-.primary-zone .zone-title ha-icon, .secondary-zone .zone-title ha-icon { width:34px !important; height:34px !important; }
-.ticker-footer { min-height:80px !important; padding-top:16px !important; } .footer-marquee { height:80px !important; } .footer-marquee-item { gap:12px !important; } .footer-marquee-item ha-icon { width:30px !important; height:30px !important; } .footer-marquee-copy strong { line-height:1.2; } .footer-marquee-copy small { margin-top:5px; } .primary-zone .zone-title ha-icon { width:26px !important; height:26px !important; } .primary-zone .zone-title { font-size:28px !important; } .primary-zone .zone-summary { font-size:17px !important; } .secondary-zone .zone-title ha-icon { width:26px !important; height:26px !important; } .secondary-zone .zone-title { font-size:21px !important; } .secondary-zone .zone-summary { font-size:15px !important; }
-.ticker { display:flex; flex-direction:column; justify-content:space-between; width:100%; max-width:none; height:235px; min-height:235px; margin:0; padding:20px 22px 16px; box-sizing:border-box; border:1px solid rgba(255,255,255,.085); border-radius:23px; background:linear-gradient(135deg,rgba(31,37,44,.78),rgba(15,19,24,.72)); color:var(--primary-text-color); box-shadow:0 8px 24px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.035); cursor:pointer; text-align:left; }
-.utility-header ~ .ticker { border-radius:0 0 23px 23px; }
-:host([data-drawer-open]) .ticker { border-bottom-left-radius:0; border-bottom-right-radius:0; }
-.footer-glyph { display:inline-flex; flex:0 0 auto; align-items:center; justify-content:center; width:27px; height:27px; font-size:24px; line-height:1; }
-.footer-marquee-item ha-icon { flex:0 0 auto; width:27px; height:27px; } .semantic-red { color:#ef5350; } .semantic-cyan { color:#26c6da; } .semantic-sky { color:#4fc3f7; } .semantic-green { color:#66bb6a; } .semantic-teal { color:#26a69a; } .semantic-purple { color:#ab47bc; } .semantic-orange { color:#ff9800; } .semantic-amber { color:#ffc107; } .semantic-yellow { color:#fdd835; } .semantic-blue { color:#42a5f5; } .semantic-lime { color:#cddc39; } .semantic-white { color:rgba(255,255,255,.86); }
-.ticker-footer { min-height:80px; } .footer-marquee { height:80px; }
-.ticker-head { display:flex; align-items:center; width:100%; min-height:0; flex:1; }
-.ticker-zones { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr) 30px; gap:28px; align-items:center; width:100%; min-height:0; flex:1; }
-.ticker-zones.has-visual { grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr); }
-.visual-center { display:grid; place-items:center; align-self:stretch; min-width:0; min-height:0; height:100%; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(0,0,0,.22); }
-.visual-center-media,.visual-center-camera { display:block; width:100%; height:100%; object-fit:cover; border:0; }
-.visual-center-camera { min-width:0; }
-.visual-center-fallback { padding:14px; color:var(--secondary-text-color); font-size:13px; line-height:1.35; text-align:center; }
-.hero-zone-item { position:relative; overflow:hidden; isolation:isolate; } .hero-zone-item .hero-media-wrap,.hero-zone-item .hero-content { position:relative; z-index:1; } .hero-zone-item .hero-media-wrap { position:absolute; inset:0; z-index:0; border-radius:14px; overflow:hidden; background:rgba(0,0,0,.28); } .hero-zone-item .hero-media { display:block; width:100%; height:100%; object-fit:cover; } .hero-zone-item .hero-media-overlay { position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.22) 70%,rgba(0,0,0,.08)); } .hero-zone-item:has(.hero-media) .hero-content { padding:12px 16px; }
-.hero-zone-item.has-hero-media { display:grid; grid-template-columns:minmax(0,45%) minmax(0,1fr); gap:16px; align-items:center; width:100%; height:140px; overflow:hidden; } .hero-zone-item.has-hero-media .hero-media-wrap { position:relative; inset:auto; width:100%; height:100%; min-height:0; border-radius:14px; } .hero-zone-item.has-hero-media .hero-media-overlay { display:none; } .hero-zone-item.has-hero-media .hero-content { padding:0; min-width:0; } .primary-zone:has(.has-hero-media) { height:140px; }
- .icon-tone-critical { color:#ef5350; } .icon-tone-attention { color:#ff9800; } .icon-tone-success { color:#66bb6a; } .icon-tone-information { color:#42a5f5; } .icon-tone-media { color:#ab47bc; } .icon-tone-neutral { color:rgba(255,255,255,.72); }
- .zone-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; cursor:pointer; opacity:1; transition:opacity 180ms ease, transform 180ms ease; } .zone-changing .zone-item { opacity:0; transform:translateY(4px); } .zone-title { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; font-weight:650; line-height:1.2; white-space:nowrap; } .zone-title span { overflow:hidden; text-overflow:ellipsis; } .zone-title ha-icon { flex:0 0 auto; width:22px; height:22px; } .zone-summary { display:-webkit-box; margin-top:7px; overflow:hidden; color:rgba(255,255,255,.76); line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; } .zone-empty { color:var(--secondary-text-color); font-size:13px; }
-.secondary-zone .zone-item.is-brief .zone-title { font-size:28px !important; } .secondary-zone .zone-item.is-brief .zone-summary { font-size:18px !important; } .secondary-zone .zone-item.is-brief .zone-title ha-icon { width:30px !important; height:30px !important; }
-.secondary-zone .zone-item.is-current-weather .zone-title,.secondary-zone .zone-item.is-indoor-temperature .zone-title { font-size:52px !important; font-weight:740; line-height:1.05; } .secondary-zone .zone-item.is-current-weather .zone-summary,.secondary-zone .zone-item.is-indoor-temperature .zone-summary { margin-top:6px; font-size:25px !important; line-height:1.2; color:rgba(255,255,255,.84); } .secondary-zone .zone-item.is-current-weather .zone-title ha-icon,.secondary-zone .zone-item.is-indoor-temperature .zone-title ha-icon { width:42px !important; height:42px !important; --mdc-icon-size:42px; }
-.ticker-zone { display:flex; align-items:center; min-width:0; height:150px; }
-.secondary-zone { padding-left:24px; border-left:1px solid rgba(255,255,255,.1); }
-.secondary-item { display:flex; flex-direction:column; justify-content:center; min-width:0; width:100%; height:150px; }
-.secondary-empty { opacity:.65; }
-.ticker:focus-visible { outline:2px solid var(--focus-color,#42a5f5); outline-offset:3px; }
-.main-icon { display:grid; place-items:center; flex:0 0 40px; width:40px; height:40px; border-radius:12px; background:rgba(102,187,106,.12); color:#66bb6a; }
-.priority-critical .main-icon { color:#ef5350; background:rgba(239,83,80,.12); } .priority-attention .main-icon { color:#ff9800; background:rgba(255,152,0,.12); } .priority-activity .main-icon { color:#42a5f5; background:rgba(66,165,245,.12); }
- .primary-zone { padding-right:4px; } .primary-zone .zone-title { font-size:25px; } .primary-zone .zone-summary { font-size:15px; } .secondary-zone .zone-title { font-size:18px; } .secondary-zone .zone-summary { font-size:13px; } .bottom-stream { flex:1 1 auto; min-width:0; overflow:hidden; } .footer-marquee { width:100%; overflow:hidden; } .footer-marquee-track { display:flex; width:max-content; animation:footer-marquee var(--marquee-duration,30s) linear infinite; will-change:transform; } .footer-sequence { display:flex; flex:0 0 auto; align-items:center; } .footer-marquee-item { display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:13px; text-transform:uppercase; letter-spacing:.2px; } .footer-marquee-item ha-icon { width:17px; height:17px; } .footer-marquee-item small { margin-left:2px; color:var(--secondary-text-color); font-size:11px; text-transform:none; letter-spacing:0; } .footer-marquee-separator { margin:0 16px; color:var(--secondary-text-color); font-size:12px; } @keyframes footer-marquee { from { transform:translate3d(0,0,0); } to { transform:translate3d(calc(-1 * var(--marquee-distance)),0,0); } }
-.ticker-primary { overflow:hidden; font-size:25px; font-weight:650; line-height:30px; text-overflow:ellipsis; white-space:nowrap; } .ticker-detail { display:block; max-width:100%; margin-top:8px; overflow:hidden; color:rgba(255,255,255,.82); font-size:15px; line-height:20px; text-overflow:ellipsis; white-space:nowrap; } .ticker-secondary { overflow:hidden; margin-top:7px; color:var(--secondary-text-color); font-size:13px; line-height:17px; text-overflow:ellipsis; white-space:nowrap; }
- .ticker-footer { min-height:68px; box-sizing:border-box; } .footer-marquee { height:68px; } .footer-marquee-track { height:100%; align-items:stretch; } .footer-sequence { height:100%; } .footer-marquee-item { position:relative; display:inline-flex; align-items:center; min-width:max-content; height:100%; padding:0 28px; margin-right:0; box-sizing:border-box; font-size:inherit; text-transform:none; letter-spacing:0; } .footer-marquee-item + .footer-marquee-item::before,.footer-sequence + .footer-sequence .footer-marquee-item:first-child::before { content:""; position:absolute; left:0; width:1px; height:38px; background:rgba(255,255,255,.25); } .footer-marquee-item > [data-stream-id] { display:flex; align-items:center; gap:10px; min-width:0; } .footer-marquee-item ha-icon { flex:0 0 auto; width:27px; height:27px; } .footer-marquee-copy { display:flex; flex-direction:column; justify-content:center; min-width:0; line-height:1.15; white-space:nowrap; } .footer-marquee-copy strong { color:rgba(255,255,255,.94); font-size:16px; font-weight:600; } .footer-marquee-copy small { display:block; margin-top:3px; color:var(--secondary-text-color); font-size:13px; opacity:.7; text-transform:none; letter-spacing:0; }
-.footer-marquee-item.is-current-weather ha-icon,.footer-marquee-item.is-indoor-temperature ha-icon { width:34px; height:34px; --mdc-icon-size:34px; } .footer-marquee-item.is-current-weather .footer-marquee-copy strong,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong { font-size:25px; font-weight:720; line-height:1; } .footer-marquee-item.is-current-weather .footer-marquee-copy small,.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small { margin-top:4px; font-size:17px; line-height:1; opacity:.82; }
-.footer-marquee.single-item .footer-marquee-track { animation:none !important; transform:none !important; }
-.footer-marquee.group-details-open .footer-marquee-track { animation-play-state:paused; } [data-footer-group-labels] { cursor:pointer; } [data-footer-group-labels].footer-group-expanded .footer-marquee-copy strong { color:#90caf9; }
-.drawer { margin-top:0; max-height:min(58vh,560px); overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 24px 24px; background:linear-gradient(145deg,rgba(31,37,44,.94),rgba(14,18,23,.94)); }
-.drawer-host { width:100%; margin:0; overflow:hidden; box-sizing:border-box; }
-.drawer-host .context-bar { transform:translateY(-100%); transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); }
-.drawer-host.drawer-active .context-bar { transform:translateY(0); transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0); }
-.context-bar { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); grid-template-rows:repeat(2,58px); align-items:stretch; gap:10px; width:100%; height:146px; min-height:146px; margin:0; padding:10px 16px; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.085); border-top:0; border-radius:0 0 23px 23px; background:rgba(18,23,28,.96); }
-.context-action { display:flex; grid-column:span 2; align-items:center; justify-content:flex-start; gap:11px; min-width:0; height:58px; padding:0 14px; border:1px solid rgba(255,255,255,.08); border-radius:13px; background:rgba(255,255,255,.045); color:rgba(255,255,255,.8); font:inherit; cursor:pointer; transition:border-color 180ms ease,background 180ms ease,color 180ms ease; } .context-action:nth-child(6) { grid-column:2 / span 2; } .context-action:hover { background:rgba(255,255,255,.1); color:#fff; } .context-action ha-icon { flex:0 0 auto; width:24px; height:24px; } .context-action-copy { display:flex; flex-direction:column; min-width:0; text-align:left; } .context-action-copy strong,.context-action-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .context-action-copy strong { color:rgba(255,255,255,.96); font-size:17px; font-weight:680; line-height:21px; } .context-action-copy small { margin-top:3px; color:rgba(220,226,229,.72); font-size:14px; font-weight:520; line-height:17px; }
-.context-action.tone-information { border-color:rgba(66,165,245,.3); background:linear-gradient(135deg,rgba(66,165,245,.15),rgba(255,255,255,.035)); } .context-action.tone-information ha-icon { color:#42a5f5; }
-.context-action.tone-success { border-color:rgba(102,187,106,.3); background:linear-gradient(135deg,rgba(102,187,106,.15),rgba(255,255,255,.035)); } .context-action.tone-success ha-icon { color:#66bb6a; }
-.context-action.tone-attention { border-color:rgba(255,193,7,.34); background:linear-gradient(135deg,rgba(255,193,7,.17),rgba(255,255,255,.035)); } .context-action.tone-attention ha-icon { color:#ffc107; }
-.context-action.tone-critical { border-color:rgba(239,83,80,.38); background:linear-gradient(135deg,rgba(239,83,80,.19),rgba(255,255,255,.035)); } .context-action.tone-critical ha-icon { color:#ef5350; }
-.context-action.active .context-action-copy small { color:rgba(255,255,255,.82); }
+
+.ticker {
+  height:380px !important;
+  min-height:380px !important;
+}
+
+.primary-zone:has(.has-hero-media) { height:176px; }
+.hero-zone-item.has-hero-media { height:176px; }
+
+.primary-zone .zone-title { font-size:31px !important; }
+.primary-zone .zone-summary { font-size:18px !important; line-height:1.45; }
+
+.primary-zone .zone-title ha-icon { width:31px !important; height:31px !important; }
+.secondary-zone .zone-title ha-icon { width:31px !important; height:31px !important; }
+
+.primary-zone .zone-title ha-icon,
+.secondary-zone .zone-title ha-icon {
+  width:34px !important;
+  height:34px !important;
+}
+
+.ticker-footer { min-height:80px !important; padding-top:16px !important; }
+.footer-marquee { height:80px !important; }
+.footer-marquee-item { gap:12px !important; }
+.footer-marquee-item ha-icon { width:30px !important; height:30px !important; }
+.footer-marquee-copy strong { line-height:1.2; }
+.footer-marquee-copy small { margin-top:5px; }
+
+.primary-zone .zone-title ha-icon { width:26px !important; height:26px !important; }
+.primary-zone .zone-title { font-size:28px !important; }
+.primary-zone .zone-summary { font-size:17px !important; }
+.secondary-zone .zone-title ha-icon { width:26px !important; height:26px !important; }
+.secondary-zone .zone-title { font-size:21px !important; }
+.secondary-zone .zone-summary { font-size:15px !important; }
+
+.ticker {
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  width:100%;
+  max-width:none;
+  height:235px;
+  min-height:235px;
+  margin:0;
+  padding:20px 22px 16px;
+  box-sizing:border-box;
+  border:1px solid rgba(255,255,255,.085);
+  border-radius:23px;
+  background:linear-gradient(135deg,rgba(31,37,44,.78),rgba(15,19,24,.72));
+  color:var(--primary-text-color);
+  box-shadow:0 8px 24px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.035);
+  cursor:pointer;
+  text-align:left;
+}
+
+.utility-header ~ .ticker {
+  border-radius:0 0 23px 23px;
+}
+
+:host([data-drawer-open]) .ticker {
+  border-bottom-left-radius:0;
+  border-bottom-right-radius:0;
+}
+
+.footer-glyph {
+  display:inline-flex;
+  flex:0 0 auto;
+  align-items:center;
+  justify-content:center;
+  width:27px;
+  height:27px;
+  font-size:24px;
+  line-height:1;
+}
+
+.footer-marquee-item ha-icon {
+  flex:0 0 auto;
+  width:27px;
+  height:27px;
+}
+
+.semantic-red { color:#ef5350; }
+.semantic-cyan { color:#26c6da; }
+.semantic-sky { color:#4fc3f7; }
+.semantic-green { color:#66bb6a; }
+.semantic-teal { color:#26a69a; }
+.semantic-purple { color:#ab47bc; }
+.semantic-orange { color:#ff9800; }
+.semantic-amber { color:#ffc107; }
+.semantic-yellow { color:#fdd835; }
+.semantic-blue { color:#42a5f5; }
+.semantic-lime { color:#cddc39; }
+.semantic-white { color:rgba(255,255,255,.86); }
+
+.ticker-footer { min-height:80px; }
+.footer-marquee { height:80px; }
+
+.ticker-head {
+  display:flex;
+  align-items:center;
+  width:100%;
+  min-height:0;
+  flex:1;
+}
+
+.ticker-zones {
+  display:grid;
+  grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr) 30px;
+  gap:28px;
+  align-items:center;
+  width:100%;
+  min-height:0;
+  flex:1;
+}
+
+.ticker-zones.has-visual {
+  grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr);
+}
+
+.visual-center {
+  display:grid;
+  place-items:center;
+  align-self:stretch;
+  min-width:0;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;
+  background:rgba(0,0,0,.22);
+}
+
+.visual-center-media,
+.visual-center-camera {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  border:0;
+}
+
+.visual-center-camera {
+  min-width:0;
+}
+
+.visual-center-fallback {
+  padding:14px;
+  color:var(--secondary-text-color);
+  font-size:13px;
+  line-height:1.35;
+  text-align:center;
+}
+
+.hero-zone-item {
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+}
+
+.hero-zone-item .hero-media-wrap,
+.hero-zone-item .hero-content {
+  position:relative;
+  z-index:1;
+}
+
+.hero-zone-item .hero-media-wrap {
+  position:absolute;
+  inset:0;
+  z-index:0;
+  border-radius:14px;
+  overflow:hidden;
+  background:rgba(0,0,0,.28);
+}
+
+.hero-zone-item .hero-media {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+.hero-zone-item .hero-media-overlay {
+  position:absolute;
+  inset:0;
+  background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.22) 70%,rgba(0,0,0,.08));
+}
+
+.hero-zone-item:has(.hero-media) .hero-content {
+  padding:12px 16px;
+}
+
+.hero-zone-item.has-hero-media {
+  display:grid;
+  grid-template-columns:minmax(0,45%) minmax(0,1fr);
+  gap:16px;
+  align-items:center;
+  width:100%;
+  height:140px;
+  overflow:hidden;
+}
+
+.hero-zone-item.has-hero-media .hero-media-wrap {
+  position:relative;
+  inset:auto;
+  width:100%;
+  height:100%;
+  min-height:0;
+  border-radius:14px;
+}
+
+.hero-zone-item.has-hero-media .hero-media-overlay {
+  display:none;
+}
+
+.hero-zone-item.has-hero-media .hero-content {
+  padding:0;
+  min-width:0;
+}
+
+.primary-zone:has(.has-hero-media) {
+  height:140px;
+}
+
+.icon-tone-critical { color:#ef5350; }
+.icon-tone-attention { color:#ff9800; }
+.icon-tone-success { color:#66bb6a; }
+.icon-tone-information { color:#42a5f5; }
+.icon-tone-media { color:#ab47bc; }
+.icon-tone-neutral { color:rgba(255,255,255,.72); }
+
+.zone-item {
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  min-width:0;
+  width:100%;
+  cursor:pointer;
+  opacity:1;
+  transition:opacity 180ms ease, transform 180ms ease;
+}
+
+.zone-changing .zone-item {
+  opacity:0;
+  transform:translateY(4px);
+}
+
+.zone-title {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  overflow:hidden;
+  font-weight:650;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+.zone-title span {
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.zone-title ha-icon {
+  flex:0 0 auto;
+  width:22px;
+  height:22px;
+}
+
+.zone-summary {
+  display:-webkit-box;
+  margin-top:7px;
+  overflow:hidden;
+  color:rgba(255,255,255,.76);
+  line-height:1.35;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+.zone-empty {
+  color:var(--secondary-text-color);
+  font-size:13px;
+}
+
+.secondary-zone .zone-item.is-brief .zone-title {
+  font-size:28px !important;
+}
+
+.secondary-zone .zone-item.is-brief .zone-summary {
+  font-size:18px !important;
+}
+
+.secondary-zone .zone-item.is-brief .zone-title ha-icon {
+  width:30px !important;
+  height:30px !important;
+}
+
+.secondary-zone .zone-item.is-current-weather .zone-title,
+.secondary-zone .zone-item.is-indoor-temperature .zone-title {
+  font-size:52px !important;
+  font-weight:740;
+  line-height:1.05;
+}
+
+.secondary-zone .zone-item.is-current-weather .zone-summary,
+.secondary-zone .zone-item.is-indoor-temperature .zone-summary {
+  margin-top:6px;
+  font-size:25px !important;
+  line-height:1.2;
+  color:rgba(255,255,255,.84);
+}
+
+.secondary-zone .zone-item.is-current-weather .zone-title ha-icon,
+.secondary-zone .zone-item.is-indoor-temperature .zone-title ha-icon {
+  width:42px !important;
+  height:42px !important;
+  --mdc-icon-size:42px;
+}
+
+.ticker-zone {
+  display:flex;
+  align-items:center;
+  min-width:0;
+  height:150px;
+}
+
+.secondary-zone {
+  padding-left:24px;
+  border-left:1px solid rgba(255,255,255,.1);
+}
+
+.secondary-item {
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  min-width:0;
+  width:100%;
+  height:150px;
+}
+
+.secondary-empty {
+  opacity:.65;
+}
+
+.ticker:focus-visible {
+  outline:2px solid var(--focus-color,#42a5f5);
+  outline-offset:3px;
+}
+
+.main-icon {
+  display:grid;
+  place-items:center;
+  flex:0 0 40px;
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  background:rgba(102,187,106,.12);
+  color:#66bb6a;
+}
+
+.priority-critical .main-icon {
+  color:#ef5350;
+  background:rgba(239,83,80,.12);
+}
+
+.priority-attention .main-icon {
+  color:#ff9800;
+  background:rgba(255,152,0,.12);
+}
+
+.priority-activity .main-icon {
+  color:#42a5f5;
+  background:rgba(66,165,245,.12);
+}
+
+.primary-zone {
+  padding-right:4px;
+}
+
+.primary-zone .zone-title {
+  font-size:25px;
+}
+
+.primary-zone .zone-summary {
+  font-size:15px;
+}
+
+.secondary-zone .zone-title {
+  font-size:18px;
+}
+
+.secondary-zone .zone-summary {
+  font-size:13px;
+}
+
+.bottom-stream {
+  flex:1 1 auto;
+  min-width:0;
+  overflow:hidden;
+}
+
+.footer-marquee {
+  position:relative;
+  width:100%;
+  overflow:hidden;
+}
+
+.footer-marquee-track {
+  display:flex;
+  width:max-content;
+  animation:footer-marquee var(--marquee-duration,30s) linear infinite;
+  will-change:transform;
+}
+
+.footer-sequence {
+  display:flex;
+  flex:0 0 auto;
+  align-items:center;
+}
+
+.footer-marquee-item {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-right:14px;
+  font-size:13px;
+  text-transform:uppercase;
+  letter-spacing:.2px;
+}
+
+.footer-marquee-item ha-icon {
+  width:17px;
+  height:17px;
+}
+
+.footer-marquee-item small {
+  margin-left:2px;
+  color:var(--secondary-text-color);
+  font-size:11px;
+  text-transform:none;
+  letter-spacing:0;
+}
+
+.footer-marquee-separator {
+  margin:0 16px;
+  color:var(--secondary-text-color);
+  font-size:12px;
+}
+
+@keyframes footer-marquee {
+  from { transform:translate3d(0,0,0); }
+  to { transform:translate3d(calc(-1 * var(--marquee-distance)),0,0); }
+}
+
+.ticker-primary {
+  overflow:hidden;
+  font-size:25px;
+  font-weight:650;
+  line-height:30px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.ticker-detail {
+  display:block;
+  max-width:100%;
+  margin-top:8px;
+  overflow:hidden;
+  color:rgba(255,255,255,.82);
+  font-size:15px;
+  line-height:20px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.ticker-secondary {
+  overflow:hidden;
+  margin-top:7px;
+  color:var(--secondary-text-color);
+  font-size:13px;
+  line-height:17px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.ticker-footer {
+  min-height:68px;
+  box-sizing:border-box;
+}
+
+.footer-marquee {
+  height:68px;
+}
+
+.footer-marquee-track {
+  height:100%;
+  align-items:stretch;
+}
+
+.footer-sequence {
+  height:100%;
+}
+
+.footer-marquee-item {
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  min-width:max-content;
+  height:100%;
+  padding:0 28px;
+  margin-right:0;
+  box-sizing:border-box;
+  font-size:inherit;
+  text-transform:none;
+  letter-spacing:0;
+}
+
+.footer-marquee-item + .footer-marquee-item::before,
+.footer-sequence + .footer-sequence .footer-marquee-item:first-child::before {
+  content:"";
+  position:absolute;
+  left:0;
+  width:1px;
+  height:38px;
+  background:rgba(255,255,255,.25);
+}
+
+.footer-marquee-item > [data-stream-id] {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.footer-marquee-item ha-icon {
+  flex:0 0 auto;
+  width:27px;
+  height:27px;
+}
+
+.footer-marquee-copy {
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  min-width:0;
+  line-height:1.15;
+  white-space:nowrap;
+}
+
+.footer-marquee-copy strong {
+  color:rgba(255,255,255,.94);
+  font-size:16px;
+  font-weight:600;
+}
+
+.footer-marquee-copy small {
+  display:block;
+  margin-top:3px;
+  color:var(--secondary-text-color);
+  font-size:13px;
+  opacity:.7;
+  text-transform:none;
+  letter-spacing:0;
+}
+
+.footer-marquee-item.is-current-weather ha-icon,
+.footer-marquee-item.is-indoor-temperature ha-icon {
+  width:34px;
+  height:34px;
+  --mdc-icon-size:34px;
+}
+
+.footer-marquee-item.is-current-weather .footer-marquee-copy strong,
+.footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong {
+  font-size:25px;
+  font-weight:720;
+  line-height:1;
+}
+
+.footer-marquee-item.is-current-weather .footer-marquee-copy small,
+.footer-marquee-item.is-indoor-temperature .footer-marquee-copy small {
+  margin-top:4px;
+  font-size:17px;
+  line-height:1;
+  opacity:.82;
+}
+
+.footer-marquee.single-item .footer-marquee-track {
+  animation:none !important;
+  transform:none !important;
+}
+
+.footer-marquee.group-details-open .footer-marquee-track {
+  animation-play-state:paused;
+  visibility:hidden;
+}
+
+.footer-group-detail {
+  position:absolute;
+  z-index:3;
+  inset:0 18px;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  gap:7px;
+  width:calc(100% - 36px);
+  padding:8px 18px;
+  border:0;
+  background:rgba(17,22,28,.96);
+  color:inherit;
+  cursor:pointer;
+  text-align:center;
+}
+
+.footer-group-detail strong {
+  color:#90caf9;
+  font-size:23px;
+  font-weight:800;
+  line-height:1.05;
+}
+
+.footer-group-detail small {
+  color:rgba(255,255,255,.9);
+  font-size:18px;
+  font-weight:650;
+  line-height:1.12;
+}
+
+[data-footer-group-labels] {
+  cursor:pointer;
+}
+
+[data-footer-group-labels].footer-group-expanded .footer-marquee-copy strong {
+  color:#90caf9;
+}
+
+.drawer {
+  margin-top:0;
+  max-height:min(58vh,560px);
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.085);
+  border-top:0;
+  border-radius:0 0 24px 24px;
+  background:linear-gradient(145deg,rgba(31,37,44,.94),rgba(14,18,23,.94));
+}
+
+.drawer-host {
+  width:100%;
+  margin:0;
+  overflow:hidden;
+  box-sizing:border-box;
+}
+
+.drawer-host .context-bar {
+  transform:translateY(-100%);
+  transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0);
+}
+
+.drawer-host.drawer-active .context-bar {
+  transform:translateY(0);
+  transition:transform 560ms cubic-bezier(0.32, 0, 0.67, 0);
+}
+
+.context-bar {
+  display:grid;
+  grid-template-columns:repeat(10,minmax(0,1fr));
+  grid-template-rows:repeat(2,58px);
+  align-items:stretch;
+  gap:10px;
+  width:100%;
+  height:146px;
+  min-height:146px;
+  margin:0;
+  padding:10px 16px;
+  box-sizing:border-box;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.085);
+  border-top:0;
+  border-radius:0 0 23px 23px;
+  background:rgba(18,23,28,.96);
+}
+
+.context-action {
+  display:flex;
+  grid-column:span 2;
+  align-items:center;
+  justify-content:flex-start;
+  gap:11px;
+  min-width:0;
+  height:58px;
+  padding:0 14px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:13px;
+  background:rgba(255,255,255,.045);
+  color:rgba(255,255,255,.8);
+  font:inherit;
+  cursor:pointer;
+  transition:border-color 180ms ease,background 180ms ease,color 180ms ease;
+}
+
+.context-action:nth-child(6) {
+  grid-column:2 / span 2;
+}
+
+.context-action:hover {
+  background:rgba(255,255,255,.1);
+  color:#fff;
+}
+
+.context-action ha-icon {
+  flex:0 0 auto;
+  width:24px;
+  height:24px;
+}
+
+.context-action-copy {
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  text-align:left;
+}
+
+.context-action-copy strong,
+.context-action-copy small {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.context-action-copy strong {
+  color:rgba(255,255,255,.96);
+  font-size:17px;
+  font-weight:680;
+  line-height:21px;
+}
+
+.context-action-copy small {
+  margin-top:3px;
+  color:rgba(220,226,229,.72);
+  font-size:14px;
+  font-weight:520;
+  line-height:17px;
+}
+
+.context-action.tone-information {
+  border-color:rgba(66,165,245,.3);
+  background:linear-gradient(135deg,rgba(66,165,245,.15),rgba(255,255,255,.035));
+}
+
+.context-action.tone-information ha-icon {
+  color:#42a5f5;
+}
+
+.context-action.tone-success {
+  border-color:rgba(102,187,106,.3);
+  background:linear-gradient(135deg,rgba(102,187,106,.15),rgba(255,255,255,.035));
+}
+
+.context-action.tone-success ha-icon {
+  color:#66bb6a;
+}
+
+.context-action.tone-attention {
+  border-color:rgba(255,193,7,.34);
+  background:linear-gradient(135deg,rgba(255,193,7,.17),rgba(255,255,255,.035));
+}
+
+.context-action.tone-attention ha-icon {
+  color:#ffc107;
+}
+
+.context-action.tone-critical {
+  border-color:rgba(239,83,80,.38);
+  background:linear-gradient(135deg,rgba(239,83,80,.19),rgba(255,255,255,.035));
+}
+
+.context-action.tone-critical ha-icon {
+  color:#ef5350;
+}
+
+.context-action.active .context-action-copy small {
+  color:rgba(255,255,255,.82);
+}
+
 .context-action[data-context-action="security"] ha-icon { color:#ef5350; }
 .context-action[data-context-action="lighting"] ha-icon { color:#ffc107; }
 .context-action[data-context-action="cameras"] ha-icon { color:#42a5f5; }
@@ -3377,92 +9330,697 @@ const CSS = `
 .context-action[data-context-action="movies"] ha-icon { color:#7e57c2; }
 .context-action[data-context-action="sprinklers"] ha-icon { color:#26a69a; }
 .context-action[data-context-action="energy"] ha-icon { color:#fdd835; }
-.context-action.tone-information ha-icon { color:#42a5f5; } .context-action.tone-success ha-icon { color:#66bb6a; } .context-action.tone-attention ha-icon { color:#ffc107; } .context-action.tone-critical ha-icon { color:#ef5350; }
-.drawer h2 { display:flex; align-items:center; gap:8px; margin:0; padding:15px 20px 12px; font-size:22px; } .section-title { padding:9px 20px 7px; color:var(--secondary-text-color); font-size:10px; font-weight:650; letter-spacing:1px; } .recent-title { margin-top:12px; border-top:1px solid rgba(255,255,255,.07); padding-top:13px; }
-.active-list { padding:0 16px; } .recent-list { max-height:calc(min(58vh,560px) - 160px); overflow-y:auto; padding:0 16px 18px; scrollbar-width:thin; overscroll-behavior:contain; touch-action:pan-y; }
-.event { margin:0 0 7px; border:1px solid rgba(255,255,255,.055); border-left:3px solid var(--event-color); border-radius:16px; background:rgba(255,255,255,.025); overflow:hidden; } .event-head { display:grid; grid-template-columns:34px minmax(0,1fr) 20px; gap:10px; align-items:center; width:100%; min-height:52px; padding:8px 11px; border:0; background:none; color:inherit; cursor:pointer; text-align:left; } .event-icon { display:grid; place-items:center; width:30px; height:30px; border-radius:10px; color:var(--event-color); background:color-mix(in srgb,var(--event-color) 12%,transparent); } .event-copy { display:flex; flex-direction:column; min-width:0; } .event-copy strong,.event-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .event-copy strong { font-size:15px; } .event-copy small { color:var(--secondary-text-color); font-size:12px; } .chevron { transition:transform 180ms ease; } .expanded .chevron { transform:rotate(90deg); } .event-details { display:none; padding:0 14px 12px; border-top:1px solid rgba(255,255,255,.045); } .expanded .event-details { display:block; } .field { display:flex; flex-direction:column; margin-top:9px; } .field small { color:var(--secondary-text-color); font-size:10px; text-transform:uppercase; letter-spacing:.55px; } .field span { font-size:12px; line-height:16px; } .open-device { display:inline-flex; align-items:center; gap:7px; margin-top:12px; padding:7px 10px; border:1px solid rgba(255,255,255,.075); border-radius:11px; background:rgba(255,255,255,.035); color:inherit; cursor:pointer; } .empty { min-height:52px; padding:8px 11px; color:var(--secondary-text-color); font-size:13px; }
-@media (prefers-reduced-motion:reduce) { .zone-item { transition:none; } .utility-security.tone-critical,.utility-security.tone-success::before { animation:none; } } @container (max-width:760px) { .utility-header { grid-template-columns:1fr 1fr; grid-template-rows:72px 92px; height:164px; min-height:164px; border-radius:19px 19px 0 0; } .utility-clock { padding:0 16px; } .utility-time strong { font-size:35px; } .utility-clock-seconds { font-size:16px; } .utility-time small { font-size:13px; } .utility-date { margin-top:4px; font-size:11px; } .utility-security { padding:0 12px; } .utility-security ha-icon { width:28px; height:28px; } .utility-music { grid-column:1 / -1; grid-template-columns:minmax(150px,.8fr) minmax(230px,1.2fr); border-top:1px solid rgba(255,255,255,.09); border-left:0; } .utility-music-controls { padding-right:14px; } } @container (max-width:600px) { .ticker { width:100%; height:194px !important; min-height:194px !important; padding:13px 15px 11px; border-radius:19px; } .utility-header ~ .ticker { border-radius:0 0 19px 19px; } .ticker-zones { grid-template-columns:minmax(0,1fr) 30px; gap:8px; } .secondary-zone { display:none; } .ticker-zone { height:58px; } .primary-zone .zone-title { font-size:19px; } .primary-zone .zone-summary { font-size:12px; } .primary-zone .zone-title ha-icon { width:19px; height:19px; } .ticker-footer { padding-top:7px; font-size:9px; gap:7px; } .footer-action { display:none; } .context-bar { grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,52px); height:176px; min-height:176px; padding:7px 9px; gap:6px; } .context-action,.context-action:nth-child(6) { grid-column:auto; height:52px; padding:0 9px; gap:7px; } .context-action ha-icon { width:20px; height:20px; } .context-action-copy strong { font-size:14px; line-height:17px; } .context-action-copy small { font-size:11px; line-height:13px; } }
-.primary-zone .zone-title, .secondary-zone .zone-title { font-size:23px; font-weight:700; }
-.primary-zone .zone-summary, .secondary-zone .zone-summary { font-size:15px; }
-.zone-title { gap:10px; }
-.zone-title ha-icon { width:26px; height:26px; }
-.ticker-footer, .footer-marquee { min-height:88px; height:88px; }
-.footer-marquee-item ha-icon { width:32px; height:32px; }
-.footer-marquee-copy strong { color:#fff; font-size:18px; font-weight:760; letter-spacing:.55px; }
-.footer-marquee-copy small { margin-top:4px; opacity:.78; }
-.context-bar { grid-template-rows:repeat(2,68px); height:166px; min-height:166px; }
-.context-action { height:68px; }
-.ticker { isolation:isolate; overflow:hidden; background:rgba(23,28,34,.82); }
-.ticker > :not(.weather-renderer-layer) { position:relative; z-index:1; }
-.ticker > .weather-renderer-layer { position:absolute; z-index:0; inset:-8% -10% 88px; border-radius:22px 22px 0 0; opacity:0; pointer-events:none; transition:none; background-repeat:repeat; will-change:transform,opacity,background-position; }
-.weather-renderer-layer.lottie-weather-layer { overflow:hidden; background:none; }
-.weather-renderer-layer.lottie-rain-layer { opacity:.32; overflow:hidden; background:none; }
-.weather-renderer-layer.lottie-rain-layer canvas { display:block; width:100% !important; height:100% !important; }
-.weather-renderer-layer.video-weather-layer { width:auto; height:auto; object-fit:cover; opacity:.22; mix-blend-mode:screen; filter:saturate(.72) brightness(.78); background:none; }
-.weather-renderer-layer.weather-effect-rain { opacity:.26; background-image:repeating-linear-gradient(105deg,transparent 0 24px,rgba(190,225,255,.76) 25px 27px,transparent 28px 52px); background-size:96px 120px; animation:ambient-rain 3.2s linear infinite; }
-.weather-renderer-layer.weather-effect-clouds { opacity:.25; mix-blend-mode:screen; background:radial-gradient(ellipse 40% 31% at 24% 38%,rgba(211,225,237,.68) 0 38%,transparent 70%),radial-gradient(ellipse 46% 34% at 74% 45%,rgba(178,199,217,.56) 0 38%,transparent 72%); filter:blur(6px); animation:ambient-clouds 18s ease-in-out infinite alternate; }
-.weather-renderer-layer.weather-effect-fog { opacity:.27; mix-blend-mode:screen; background:linear-gradient(180deg,transparent 16%,rgba(222,229,231,.44) 34%,transparent 52%),linear-gradient(180deg,transparent 48%,rgba(202,215,219,.48) 65%,transparent 82%); filter:blur(8px); animation:ambient-fog 20s ease-in-out infinite alternate; }
-.weather-renderer-layer.weather-effect-wind { opacity:.26; mix-blend-mode:screen; background:linear-gradient(174deg,transparent 28%,rgba(181,225,222,.62) 31% 34%,transparent 37% 58%,rgba(159,209,211,.52) 61% 64%,transparent 67%); filter:blur(3px); animation:ambient-wind 12s ease-in-out infinite alternate; }
-.weather-renderer-layer.weather-effect-storm { opacity:.32; background-image:radial-gradient(ellipse at center,rgba(215,221,255,.92),transparent 58%),linear-gradient(180deg,rgba(8,12,23,.44),rgba(29,34,52,.26)); background-repeat:no-repeat; background-size:42% 100%,100% 100%; animation:ambient-storm 10s ease-in-out infinite; }
-.weather-renderer-layer.weather-effect-night { opacity:.3; mix-blend-mode:screen; background:radial-gradient(circle at 80% 22%,rgba(213,224,255,.72) 0 3%,rgba(155,179,236,.26) 4% 10%,transparent 20%),radial-gradient(ellipse at center,transparent 42%,rgba(2,6,18,.66) 100%); animation:ambient-night 28s ease-in-out infinite alternate; }
-.weather-renderer-layer.ambient-paused { animation-play-state:paused; visibility:hidden; }
-@keyframes ambient-rain { from { background-position:0 -120px; } to { background-position:0 120px; } }
-@keyframes ambient-clouds { from { transform:translate3d(-18%,0,0) scale(1.02); } to { transform:translate3d(18%,1%,0) scale(1.04); } }
-@keyframes ambient-fog { from { transform:translate3d(-24%,0,0) scale(1.06); } to { transform:translate3d(24%,0,0) scale(1.06); } }
-@keyframes ambient-wind { from { transform:translate3d(-30%,0,0); } to { transform:translate3d(30%,1%,0); } }
-@keyframes ambient-storm { 0%,18% { background-position:-45% 0,0 0; opacity:.32; } 38%,48% { background-position:40% 0,0 0; opacity:.58; } 68%,100% { background-position:145% 0,0 0; opacity:.32; } }
-@keyframes ambient-night { from { transform:translate3d(-2%,0,0); } to { transform:translate3d(2%,1%,0); } }
-@media (prefers-reduced-motion:reduce) { .weather-renderer-layer { transition:none; } }
+
+.context-action.tone-information ha-icon { color:#42a5f5; }
+.context-action.tone-success ha-icon { color:#66bb6a; }
+.context-action.tone-attention ha-icon { color:#ffc107; }
+.context-action.tone-critical ha-icon { color:#ef5350; }
+
+.drawer h2 {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:0;
+  padding:15px 20px 12px;
+  font-size:22px;
+}
+
+.section-title {
+  padding:9px 20px 7px;
+  color:var(--secondary-text-color);
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:1px;
+}
+
+.recent-title {
+  margin-top:12px;
+  border-top:1px solid rgba(255,255,255,.07);
+  padding-top:13px;
+}
+
+.active-list {
+  padding:0 16px;
+}
+
+.recent-list {
+  max-height:calc(min(58vh,560px) - 160px);
+  overflow-y:auto;
+  padding:0 16px 18px;
+  scrollbar-width:thin;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
+}
+
+.event {
+  margin:0 0 7px;
+  border:1px solid rgba(255,255,255,.055);
+  border-left:3px solid var(--event-color);
+  border-radius:16px;
+  background:rgba(255,255,255,.025);
+  overflow:hidden;
+}
+
+.event-head {
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr) 20px;
+  gap:10px;
+  align-items:center;
+  width:100%;
+  min-height:52px;
+  padding:8px 11px;
+  border:0;
+  background:none;
+  color:inherit;
+  cursor:pointer;
+  text-align:left;
+}
+
+.event-icon {
+  display:grid;
+  place-items:center;
+  width:30px;
+  height:30px;
+  border-radius:10px;
+  color:var(--event-color);
+  background:color-mix(in srgb,var(--event-color) 12%,transparent);
+}
+
+.event-copy {
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+.event-copy strong,
+.event-copy small {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.event-copy strong {
+  font-size:15px;
+}
+
+.event-copy small {
+  color:var(--secondary-text-color);
+  font-size:12px;
+}
+
+.chevron {
+  transition:transform 180ms ease;
+}
+
+.expanded .chevron {
+  transform:rotate(90deg);
+}
+
+.event-details {
+  display:none;
+  padding:0 14px 12px;
+  border-top:1px solid rgba(255,255,255,.045);
+}
+
+.expanded .event-details {
+  display:block;
+}
+
+.field {
+  display:flex;
+  flex-direction:column;
+  margin-top:9px;
+}
+
+.field small {
+  color:var(--secondary-text-color);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.55px;
+}
+
+.field span {
+  font-size:12px;
+  line-height:16px;
+}
+
+.open-device {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  margin-top:12px;
+  padding:7px 10px;
+  border:1px solid rgba(255,255,255,.075);
+  border-radius:11px;
+  background:rgba(255,255,255,.035);
+  color:inherit;
+  cursor:pointer;
+}
+
+.empty {
+  min-height:52px;
+  padding:8px 11px;
+  color:var(--secondary-text-color);
+  font-size:13px;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .zone-item { transition:none; }
+
+  .utility-security.tone-critical,
+  .utility-security.tone-success::before {
+    animation:none;
+  }
+}
+
+@container (max-width:760px) {
+  .utility-header {
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:72px 92px;
+    height:164px;
+    min-height:164px;
+    border-radius:19px 19px 0 0;
+  }
+
+  .utility-clock { padding:0 16px; }
+  .utility-time strong { font-size:35px; }
+  .utility-clock-seconds { font-size:16px; }
+  .utility-time small { font-size:13px; }
+  .utility-date { margin-top:4px; font-size:11px; }
+
+  .utility-security { padding:0 12px; }
+  .utility-security ha-icon { width:28px; height:28px; }
+
+  .utility-music {
+    grid-column:1 / -1;
+    grid-template-columns:minmax(150px,.8fr) minmax(230px,1.2fr);
+    border-top:1px solid rgba(255,255,255,.09);
+    border-left:0;
+  }
+
+  .utility-music-controls {
+    padding-right:14px;
+  }
+}
+
+@container (max-width:600px) {
+  .ticker {
+    width:100%;
+    height:194px !important;
+    min-height:194px !important;
+    padding:13px 15px 11px;
+    border-radius:19px;
+  }
+
+  .utility-header ~ .ticker {
+    border-radius:0 0 19px 19px;
+  }
+
+  .ticker-zones {
+    grid-template-columns:minmax(0,1fr) 30px;
+    gap:8px;
+  }
+
+  .secondary-zone { display:none; }
+  .ticker-zone { height:58px; }
+
+  .primary-zone .zone-title { font-size:19px; }
+  .primary-zone .zone-summary { font-size:12px; }
+  .primary-zone .zone-title ha-icon { width:19px; height:19px; }
+
+  .ticker-footer {
+    padding-top:7px;
+    font-size:9px;
+    gap:7px;
+  }
+
+  .footer-action { display:none; }
+
+  .context-bar {
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-rows:repeat(3,52px);
+    height:176px;
+    min-height:176px;
+    padding:7px 9px;
+    gap:6px;
+  }
+
+  .context-action,
+  .context-action:nth-child(6) {
+    grid-column:auto;
+    height:52px;
+    padding:0 9px;
+    gap:7px;
+  }
+
+  .context-action ha-icon {
+    width:20px;
+    height:20px;
+  }
+
+  .context-action-copy strong {
+    font-size:14px;
+    line-height:17px;
+  }
+
+  .context-action-copy small {
+    font-size:11px;
+    line-height:13px;
+  }
+}
+
+.primary-zone .zone-title,
+.secondary-zone .zone-title {
+  font-size:23px;
+  font-weight:700;
+}
+
+.primary-zone .zone-summary,
+.secondary-zone .zone-summary {
+  font-size:15px;
+}
+
+.zone-title {
+  gap:10px;
+}
+
+.zone-title ha-icon {
+  width:26px;
+  height:26px;
+}
+
+.ticker-footer,
+.footer-marquee {
+  min-height:88px;
+  height:88px;
+}
+
+.footer-marquee-item ha-icon {
+  width:32px;
+  height:32px;
+}
+
+.footer-marquee-copy strong {
+  color:#fff;
+  font-size:18px;
+  font-weight:760;
+  letter-spacing:.55px;
+}
+
+.footer-marquee-copy small {
+  margin-top:4px;
+  opacity:.78;
+}
+
+.context-bar {
+  grid-template-rows:repeat(2,68px);
+  height:166px;
+  min-height:166px;
+}
+
+.context-action {
+  height:68px;
+}
+
+.ticker {
+  isolation:isolate;
+  overflow:hidden;
+  background:rgba(23,28,34,.82);
+}
+
+.ticker > :not(.weather-renderer-layer) {
+  position:relative;
+  z-index:1;
+}
+
+.ticker > .weather-renderer-layer {
+  position:absolute;
+  z-index:0;
+  inset:-8% -10% 88px;
+  border-radius:22px 22px 0 0;
+  opacity:0;
+  pointer-events:none;
+  transition:none;
+  background-repeat:repeat;
+  will-change:transform,opacity,background-position;
+}
+
+.weather-renderer-layer.lottie-weather-layer {
+  overflow:hidden;
+  background:none;
+}
+
+.weather-renderer-layer.lottie-rain-layer {
+  opacity:.32;
+  overflow:hidden;
+  background:none;
+}
+
+.weather-renderer-layer.lottie-rain-layer canvas {
+  display:block;
+  width:100% !important;
+  height:100% !important;
+}
+
+.weather-renderer-layer.video-weather-layer {
+  width:auto;
+  height:auto;
+  object-fit:cover;
+  opacity:.22;
+  mix-blend-mode:screen;
+  filter:saturate(.72) brightness(.78);
+  background:none;
+}
+
+.weather-renderer-layer.weather-effect-rain {
+  opacity:.26;
+  background-image:repeating-linear-gradient(105deg,transparent 0 24px,rgba(190,225,255,.76) 25px 27px,transparent 28px 52px);
+  background-size:96px 120px;
+  animation:ambient-rain 3.2s linear infinite;
+}
+
+.weather-renderer-layer.weather-effect-clouds {
+  opacity:.25;
+  mix-blend-mode:screen;
+  background:radial-gradient(ellipse 40% 31% at 24% 38%,rgba(211,225,237,.68) 0 38%,transparent 70%),radial-gradient(ellipse 46% 34% at 74% 45%,rgba(178,199,217,.56) 0 38%,transparent 72%);
+  filter:blur(6px);
+  animation:ambient-clouds 18s ease-in-out infinite alternate;
+}
+
+.weather-renderer-layer.weather-effect-fog {
+  opacity:.27;
+  mix-blend-mode:screen;
+  background:linear-gradient(180deg,transparent 16%,rgba(222,229,231,.44) 34%,transparent 52%),linear-gradient(180deg,transparent 48%,rgba(202,215,219,.48) 65%,transparent 82%);
+  filter:blur(8px);
+  animation:ambient-fog 20s ease-in-out infinite alternate;
+}
+
+.weather-renderer-layer.weather-effect-wind {
+  opacity:.26;
+  mix-blend-mode:screen;
+  background:linear-gradient(174deg,transparent 28%,rgba(181,225,222,.62) 31% 34%,transparent 37% 58%,rgba(159,209,211,.52) 61% 64%,transparent 67%);
+  filter:blur(3px);
+  animation:ambient-wind 12s ease-in-out infinite alternate;
+}
+
+.weather-renderer-layer.weather-effect-storm {
+  opacity:.32;
+  background-image:radial-gradient(ellipse at center,rgba(215,221,255,.92),transparent 58%),linear-gradient(180deg,rgba(8,12,23,.44),rgba(29,34,52,.26));
+  background-repeat:no-repeat;
+  background-size:42% 100%,100% 100%;
+  animation:ambient-storm 10s ease-in-out infinite;
+}
+
+.weather-renderer-layer.weather-effect-night {
+  opacity:.3;
+  mix-blend-mode:screen;
+  background:radial-gradient(circle at 80% 22%,rgba(213,224,255,.72) 0 3%,rgba(155,179,236,.26) 4% 10%,transparent 20%),radial-gradient(ellipse at center,transparent 42%,rgba(2,6,18,.66) 100%);
+  animation:ambient-night 28s ease-in-out infinite alternate;
+}
+
+.weather-renderer-layer.ambient-paused {
+  animation-play-state:paused;
+  visibility:hidden;
+}
+
+@keyframes ambient-rain {
+  from { background-position:0 -120px; }
+  to { background-position:0 120px; }
+}
+
+@keyframes ambient-clouds {
+  from { transform:translate3d(-18%,0,0) scale(1.02); }
+  to { transform:translate3d(18%,1%,0) scale(1.04); }
+}
+
+@keyframes ambient-fog {
+  from { transform:translate3d(-24%,0,0) scale(1.06); }
+  to { transform:translate3d(24%,0,0) scale(1.06); }
+}
+
+@keyframes ambient-wind {
+  from { transform:translate3d(-30%,0,0); }
+  to { transform:translate3d(30%,1%,0); }
+}
+
+@keyframes ambient-storm {
+  0%,18% { background-position:-45% 0,0 0; opacity:.32; }
+  38%,48% { background-position:40% 0,0 0; opacity:.58; }
+  68%,100% { background-position:145% 0,0 0; opacity:.32; }
+}
+
+@keyframes ambient-night {
+  from { transform:translate3d(-2%,0,0); }
+  to { transform:translate3d(2%,1%,0); }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .weather-renderer-layer {
+    transition:none;
+  }
+}
+
 @container (max-width:600px) {
   :host([data-profile="auto"]) .utility-header,
   :host([data-profile="auto"]) .ticker,
   :host([data-profile="auto"]) .drawer-host,
   :host([data-profile="phone"]) .utility-header,
   :host([data-profile="phone"]) .ticker,
-  :host([data-profile="phone"]) .drawer-host { display:none !important; }
-  .phone-status-host { display:block; }
-  .phone-status-shell { overflow:hidden; border:1px solid rgba(255,255,255,.085); border-radius:18px; background:linear-gradient(135deg,rgba(31,37,44,.82),rgba(15,19,24,.78)); box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035); }
-  .phone-status-current { display:grid; grid-template-columns:42px minmax(0,1fr) 22px; align-items:center; gap:10px; width:100%; min-height:78px; padding:10px 13px; border:0; background:none; color:inherit; font:inherit; text-align:left; }
-  .phone-status-current:disabled { opacity:1; }
-  .phone-status-current.is-actionable { cursor:pointer; }
-  .phone-status-current.is-actionable:focus-visible { outline:2px solid var(--focus-color,#42a5f5); outline-offset:-3px; }
-  .phone-status-icon { display:grid; place-items:center; width:38px; height:38px; border-radius:12px; background:rgba(66,165,245,.12); color:#42a5f5; }
-  .phone-status-current.priority-critical .phone-status-icon { background:rgba(239,83,80,.14); color:#ef5350; }
-  .phone-status-current.priority-attention .phone-status-icon { background:rgba(255,152,0,.14); color:#ff9800; }
-  .phone-status-current.priority-normal .phone-status-icon { background:rgba(102,187,106,.13); color:#66bb6a; }
-  .phone-status-icon ha-icon { width:24px; height:24px; }
-  .phone-status-copy { display:flex; flex-direction:column; min-width:0; }
-  .phone-status-copy small { color:var(--secondary-text-color); font-size:10px; font-weight:700; letter-spacing:.75px; text-transform:uppercase; }
-  .phone-status-copy strong,.phone-status-copy span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .phone-status-copy strong { margin-top:2px; color:rgba(255,255,255,.96); font-size:16px; line-height:20px; }
-  .phone-status-copy span { margin-top:2px; color:rgba(220,226,229,.72); font-size:12px; line-height:15px; }
-  .phone-status-chevron { width:20px; height:20px; color:var(--secondary-text-color); }
-  .phone-status-ticker { height:52px; overflow:hidden; border-top:1px solid rgba(255,255,255,.075); white-space:nowrap; }
-  .phone-status-ticker-track { display:flex; width:max-content; min-width:100%; height:100%; animation:phone-status-marquee var(--home-status-phone-ticker-seconds,32s) linear infinite; will-change:transform; }
-  .phone-status-ticker-sequence { display:flex; flex:0 0 auto; align-items:stretch; height:100%; }
-  .phone-status-ticker-item { position:relative; display:inline-flex; align-items:center; gap:8px; min-width:max-content; height:100%; padding:0 16px; box-sizing:border-box; color:inherit; }
-  .phone-status-ticker-item + .phone-status-ticker-item::before,.phone-status-ticker-sequence + .phone-status-ticker-sequence .phone-status-ticker-item:first-child::before { content:""; position:absolute; left:0; width:1px; height:28px; background:rgba(255,255,255,.18); }
-  .phone-status-ticker-item ha-icon { flex:0 0 auto; width:20px; height:20px; }
-  .phone-status-ticker-copy { display:flex; flex-direction:column; justify-content:center; min-width:0; line-height:1.12; }
-  .phone-status-ticker-copy strong { color:rgba(255,255,255,.92); font-size:12px; font-weight:600; }
-  .phone-status-ticker-copy small { display:block; max-width:220px; margin-top:3px; overflow:hidden; color:var(--secondary-text-color); font-size:10px; opacity:.78; text-overflow:ellipsis; white-space:nowrap; }
-  @keyframes phone-status-marquee { to { transform:translateX(-50%); } }
+  :host([data-profile="phone"]) .drawer-host {
+    display:none !important;
+  }
+
+  .phone-status-host {
+    display:block;
+  }
+
+  .phone-status-shell {
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.085);
+    border-radius:18px;
+    background:linear-gradient(135deg,rgba(31,37,44,.82),rgba(15,19,24,.78));
+    box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);
+  }
+
+  .phone-status-current {
+    display:grid;
+    grid-template-columns:42px minmax(0,1fr) 22px;
+    align-items:center;
+    gap:10px;
+    width:100%;
+    min-height:78px;
+    padding:10px 13px;
+    border:0;
+    background:none;
+    color:inherit;
+    font:inherit;
+    text-align:left;
+  }
+
+  .phone-status-current:disabled {
+    opacity:1;
+  }
+
+  .phone-status-current.is-actionable {
+    cursor:pointer;
+  }
+
+  .phone-status-current.is-actionable:focus-visible {
+    outline:2px solid var(--focus-color,#42a5f5);
+    outline-offset:-3px;
+  }
+
+  .phone-status-icon {
+    display:grid;
+    place-items:center;
+    width:38px;
+    height:38px;
+    border-radius:12px;
+    background:rgba(66,165,245,.12);
+    color:#42a5f5;
+  }
+
+  .phone-status-current.priority-critical .phone-status-icon {
+    background:rgba(239,83,80,.14);
+    color:#ef5350;
+  }
+
+  .phone-status-current.priority-attention .phone-status-icon {
+    background:rgba(255,152,0,.14);
+    color:#ff9800;
+  }
+
+  .phone-status-current.priority-normal .phone-status-icon {
+    background:rgba(102,187,106,.13);
+    color:#66bb6a;
+  }
+
+  .phone-status-icon ha-icon {
+    width:24px;
+    height:24px;
+  }
+
+  .phone-status-copy {
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+  }
+
+  .phone-status-copy small {
+    color:var(--secondary-text-color);
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.75px;
+    text-transform:uppercase;
+  }
+
+  .phone-status-copy strong,
+  .phone-status-copy span {
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .phone-status-copy strong {
+    margin-top:2px;
+    color:rgba(255,255,255,.96);
+    font-size:16px;
+    line-height:20px;
+  }
+
+  .phone-status-copy span {
+    margin-top:2px;
+    color:rgba(220,226,229,.72);
+    font-size:12px;
+    line-height:15px;
+  }
+
+  .phone-status-chevron {
+    width:20px;
+    height:20px;
+    color:var(--secondary-text-color);
+  }
+
+  .phone-status-ticker {
+    height:52px;
+    overflow:hidden;
+    border-top:1px solid rgba(255,255,255,.075);
+    white-space:nowrap;
+  }
+
+  .phone-status-ticker-track {
+    display:flex;
+    width:max-content;
+    min-width:100%;
+    height:100%;
+    animation:phone-status-marquee var(--home-status-phone-ticker-seconds,32s) linear infinite;
+    will-change:transform;
+  }
+
+  .phone-status-ticker-sequence {
+    display:flex;
+    flex:0 0 auto;
+    align-items:stretch;
+    height:100%;
+  }
+
+  .phone-status-ticker-item {
+    position:relative;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    min-width:max-content;
+    height:100%;
+    padding:0 16px;
+    box-sizing:border-box;
+    color:inherit;
+  }
+
+  .phone-status-ticker-item + .phone-status-ticker-item::before,
+  .phone-status-ticker-sequence + .phone-status-ticker-sequence .phone-status-ticker-item:first-child::before {
+    content:"";
+    position:absolute;
+    left:0;
+    width:1px;
+    height:28px;
+    background:rgba(255,255,255,.18);
+  }
+
+  .phone-status-ticker-item ha-icon {
+    flex:0 0 auto;
+    width:20px;
+    height:20px;
+  }
+
+  .phone-status-ticker-copy {
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    min-width:0;
+    line-height:1.12;
+  }
+
+  .phone-status-ticker-copy strong {
+    color:rgba(255,255,255,.92);
+    font-size:12px;
+    font-weight:600;
+  }
+
+  .phone-status-ticker-copy small {
+    display:block;
+    max-width:220px;
+    margin-top:3px;
+    overflow:hidden;
+    color:var(--secondary-text-color);
+    font-size:10px;
+    opacity:.78;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  @keyframes phone-status-marquee {
+    to { transform:translateX(-50%); }
+  }
 }
+
 :host([data-profile="phone"]) .utility-header,
 :host([data-profile="phone"]) .ticker,
-:host([data-profile="phone"]) .drawer-host { display:none !important; }
-:host([data-profile="phone"]) .phone-status-host { display:block; }
+:host([data-profile="phone"]) .drawer-host {
+  display:none !important;
+}
+
+:host([data-profile="phone"]) .phone-status-host {
+  display:block;
+}
+
 :host([data-profile="tablet"]) .phone-status-host,
-:host([data-profile="desktop"]) .phone-status-host { display:none !important; }
+:host([data-profile="desktop"]) .phone-status-host {
+  display:none !important;
+}
+
 :host([data-profile="tablet"]) .utility-header,
-:host([data-profile="desktop"]) .utility-header { display:grid; }
+:host([data-profile="desktop"]) .utility-header {
+  display:grid;
+}
+
 :host([data-profile="tablet"]) .ticker,
-:host([data-profile="desktop"]) .ticker { display:flex; }
+:host([data-profile="desktop"]) .ticker {
+  display:flex;
+}
+
 :host([data-profile="tablet"]) .drawer-host,
-:host([data-profile="desktop"]) .drawer-host { display:block; }
+:host([data-profile="desktop"]) .drawer-host {
+  display:block;
+}
+
 @media (prefers-reduced-motion:reduce) {
-  .phone-status-ticker-track { animation:none; }
-  .phone-status-ticker-sequence[aria-hidden="true"] { display:none; }
+  .phone-status-ticker-track {
+    animation:none;
+  }
+
+  .phone-status-ticker-sequence[aria-hidden="true"] {
+    display:none;
+  }
 }
 
 /* v0.3.23 tablet/desktop 10-foot readability hierarchy */
@@ -3470,73 +10028,162 @@ const CSS = `
 :host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title,
 :host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title,
 :host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title {
-  font-size:58px !important; font-weight:820 !important; line-height:.95 !important; letter-spacing:-1.2px !important;
+  font-size:58px !important;
+  font-weight:820 !important;
+  line-height:.95 !important;
+  letter-spacing:-1.2px !important;
 }
+
 :host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
 :host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon,
 :host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-title ha-icon,
 :host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-title ha-icon {
-  width:50px !important; height:50px !important; --mdc-icon-size:50px !important;
+  width:50px !important;
+  height:50px !important;
+  --mdc-icon-size:50px !important;
 }
+
 :host([data-profile="tablet"]) .primary-zone .zone-item.is-measurement .zone-summary,
 :host([data-profile="tablet"]) .secondary-zone .zone-item.is-measurement .zone-summary,
 :host([data-profile="desktop"]) .primary-zone .zone-item.is-measurement .zone-summary,
 :host([data-profile="desktop"]) .secondary-zone .zone-item.is-measurement .zone-summary {
-  margin-top:10px !important; font-size:25px !important; font-weight:650 !important; line-height:1.08 !important; color:rgba(255,255,255,.9) !important;
+  margin-top:10px !important;
+  font-size:25px !important;
+  font-weight:650 !important;
+  line-height:1.08 !important;
+  color:rgba(255,255,255,.9) !important;
 }
+
 :host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title,
 :host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title {
-  font-size:56px !important; font-weight:820 !important; line-height:.95 !important;
+  font-size:56px !important;
+  font-weight:820 !important;
+  line-height:.95 !important;
 }
+
 :host([data-profile="tablet"]) .zone-item.is-current-weather .zone-title ha-icon,
 :host([data-profile="desktop"]) .zone-item.is-current-weather .zone-title ha-icon {
-  width:50px !important; height:50px !important; --mdc-icon-size:50px !important;
+  width:50px !important;
+  height:50px !important;
+  --mdc-icon-size:50px !important;
 }
+
 :host([data-profile="tablet"]) .zone-item.is-current-weather .zone-summary,
 :host([data-profile="desktop"]) .zone-item.is-current-weather .zone-summary {
-  font-size:25px !important; font-weight:650 !important; line-height:1.08 !important;
+  font-size:25px !important;
+  font-weight:650 !important;
+  line-height:1.08 !important;
 }
+
 :host([data-profile="tablet"]) .zone-item.is-scheduled .zone-summary,
 :host([data-profile="desktop"]) .zone-item.is-scheduled .zone-summary {
-  font-size:24px !important; font-weight:700 !important; line-height:1.1 !important;
+  font-size:24px !important;
+  font-weight:700 !important;
+  line-height:1.1 !important;
 }
+
 :host([data-profile="tablet"]) .ticker-footer,
 :host([data-profile="tablet"]) .footer-marquee,
 :host([data-profile="desktop"]) .ticker-footer,
-:host([data-profile="desktop"]) .footer-marquee { min-height:94px !important; height:94px !important; }
+:host([data-profile="desktop"]) .footer-marquee {
+  min-height:94px !important;
+  height:94px !important;
+}
+
 :host([data-profile="tablet"]) .footer-marquee-item ha-icon,
 :host([data-profile="desktop"]) .footer-marquee-item ha-icon {
-  width:36px !important; height:36px !important; --mdc-icon-size:36px !important;
+  width:36px !important;
+  height:36px !important;
+  --mdc-icon-size:36px !important;
 }
+
 :host([data-profile="tablet"]) .footer-marquee-copy strong,
 :host([data-profile="desktop"]) .footer-marquee-copy strong {
-  font-size:24px !important; font-weight:800 !important; line-height:1.02 !important; letter-spacing:.2px !important;
+  font-size:24px !important;
+  font-weight:800 !important;
+  line-height:1.02 !important;
+  letter-spacing:.2px !important;
 }
+
 :host([data-profile="tablet"]) .footer-marquee-copy small,
 :host([data-profile="desktop"]) .footer-marquee-copy small {
-  margin-top:7px !important; font-size:20px !important; font-weight:650 !important; line-height:1.05 !important; opacity:.9 !important;
+  margin-top:7px !important;
+  font-size:20px !important;
+  font-weight:650 !important;
+  line-height:1.05 !important;
+  opacity:.9 !important;
 }
+
 :host([data-profile="tablet"]) .footer-marquee-item.is-current-weather ha-icon,
 :host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature ha-icon,
 :host([data-profile="desktop"]) .footer-marquee-item.is-current-weather ha-icon,
 :host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature ha-icon {
-  width:42px !important; height:42px !important; --mdc-icon-size:42px !important;
+  width:42px !important;
+  height:42px !important;
+  --mdc-icon-size:42px !important;
 }
+
 :host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
 :host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong,
 :host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy strong,
 :host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong {
-  font-size:36px !important; font-weight:840 !important; line-height:.95 !important;
+  font-size:36px !important;
+  font-weight:840 !important;
+  line-height:.95 !important;
 }
+
 :host([data-profile="tablet"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
 :host([data-profile="tablet"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small,
 :host([data-profile="desktop"]) .footer-marquee-item.is-current-weather .footer-marquee-copy small,
 :host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy small {
-  font-size:21px !important; font-weight:680 !important;
+  font-size:21px !important;
+  font-weight:680 !important;
 }
 `;
 
-if (!customElements.get('home-status-card-editor')) customElements.define('home-status-card-editor', HomeStatusCardEditor);
-if (!customElements.get('home-status-card')) customElements.define('home-status-card', HomeStatusCard);
-window.customCards = window.customCards || [];
-if (!window.customCards.some(card => card.type === 'home-status-card')) window.customCards.push({ type: 'home-status-card', name: 'Home Status Card', description: 'Home Status ticker with local notification drawer', preview: true });
+if (
+  !customElements.get(
+    'home-status-card-editor'
+  )
+) {
+  customElements.define(
+    'home-status-card-editor',
+    HomeStatusCardEditor
+  );
+}
+
+if (
+  !customElements.get(
+    'home-status-card'
+  )
+) {
+  customElements.define(
+    'home-status-card',
+    HomeStatusCard
+  );
+}
+
+window.customCards =
+  window.customCards || [];
+
+if (
+  !window.customCards.some(
+    card =>
+      card.type ===
+      'home-status-card'
+  )
+) {
+  window.customCards.push({
+    type:
+      'home-status-card',
+
+    name:
+      'Home Status Card',
+
+    description:
+      'Home Status ticker with local notification drawer',
+
+    preview:
+      true
+  });
+}

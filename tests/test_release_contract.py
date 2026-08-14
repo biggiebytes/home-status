@@ -14,8 +14,8 @@ def test_manifest_and_frontend_use_the_current_release_versions():
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))
     constants = (COMPONENT / "const.py").read_text(encoding="utf-8")
 
-    assert manifest["version"] == "0.6.9"
-    assert '"version": "0.5.2"' in constants
+    assert manifest["version"] == "0.9.2"
+    assert '"version": "0.8.2"' in constants
     assert "recorder" in manifest["after_dependencies"]
 
 

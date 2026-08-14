@@ -51,7 +51,7 @@ npm run test:card
 
 ## Version
 
-Current integration version: **0.6.9**.
+Current integration version: **0.9.2**.
 
 ## License
 

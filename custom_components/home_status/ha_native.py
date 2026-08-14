@@ -28,6 +28,476 @@ _MEASUREMENT_DEVICE_CLASSES = frozenset({
     "weight", "wind_speed",
 })
 
+_CATEGORY_ALIASES = {
+    "calendar": "schedule",
+    "sprinklers": "schedule",
+    "fault": "maintenance",
+}
+
+_PRIORITY_RANK = {
+    "critical": 0,
+    "attention": 1,
+    "activity": 2,
+    "normal": 3,
+}
+
+
+def present_current_items(
+    items: list[dict[str, Any]], options: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Publish complete, card-ready current items from HA facts."""
+    return [
+        _present_item(item, current=True, options=options)
+        for item in items
+        if isinstance(item, dict)
+        and (item.get("attention") not in {None, "none"} or item.get("capability") == "appliance_cycle")
+    ]
+
+
+def present_recent_items(
+    items: list[dict[str, Any]], options: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Publish complete, card-ready Recorder transitions, grouped when useful."""
+    presented = [
+        _present_item(item, current=False, options=options)
+        for item in items
+        if isinstance(item, dict)
+    ]
+    return _group_contact_closures(presented)
+
+
+def present_awareness_items(
+    items: list[dict[str, Any]], options: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Complete the provider-neutral awareness contract before publication."""
+    result: list[dict[str, Any]] = []
+    for index, raw in enumerate(items):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        raw_category = str(item.get("category") or "activity").casefold()
+        category = _final_category(raw_category)
+        entity_id = str(item.get("entity_id") or "")
+        priority = str(item.get("priority") or "normal").casefold()
+        device_class = str(item.get("device_class") or "").casefold()
+        if device_class in {"temperature", "humidity"} and category in {
+            "activity", "environment", "sensor",
+        }:
+            category = "climate"
+        item["id"] = item.get("id") or f"native:awareness:{entity_id or category}:{index}"
+        item["title"] = _final_title(item)
+        item["message"] = item["title"]
+        item["summary"] = str(item.get("summary") or item.get("detail") or "").strip()
+        item["category"] = category
+        source_kind = str(item.get("source_kind") or "").casefold()
+        display_kind = str(item.get("display_kind") or "").casefold()
+        if not display_kind:
+            if source_kind == "news":
+                display_kind = "local_news"
+            elif item.get("scheduled_at"):
+                display_kind = "scheduled"
+            elif category == "weather" and priority in {"attention", "critical"}:
+                display_kind = "weather_alert"
+            elif category == "weather" and entity_id.startswith("weather."):
+                display_kind = "current_weather"
+            elif device_class == "temperature" or (
+                category == "climate" and item["title"].endswith(("°F", "°C"))
+            ):
+                display_kind = "temperature"
+            elif device_class in _MEASUREMENT_DEVICE_CLASSES:
+                display_kind = "measurement"
+            else:
+                display_kind = "awareness"
+        item["display_kind"] = display_kind
+        item["color_role"] = str(
+            item.get("color_role")
+            or _awareness_color_role(item, raw_category, category, priority, display_kind)
+        )
+        has_timestamp = any(
+            item.get(key)
+            for key in ("occurred_at", "created_at", "updated_at", "timestamp")
+        )
+        item["timestamp_mode"] = str(
+            item.get("timestamp_mode")
+            or (
+                "relative"
+                if has_timestamp and _option_bool(options, "timestamp_other", False)
+                else "none"
+            )
+        )
+        if source_kind == "news":
+            media_url = str(
+                item.get("media_url")
+                or item.get("image_url")
+                or ""
+            ).strip()
+            if media_url:
+                media_type = str(item.get("media_type") or "image").casefold()
+                item["zone_visual"] = {
+                    "type": "video" if media_type.startswith("video") else "image",
+                    "url": media_url,
+                    "article_url": str(
+                        item.get("article_url")
+                        or item.get("navigation")
+                        or ""
+                    ).strip(),
+                    "mute": True,
+                }
+        if item.get("scheduled_at"):
+            item["summary"] = ""
+        item["utility_role"] = str(
+            item.get("utility_role")
+            or (
+                "calendar"
+                if raw_category == "calendar" or entity_id.startswith("calendar.")
+                else "waste" if category == "waste" else ""
+            )
+        )
+        item["event_type"] = item.get("event_type") or "native_awareness"
+        item["active"] = False
+        item["priority"] = priority
+        result.append(item)
+    return result
+
+
+def compose_presentation_streams(
+    current: list[dict[str, Any]],
+    recent: list[dict[str, Any]],
+    awareness: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Assign normalized items to card streams at the integration boundary."""
+    active = _ranked_presentable(
+        item for item in current
+        if isinstance(item, dict) and item.get("active") is not False
+    )
+    shared_active = [item for item in active if item.get("ticker_eligible") is not True]
+    ranked_awareness = _ranked_presentable(awareness)
+
+    if len(shared_active) >= 2:
+        left = [shared_active[0]]
+        right = [shared_active[1]]
+    elif len(shared_active) == 1:
+        left = [shared_active[0]]
+        right = ranked_awareness
+    else:
+        left = ranked_awareness[::2]
+        right = ranked_awareness[1::2]
+
+    bottom_candidates = [
+        *[item for item in active if item.get("ticker_eligible") is True],
+        *[item for item in recent if _presentable_item(item)],
+    ]
+    alarm_transitions = [
+        item for item in bottom_candidates
+        if str(item.get("event_type") or "").casefold() == "alarm_transition"
+    ]
+    newest_alarm = max(alarm_transitions, key=_item_timestamp, default=None)
+    bottom = [
+        item for item in bottom_candidates
+        if str(item.get("event_type") or "").casefold() != "alarm_transition"
+        or item is newest_alarm
+    ]
+
+    return {
+        "left": [str(item["id"]) for item in left],
+        "right": [str(item["id"]) for item in right],
+        "bottom": [str(item["id"]) for item in bottom],
+        "phone_primary_id": str(active[0]["id"]) if active else "",
+        "phone_fallback": {
+            "id": "phone-home-normal",
+            "title": "Home Normal",
+            "message": "Home Normal",
+            "summary": "No active alerts",
+            "icon": "mdi:check-circle-outline",
+            "priority": "normal",
+            "color_role": "success",
+            "active": False,
+            "timestamp_mode": "none",
+            "display_kind": "status",
+        },
+    }
+
+
+def _ranked_presentable(items: Any) -> list[dict[str, Any]]:
+    indexed = [
+        (index, item)
+        for index, item in enumerate(items)
+        if _presentable_item(item)
+    ]
+    indexed.sort(
+        key=lambda entry: (
+            _PRIORITY_RANK.get(
+                str(entry[1].get("priority") or "normal").casefold(), 3
+            ),
+            entry[0],
+        )
+    )
+    return [item for _, item in indexed]
+
+
+def _presentable_item(item: Any) -> bool:
+    if not isinstance(item, dict) or not item.get("id"):
+        return False
+    item_id = str(item.get("id") or "").casefold()
+    source_kind = str(item.get("source_kind") or "").casefold()
+    if source_kind == "internal" or ":overflow:" in item_id or ":diagnostic_record:" in item_id:
+        return False
+    label = str(
+        item.get("display_name")
+        or item.get("title")
+        or item.get("message")
+        or item.get("entity_name")
+        or ""
+    ).strip()
+    return bool(label) and label.casefold() != "undefined"
+
+
+def _item_timestamp(item: dict[str, Any]) -> float:
+    raw = next(
+        (
+            item.get(key)
+            for key in ("occurred_at", "created_at", "updated_at", "timestamp")
+            if item.get(key)
+        ),
+        None,
+    )
+    if isinstance(raw, datetime):
+        value = raw
+    else:
+        try:
+            value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return 0.0
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
+
+
+def _final_title(item: dict[str, Any]) -> str:
+    value = str(
+        item.get("display_name")
+        or item.get("title")
+        or item.get("message")
+        or "Home notification"
+    ).strip()
+    return {
+        "Dryer Finished": "Dryer Complete",
+        "Washer Finished": "Washer Complete",
+        "Dishwasher Finished": "Dishwasher Complete",
+        "Everything Looks Good": "Home Normal",
+    }.get(value, value)
+
+
+def _final_category(value: Any) -> str:
+    raw = str(value or "activity").casefold()
+    return _CATEGORY_ALIASES.get(raw, raw)
+
+
+def _awareness_color_role(
+    item: dict[str, Any], raw_category: str, category: str,
+    priority: str, display_kind: str,
+) -> str:
+    if priority == "critical":
+        return "security"
+    if priority == "attention":
+        return "attention"
+    if raw_category == "sprinklers":
+        return "irrigation"
+    if category == "waste" and (
+        "recycle" in str(item.get("icon") or "").casefold()
+        or "recycl" in str(item.get("title") or "").casefold()
+    ):
+        return "recycling"
+    device_class = str(item.get("device_class") or "").casefold()
+    if display_kind in {"temperature", "indoor_temperature"} or device_class == "humidity":
+        return "climate"
+    return {
+        "weather": "weather", "waste": "waste", "irrigation": "irrigation",
+        "schedule": "calendar", "news": "news", "climate": "climate",
+        "energy": "energy", "laundry": "appliance", "appliance": "appliance",
+        "media": "media", "maintenance": "attention",
+    }.get(category, "")
+
+
+def _present_item(
+    item: dict[str, Any], *, current: bool, options: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Apply Home Status semantics once, at the integration boundary."""
+    entity_id = str(item.get("entity_id") or "")
+    name = str(item.get("entity_name") or "Home item").strip() or "Home item"
+    domain = str(item.get("domain") or entity_id.split(".", 1)[0]).casefold()
+    device_class = str(item.get("device_class") or "").casefold()
+    appliance = item.get("capability") == "appliance_cycle"
+    state = str(item.get("state") if current else item.get("to") or "").strip()
+    if appliance and state.casefold() in {"completed", "finished", "done"}:
+        state = "Complete"
+    attention = str(item.get("attention") or "none").casefold()
+    category = _appliance_category(name, entity_id) if appliance else _native_category(domain, device_class)
+    priority = _item_priority(appliance, current, attention, state)
+    display_kind = "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
+    label = state or "Unknown"
+    title = label if domain == "alarm_control_panel" else f"{name} {label}"
+    item_id = (
+        f"native:current:{entity_id}"
+        if current
+        else f"native:recent:{entity_id}:{item.get('changed_at', '')}"
+    )
+    safety_alert = current and (
+        domain == "alarm_control_panel"
+        or device_class in {
+            "moisture", "smoke", "gas", "carbon_monoxide", "safety",
+        }
+    ) and priority in {"critical", "attention"}
+    # Recorder-backed transitions always showed their age in the source card.
+    # Active safety/alarm conditions also need age context even though ordinary
+    # current states intentionally do not look stale.
+    timestamp_mode = "relative" if safety_alert or not current else "none"
+    return {
+        "id": item_id,
+        "entity_id": entity_id,
+        "entity_name": name,
+        "title": title,
+        "message": title,
+        "summary": _item_summary(item, appliance, current, state),
+        "icon": _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
+        "category": category,
+        "color_role": _color_role(category, priority, state, current),
+        "priority": priority,
+        "active": current,
+        "state": state,
+        "created_at": item.get("changed_at"),
+        "event_type": "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
+        "timestamp_mode": timestamp_mode,
+        "display_kind": display_kind,
+        "capability": item.get("capability"),
+        "source": "home_assistant",
+        "ticker_eligible": bool(appliance and current),
+        "utility_role": "security" if category == "security" else "",
+    }
+
+
+def _option_bool(options: dict[str, Any] | None, key: str, default: bool) -> bool:
+    if not isinstance(options, dict) or key not in options:
+        return default
+    return bool(options[key])
+
+
+def _item_priority(appliance: bool, current: bool, attention: str, state: str) -> str:
+    if current:
+        return "activity" if appliance else attention
+    if appliance and state.casefold() in {"fault", "alert", "error"}:
+        return "attention"
+    return "activity"
+
+
+def _item_summary(
+    item: dict[str, Any], appliance: bool, current: bool, state: str
+) -> str:
+    if appliance and current:
+        return str(item.get("detail") or state)
+    if appliance and state.casefold() == "complete":
+        return "Cycle complete"
+    if appliance and state.casefold() in {"fault", "alert", "error"}:
+        return "Appliance requires attention"
+    return ""
+
+
+def _native_category(domain: str, device_class: str) -> str:
+    if domain in {"alarm_control_panel", "lock"} or device_class in {
+        "door", "window", "opening", "garage_door", "smoke", "gas",
+        "carbon_monoxide", "moisture", "safety",
+    }:
+        return "security"
+    if device_class in {"problem", "connectivity"}:
+        return "maintenance"
+    return "activity"
+
+
+def _native_icon(domain: str, device_class: str, state: str, _name: str) -> str:
+    active = state.casefold() in {
+        "on", "open", "opened", "unlocked", "triggered", "detected",
+        "unsafe", "problem", "disconnected", "motion detected", "occupied",
+        "present", "vibration detected",
+    }
+    if device_class in {"door", "garage_door"}: return "mdi:door-open" if active else "mdi:door-closed"
+    if device_class in {"window", "opening"}: return "mdi:window-open-variant" if active else "mdi:window-closed-variant"
+    if device_class == "moisture": return "mdi:water-alert" if active else "mdi:water-check"
+    if device_class == "smoke": return "mdi:smoke-detector-alert" if active else "mdi:smoke-detector"
+    if device_class == "gas": return "mdi:gas-cylinder" if active else "mdi:check-circle-outline"
+    if device_class == "carbon_monoxide": return "mdi:molecule-co" if active else "mdi:check-circle-outline"
+    if device_class == "problem": return "mdi:alert-circle" if active else "mdi:check-circle-outline"
+    if device_class == "safety": return "mdi:shield-alert" if active else "mdi:shield-check"
+    if device_class in {"motion", "occupancy", "presence"}: return "mdi:motion-sensor" if active else "mdi:motion-sensor-off"
+    if device_class == "connectivity": return "mdi:lan-disconnect" if active else "mdi:lan-connect"
+    if domain == "lock": return "mdi:lock-open-variant" if active else "mdi:lock"
+    if domain == "alarm_control_panel":
+        normalized = state.casefold()
+        if "triggered" in normalized or normalized == "pending":
+            return "mdi:shield-alert"
+        if "armed" in normalized:
+            return "mdi:shield-lock"
+        return "mdi:shield-check"
+    return "mdi:information-outline"
+
+
+def _appliance_icon(name: str, entity_id: str) -> str:
+    value = f"{name} {entity_id}".casefold()
+    if "dishwasher" in value: return "mdi:dishwasher"
+    if "dryer" in value: return "mdi:tumble-dryer"
+    return "mdi:washing-machine"
+
+
+def _appliance_category(name: str, entity_id: str) -> str:
+    value = f"{name} {entity_id}".casefold()
+    return "appliance" if "dishwasher" in value else "laundry"
+
+
+def _color_role(category: str, priority: str, state: str, current: bool) -> str:
+    normalized = state.casefold()
+    if priority == "critical":
+        return "security"
+    if category == "security":
+        return "success" if normalized in {"closed", "locked", "clear", "safe", "connected", "alarm off", "disarmed", "off"} else "security"
+    if category in {"laundry", "appliance"}:
+        return "appliance" if current else "success" if normalized == "complete" else "attention" if normalized in {"fault", "alert", "error"} else "appliance"
+    if priority == "attention":
+        return "attention"
+    if category == "maintenance":
+        return "success" if normalized in {"normal", "connected", "clear", "off"} else "attention"
+    return ""
+
+
+def _group_contact_closures(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Condense near-simultaneous closure transitions before publishing them."""
+    result: list[dict[str, Any]] = []
+    used: set[int] = set()
+    for index, item in enumerate(items):
+        if index in used:
+            continue
+        is_closure = item.get("display_kind") == "contact_transition" and str(item.get("state") or "").casefold() == "closed"
+        if not is_closure:
+            result.append(item); continue
+        stamp = _parse_timestamp(item.get("created_at"))
+        group = [(index, item)]
+        for next_index in range(index + 1, len(items)):
+            candidate = items[next_index]
+            candidate_stamp = _parse_timestamp(candidate.get("created_at"))
+            if candidate.get("display_kind") == "contact_transition" and str(candidate.get("state") or "").casefold() == "closed" and stamp and candidate_stamp and abs((stamp - candidate_stamp).total_seconds()) <= 120:
+                group.append((next_index, candidate))
+        if len(group) == 1:
+            result.append(item); continue
+        used.update(entry[0] for entry in group[1:])
+        labels = [str(entry[1].get("entity_name") or "").strip() for entry in group]
+        result.append({**item, "id": f"native:recent:contact-group:{item.get('created_at')}", "title": f"{len(group)} Doors/Windows Closed", "message": f"{len(group)} Doors/Windows Closed", "summary": "", "icon": "mdi:door-closed", "display_kind": "contact_group", "group_labels": [label for label in labels if label]})
+    return result
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
 
 def current_states(
     hass: HomeAssistant,
@@ -217,6 +687,22 @@ def _state_label(
             return "Opened" if transition else "Open"
         if canonical == "off":
             return "Closed"
+    binary_labels = {
+        "moisture": ("Detected", "Clear"),
+        "smoke": ("Detected", "Clear"),
+        "gas": ("Detected", "Clear"),
+        "carbon_monoxide": ("Detected", "Clear"),
+        "problem": ("Problem", "Normal"),
+        "safety": ("Unsafe", "Safe"),
+        "motion": ("Motion detected", "Clear"),
+        "occupancy": ("Occupied", "Clear"),
+        "presence": ("Present", "Clear"),
+        "vibration": ("Vibration detected", "Clear"),
+        "connectivity": ("Connected", "Disconnected"),
+    }
+    if device_class in binary_labels and canonical in {"on", "off"}:
+        on_label, off_label = binary_labels[device_class]
+        return on_label if canonical == "on" else off_label
     if domain == "lock":
         return {"locked": "Locked", "unlocked": "Unlocked"}.get(canonical, _humanize(raw))
     if domain == "alarm_control_panel":
@@ -240,10 +726,12 @@ def _attention_for(state: State) -> str:
     if domain == "alarm_control_panel" and value == "triggered":
         return "critical"
     if domain == "binary_sensor" and value == "on":
-        if device_class in {"smoke", "gas", "carbon_monoxide", "moisture"}:
+        if device_class in {"smoke", "gas", "carbon_monoxide", "moisture", "safety"}:
             return "critical"
-        if device_class in {"door", "window", "opening", "garage_door", "problem", "safety"}:
+        if device_class in {"door", "window", "opening", "garage_door", "problem"}:
             return "attention"
+    if domain == "binary_sensor" and value == "off" and device_class == "connectivity":
+        return "attention"
     if domain == "lock" and value == "unlocked":
         return "attention"
     return "none"
