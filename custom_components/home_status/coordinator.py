@@ -72,6 +72,10 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # It is never written to Store and is reconstructed from HA on setup.
         self._native_recent: list[dict[str, Any]] = []
         self._native_history_refresh_pending = False
+        # Every publication is a complete coordinator snapshot. Transport
+        # sensors expose this revision so the card never combines channels
+        # from different updates.
+        self._snapshot_revision = 0
 
     async def async_setup(self) -> None:
         stored = await self.store.async_load() or {}
@@ -288,6 +292,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._native_recent = self.engine.native_recent_facts(self.options, transitions)
 
     def _publish(self) -> None:
+        self._snapshot_revision += 1
         # Current interpreter output remains available to Visual Center only.
         # It is not retained, resolved, published as entity history, or routed.
         active = self.engine.build_active_items(self.options)
@@ -320,6 +325,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         weather_effect = self._weather_visual_effect(awareness)
 
         self.async_set_updated_data({
+            "snapshot_revision": self._snapshot_revision,
             "native": {
                 "contract_version": 3,
                 "current": native_current,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 import json
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,10 +13,27 @@ from .const import DOMAIN
 from .coordinator import HomeStatusCoordinator
 from .ha_native import compose_presentation_streams
 
+TRANSPORT_VERSION = 1
+TRANSPORT_CHANNELS = {
+    "now": ("Home Status Now", "mdi:home-heart"),
+    "recent": ("Home Status Recent", "mdi:history"),
+    "household": ("Home Status Household", "mdi:home-account"),
+    "weather": ("Home Status Weather", "mdi:weather-partly-cloudy"),
+    "calendar": ("Home Status Calendar", "mdi:calendar"),
+    "news": ("Home Status News", "mdi:newspaper"),
+    "visual": ("Home Status Visual", "mdi:image-outline"),
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
-    async_add_entities([HomeStatusSensor(entry.runtime_data)])
+    coordinator = entry.runtime_data
+    async_add_entities([
+        HomeStatusSensor(coordinator),
+        *[
+            HomeStatusTransportSensor(coordinator, channel)
+            for channel in TRANSPORT_CHANNELS
+        ],
+    ])
 
 
 class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
@@ -38,6 +56,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         # The coordinator retains the complete working snapshot in memory, but
         # publishing every intermediate collection (and diagnostic duplicates)
         # can exceed Recorder's 16 KiB attribute limit.
+        native = self._compact_native(data.get("native"))
         attributes = {
             "health": data.get("health", "normal"),
             "priority": data.get("priority", "normal"),
@@ -46,12 +65,27 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
-            "native": self._compact_native(data.get("native")),
+            "native": native,
+            "transport": self._transport_manifest(data, data.get("native")),
         }
         # Recorder rejects attributes above 16 KiB. Keep a margin below that
         # limit so normal changes in labels or URLs cannot make this entity
         # noisy or create avoidable database work.
         return self._fit_attribute_budget(attributes)
+
+    @staticmethod
+    def _transport_manifest(data: dict[str, Any], native: Any) -> dict[str, Any]:
+        """Describe fixed transport channels without adding card configuration."""
+        return {
+            "version": TRANSPORT_VERSION,
+            "kind": "manifest",
+            "revision": int(data.get("snapshot_revision", 0) or 0),
+            "channels": {
+                channel: {"entity_id": f"sensor.home_status_{channel}"}
+                for channel in TRANSPORT_CHANNELS
+            },
+            "streams": native.get("streams", {}) if isinstance(native, dict) else {},
+        }
 
     @staticmethod
     def _compact_display(value):
@@ -235,3 +269,100 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             native.get("awareness", []),
         )
         return attributes
+
+
+class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
+    """One fixed, coordinator-backed payload boundary for the card."""
+
+    _attr_has_entity_name = False
+
+    def __init__(self, coordinator: HomeStatusCoordinator, channel: str) -> None:
+        super().__init__(coordinator)
+        self._channel = channel
+        name, icon = TRANSPORT_CHANNELS[channel]
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_{channel}"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data or {}
+        if self._channel == "visual":
+            return "available" if data.get("visual") else "idle"
+        return len(self._items(data))
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data or {}
+        payload: dict[str, Any] = {
+            "version": TRANSPORT_VERSION,
+            "kind": "channel",
+            "channel": self._channel,
+            "revision": int(data.get("snapshot_revision", 0) or 0),
+        }
+        if self._channel == "visual":
+            payload["visual"] = HomeStatusSensor._compact_visual(data.get("visual"))
+            payload["weather_visual_effect"] = data.get("weather_visual_effect") or ""
+        else:
+            payload["items"] = self._compact_items(self._items(data))
+        return {"transport": self._fit_budget(payload)}
+
+    def _items(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+        native = data.get("native") if isinstance(data.get("native"), dict) else {}
+        if self._channel == "now":
+            return native.get("current") if isinstance(native.get("current"), list) else []
+        if self._channel == "recent":
+            return native.get("recent") if isinstance(native.get("recent"), list) else []
+        awareness = native.get("awareness") if isinstance(native.get("awareness"), list) else []
+        if self._channel == "household":
+            return [
+                item for item in awareness
+                if isinstance(item, dict)
+                and str(item.get("category") or "").casefold()
+                not in {"weather", "calendar", "news"}
+            ]
+        return [
+            item for item in awareness
+            if isinstance(item, dict)
+            and str(item.get("category") or "").casefold() == self._channel
+        ]
+
+    @staticmethod
+    def _compact_items(value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        fields = (
+            "id", "entity_id", "entity_name", "title", "message", "summary", "detail",
+            "icon", "category", "color_role", "priority", "active", "state", "source",
+            "source_kind", "event_type", "created_at", "updated_at", "occurred_at",
+            "expires_at", "scheduled_at", "all_day", "timestamp", "timestamp_mode",
+            "display_kind", "capability", "ticker_eligible", "group_labels", "utility_role",
+            "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
+            "body", "visual_effect", "action", "visual", "zone_visual",
+        )
+        items = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            compact = {}
+            for key in fields:
+                current = item.get(key)
+                if current is None:
+                    continue
+                compact[key] = current[:160] if isinstance(current, str) else current
+            items.append(compact)
+        return items
+
+    @staticmethod
+    def _fit_budget(payload: dict[str, Any]) -> dict[str, Any]:
+        """Bound one channel only; it must never evict another channel."""
+        def size(value: dict[str, Any]) -> int:
+            return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+        items = payload.get("items")
+        while size(payload) > 12_000 and isinstance(items, list) and items:
+            items.pop()
+        # A single signed media URL can theoretically exceed the attribute
+        # budget by itself. Dropping that one visual is safer than making the
+        # entity invalid; it does not affect any information channel.
+        if size(payload) > 12_000 and payload.get("visual") is not None:
+            payload["visual"] = None
+        return payload

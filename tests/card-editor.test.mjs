@@ -72,6 +72,69 @@ try {
   assert.deepEqual(registration.stub.grid_options, { columns: 36, rows: 7 });
   assert.equal(registration.editorTag, 'HOME-STATUS-CARD-EDITOR');
 
+  const transportContract = await page.evaluate(() => {
+    const item = (id, title, category = 'activity') => ({
+      id, title, message: title, summary: '', category,
+      icon: 'mdi:information-outline', priority: 'normal', active: false
+    });
+    const fallback = item('legacy', 'Legacy payload');
+    const manifest = {
+      version: 1, kind: 'manifest', revision: 7,
+      channels: Object.fromEntries(
+        ['now', 'recent', 'household', 'weather', 'calendar', 'news', 'visual']
+          .map(channel => [channel, { entity_id: `sensor.home_status_${channel}` }])
+      ),
+      streams: {
+        left: ['now'], right: ['household'], bottom: ['recent'],
+        phone_primary_id: 'now', phone_fallback: item('fallback', 'Fallback')
+      }
+    };
+    const channel = (name, items = [], revision = 7) => ({
+      state: String(items.length),
+      attributes: { transport: { version: 1, kind: 'channel', channel: name, revision, items } }
+    });
+    const states = {
+      'sensor.home_status': {
+        state: 'normal',
+        attributes: {
+          priority: 'normal', active_count: 1, transport: manifest,
+          native: { current: [fallback], recent: [], awareness: [], streams: { left: ['legacy'] } }
+        }
+      },
+      'sensor.home_status_now': channel('now', [item('now', 'Now')]),
+      'sensor.home_status_recent': channel('recent', [item('recent', 'Recent')]),
+      'sensor.home_status_household': channel('household', [item('household', 'Household', 'location')]),
+      'sensor.home_status_weather': channel('weather'),
+      'sensor.home_status_calendar': channel('calendar'),
+      'sensor.home_status_news': channel('news'),
+      'sensor.home_status_visual': {
+        state: 'available',
+        attributes: { transport: { version: 1, kind: 'channel', channel: 'visual', revision: 7, visual: { type: 'image', url: 'https://example.test/visual.jpg' } } }
+      }
+    };
+    const card = document.createElement('home-status-card');
+    card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
+    card.hass = { ...window.testHass, states };
+    const split = card._data();
+    states['sensor.home_status_news'].attributes.transport.revision = 6;
+    card.hass = { ...window.testHass, states };
+    const fallbackData = card._data();
+    return {
+      split: {
+        left: split.left.map(entry => entry.title),
+        right: split.right.map(entry => entry.title),
+        bottom: split.bottom.map(entry => entry.title),
+        visual: split.visual?.url
+      },
+      fallback: fallbackData.left.map(entry => entry.title)
+    };
+  });
+  assert.deepEqual(transportContract.split, {
+    left: ['Now'], right: ['Household'], bottom: ['Recent'],
+    visual: 'https://example.test/visual.jpg'
+  });
+  assert.deepEqual(transportContract.fallback, ['Legacy payload']);
+
   const visualCenterTransitions = await page.evaluate(() => {
     const attributes = {
       ...window.testHass.states['sensor.home_status'].attributes,

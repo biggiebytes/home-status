@@ -1,6 +1,6 @@
 {
   "name": "home-status",
-  "version": "0.9.2",
+  "version": "0.9.4",
   "private": true,
   "scripts": {
     "test:card": "node tests/card-editor.test.mjs"

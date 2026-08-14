@@ -3,7 +3,11 @@
 import json
 from pathlib import Path
 
-from custom_components.home_status.sensor import HomeStatusSensor
+from custom_components.home_status.sensor import (
+    TRANSPORT_CHANNELS,
+    HomeStatusSensor,
+    HomeStatusTransportSensor,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -14,8 +18,8 @@ def test_manifest_and_frontend_use_the_current_release_versions():
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))
     constants = (COMPONENT / "const.py").read_text(encoding="utf-8")
 
-    assert manifest["version"] == "0.9.2"
-    assert '"version": "0.8.2"' in constants
+    assert manifest["version"] == "0.9.4"
+    assert '"version": "0.9.4"' in constants
     assert "recorder" in manifest["after_dependencies"]
 
 
@@ -86,3 +90,39 @@ def test_sensor_payload_keeps_household_presence_when_awareness_is_capped():
         *native["streams"]["left"],
         *native["streams"]["right"],
     ]
+
+
+def test_transport_manifest_declares_all_fixed_channels_and_revision():
+    native = {
+        "streams": {"left": ["now"], "right": [], "bottom": []},
+    }
+    manifest = HomeStatusSensor._transport_manifest({"snapshot_revision": 42}, native)
+
+    assert manifest["kind"] == "manifest"
+    assert manifest["revision"] == 42
+    assert set(manifest["channels"]) == set(TRANSPORT_CHANNELS)
+    assert manifest["channels"]["household"]["entity_id"] == "sensor.home_status_household"
+    assert manifest["streams"] == native["streams"]
+
+
+def test_transport_channels_partition_awareness_without_cross_domain_loss():
+    awareness = [
+        {"id": "household", "title": "Everyone Home", "category": "location"},
+        {"id": "weather", "title": "70°", "category": "weather"},
+        {"id": "calendar", "title": "School", "category": "calendar"},
+        {"id": "news", "title": "Headline", "category": "news"},
+    ]
+    data = {"native": {"awareness": awareness}}
+
+    results = {}
+    for channel in ("household", "weather", "calendar", "news"):
+        sensor = HomeStatusTransportSensor.__new__(HomeStatusTransportSensor)
+        sensor._channel = channel
+        results[channel] = [item["id"] for item in sensor._items(data)]
+
+    assert results == {
+        "household": ["household"],
+        "weather": ["weather"],
+        "calendar": ["calendar"],
+        "news": ["news"],
+    }

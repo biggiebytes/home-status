@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.4
+
+- Added coordinator-backed Now, Recent, Household, Weather, Calendar, News,
+  and Visual transport sensors while retaining `sensor.home_status` as the
+  compatibility/control sensor.
+- Added a revisioned transport manifest so the card assembles only a complete
+  same-snapshot set of split sensor payloads and otherwise uses the legacy
+  payload.
+- Isolated payload budgets by channel so verbose calendar, news, Recorder,
+  and media data cannot evict unrelated Home Status information.
+
 ## 0.9.3
 
 - Added an integration-owned semantic capability for Micro-Air EasyStart diagnostic/protection monitors, recognized from the YAML-defined entity signature rather than the device name.

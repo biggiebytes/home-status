@@ -1443,6 +1443,96 @@ class HomeStatusCard extends HTMLElement {
     );
   }
 
+  _splitTransportData(
+    attrs,
+    source,
+    display,
+    presentation
+  ) {
+    const manifest =
+      attrs.transport &&
+      typeof attrs.transport === 'object' &&
+      attrs.transport.kind === 'manifest'
+        ? attrs.transport
+        : null;
+
+    if (!manifest || !manifest.channels || typeof manifest.channels !== 'object') {
+      return null;
+    }
+
+    const revision = Number(manifest.revision);
+    const required = ['now', 'recent', 'household', 'weather', 'calendar', 'news', 'visual'];
+    if (!Number.isFinite(revision) || !required.every(channel => manifest.channels[channel]?.entity_id)) {
+      return null;
+    }
+
+    const channels = Object.fromEntries(
+      required.map(channel => {
+        const entity = this._state(manifest.channels[channel].entity_id);
+        const payload = entity?.attributes?.transport;
+        return [channel, payload];
+      })
+    );
+
+    // Home Assistant updates each entity separately. Refuse a mixed snapshot
+    // and use the compatibility payload until every channel catches up.
+    if (!required.every(channel => {
+      const payload = channels[channel];
+      return payload &&
+        payload.kind === 'channel' &&
+        payload.channel === channel &&
+        Number(payload.revision) === revision;
+    })) {
+      return null;
+    }
+
+    const active = Array.isArray(channels.now.items) ? channels.now.items : [];
+    const recent = Array.isArray(channels.recent.items) ? channels.recent.items : [];
+    const awareness = [
+      ...((Array.isArray(channels.household.items) ? channels.household.items : [])),
+      ...((Array.isArray(channels.weather.items) ? channels.weather.items : [])),
+      ...((Array.isArray(channels.calendar.items) ? channels.calendar.items : [])),
+      ...((Array.isArray(channels.news.items) ? channels.news.items : []))
+    ];
+    const streams = manifest.streams && typeof manifest.streams === 'object'
+      ? manifest.streams
+      : {};
+    const itemById = new Map(
+      [...active, ...recent, ...awareness]
+        .filter(item => item && item.id)
+        .map(item => [String(item.id), item])
+    );
+    const resolveStream = ids => (
+      Array.isArray(ids)
+        ? ids.map(id => itemById.get(String(id))).filter(Boolean)
+        : []
+    );
+    const phonePrimary =
+      itemById.get(String(streams.phone_primary_id || '')) ||
+      (streams.phone_fallback && typeof streams.phone_fallback === 'object'
+        ? streams.phone_fallback
+        : null);
+
+    return {
+      left: resolveStream(streams.left),
+      right: resolveStream(streams.right),
+      bottom: resolveStream(streams.bottom),
+      phone_primary: phonePrimary,
+      active,
+      recent,
+      awareness,
+      priority: attrs.priority || attrs.health || 'normal',
+      count: Number(attrs.active_count) || active.length,
+      display,
+      presentation,
+      visual: channels.visual.visual && typeof channels.visual.visual === 'object'
+        ? channels.visual.visual
+        : null,
+      weather_visual_effect: channels.visual.weather_visual_effect || '',
+      unavailable: !source || ['unknown', 'unavailable'].includes(source.state)
+    };
+  }
+
   _data() {
     const source =
       this._state(
@@ -1469,6 +1559,17 @@ class HomeStatusCard extends HTMLElement {
       typeof attrs.native === 'object'
         ? attrs.native
         : null;
+
+    const split = this._splitTransportData(
+      attrs,
+      source,
+      display,
+      presentation
+    );
+
+    if (split) {
+      return split;
+    }
 
     if (native) {
       const active = Array.isArray(native.current) ? native.current : [];
