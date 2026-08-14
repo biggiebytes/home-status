@@ -70,7 +70,11 @@ adapts to it.
 
 ### Full Notification Center
 
-![Full Home Status Notification Center](docs/screenshots/tablet-notification-center.png)
+![Full Home Status Notification Center](docs/screenshots/full-notification-center.png)
+
+### Dashboard header and activity ticker
+
+![Home Status header and recent-activity ticker](docs/screenshots/header-and-ticker.png)
 
 ### Visual Center
 
@@ -83,6 +87,15 @@ adapts to it.
 ### A smaller dashboard placement
 
 ![Home Status integrated into a phone dashboard](docs/screenshots/phone-layout.png)
+
+### Compact scrolling ticker
+
+![Home Status as a compact scrolling awareness ticker](docs/screenshots/compact-ticker.png)
+
+When a dashboard only has room for a narrow awareness area, disable the main
+areas and Home Status collapses to the ticker itself—keeping recent appliance,
+door/window, and other household updates moving without reserving an empty
+Notification Center above them.
 
 ## Designed for useful signals
 
@@ -175,7 +188,7 @@ explicitly enable them.
 
 ## Technical notes
 
-This README describes the validated **0.9.2** behavior. For contributors, run
+This README describes the validated **0.9.3** behavior. For contributors, run
 the release checks with:
 
 ```sh

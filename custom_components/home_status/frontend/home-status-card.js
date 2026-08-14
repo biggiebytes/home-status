@@ -1817,16 +1817,23 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _syncDisplayedVisual() {
+    // Visual Center already has its own presentation control. It also needs a
+    // visible main area to occupy; a ticker-only card must not grow a body just
+    // because a visual source happens to be available.
+    const hasMainArea =
+      this._config.home_status_visibility.left ||
+      this._config.home_status_visibility.right;
+
     this._syncVisualCenter(
-      this._displayedZoneItems
-        .right?.zone_visual ||
-      this._displayedZoneItems
-        .left?.zone_visual ||
-      this._displayedZoneItems
-        .right?.visual ||
-      this._displayedZoneItems
-        .left?.visual ||
-      this._baseVisual
+      this._mediaEnabled && hasMainArea
+        ? (
+          this._displayedZoneItems.right?.zone_visual ||
+          this._displayedZoneItems.left?.zone_visual ||
+          this._displayedZoneItems.right?.visual ||
+          this._displayedZoneItems.left?.visual ||
+          this._baseVisual
+        )
+        : null
     );
   }
 
@@ -5955,6 +5962,45 @@ class HomeStatusCard extends HTMLElement {
 :host([data-profile="desktop"]) .footer-marquee-item.is-indoor-temperature .footer-marquee-copy strong {
   font-size:var(--hs-bottom-value-size,38px) !important;
 }
+
+/* Disabled presentation areas are not rendered, so the card's physical layout
+   follows the selected areas. Keep the existing footer stream intact when it
+   is the only visible area. */
+.ticker-zones[data-has-left]:not([data-has-right]) {
+  grid-template-columns:minmax(0,1fr);
+}
+.ticker-zones[data-has-right]:not([data-has-left]) {
+  grid-template-columns:minmax(0,1fr);
+}
+.ticker-zones.has-visual[data-has-left]:not([data-has-right]),
+.ticker-zones.has-visual[data-has-right]:not([data-has-left]) {
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+}
+:host([data-profile="auto"]) .ticker.ticker-only,
+:host([data-profile="tablet"]) .ticker.ticker-only,
+:host([data-profile="desktop"]) .ticker.ticker-only {
+  height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+  min-height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+  padding:0;
+}
+:host([data-ticker-only]) {
+  min-height:0 !important;
+}
+:host([data-ticker-only]) .ticker {
+  height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+  min-height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+  max-height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+}
+.ticker.ticker-only .ticker-footer {
+  flex:0 0 calc(var(--hs-bottom-height,102px) + 12px);
+  height:calc(var(--hs-bottom-height,102px) + 12px) !important;
+  min-height:var(--hs-bottom-height,102px) !important;
+  padding-top:12px !important;
+  box-sizing:border-box;
+}
+.ticker.ticker-empty {
+  display:none !important;
+}
 </style>`;
   }
 
@@ -6009,13 +6055,51 @@ class HomeStatusCard extends HTMLElement {
     const utilityMarkup =
       this._utilityHeaderMarkup();
 
+    const showLeft =
+      this._config.home_status_visibility.left;
+
+    const showRight =
+      this._config.home_status_visibility.right;
+
+    const showBottom =
+      this._config.home_status_visibility.bottom;
+
+    const hasMainAreas =
+      showLeft || showRight;
+
+    const tickerMode =
+      hasMainAreas
+        ? ''
+        : (showBottom ? ' ticker-only' : ' ticker-empty');
+
+    this.toggleAttribute(
+      'data-ticker-only',
+      !hasMainAreas && showBottom
+    );
+
+    const zonesMarkup =
+      hasMainAreas
+        ? `<span class="ticker-zones"${showLeft ? ' data-has-left' : ''}${showRight ? ' data-has-right' : ''}>${showLeft ? '<span class="ticker-zone primary-zone" data-zone="left"></span>' : ''}${showRight ? '<span class="ticker-zone secondary-zone" data-zone="right"></span>' : ''}</span>`
+        : '';
+
+    const footerMarkup =
+      showBottom
+        ? '<span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span>'
+        : '';
+
     const visualEffect =
       this._weatherVisualEffect(
         data
       );
 
+    this._destroyVisualHls(
+      this.shadowRoot.querySelector(
+        '[data-visual-center]'
+      )
+    );
+
     this.shadowRoot.innerHTML =
-      `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}"><span class="ticker-zones"><span class="ticker-zone primary-zone" data-zone="left"></span><span class="ticker-zone secondary-zone" data-zone="right"></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button><div class="drawer-host"></div>`;
+      `${this._styles()}${utilityMarkup}<div class="phone-status-host" data-phone-status-host></div><button class="ticker${tickerMode} priority-${this._escape(data.priority)}" type="button" aria-expanded="${this._drawerOpen}">${zonesMarkup}${footerMarkup}</button><div class="drawer-host"></div>`;
 
     this._renderPhoneStatus(
       data
@@ -7380,6 +7464,14 @@ class HomeStatusCard extends HTMLElement {
   }
 
   getCardSize() {
+    const tickerOnly =
+      this._config?.utility_header?.enabled === false &&
+      this._config?.home_status_visibility?.left === false &&
+      this._config?.home_status_visibility?.right === false &&
+      this._config?.home_status_visibility?.bottom !== false;
+
+    if (tickerOnly) return 2;
+
     const configured =
       Number(
         this._config?.card_size
@@ -7407,6 +7499,12 @@ class HomeStatusCard extends HTMLElement {
           ?.grid_options
       );
 
+    const tickerOnly =
+      this._config?.utility_header?.enabled === false &&
+      this._config?.home_status_visibility?.left === false &&
+      this._config?.home_status_visibility?.right === false &&
+      this._config?.home_status_visibility?.bottom !== false;
+
     return {
       columns:
         Number.isFinite(
@@ -7426,7 +7524,9 @@ class HomeStatusCard extends HTMLElement {
           : 36,
 
       rows:
-        Number.isFinite(
+        tickerOnly
+          ? 2
+          : Number.isFinite(
           Number(
             configured.rows
           )
@@ -7874,6 +7974,32 @@ class HomeStatusCardEditor extends HTMLElement {
         )
       );
 
+    const visibility =
+      homeStatusObject(
+        this._value(
+          'home_status_visibility',
+          {}
+        )
+      );
+
+    const tickerOnly =
+      this._value(
+        'utility_header.enabled',
+        true
+      ) === false &&
+      this._value(
+        'home_status_visibility.left',
+        true
+      ) === false &&
+      this._value(
+        'home_status_visibility.right',
+        true
+      ) === false &&
+      this._value(
+        'home_status_visibility.bottom',
+        true
+      ) !== false;
+
     if (
       [
         'auto',
@@ -7899,20 +8025,13 @@ class HomeStatusCardEditor extends HTMLElement {
       Number.isFinite(
         rows
       ) &&
-      rows < 7
+      rows < 7 &&
+      !tickerOnly
     ) {
       warnings.push(
         'The full layout needs at least 7 rows. A shorter grid can overlap the next dashboard section.'
       );
     }
-
-    const visibility =
-      homeStatusObject(
-        this._value(
-          'home_status_visibility',
-          {}
-        )
-      );
 
     if (
       [

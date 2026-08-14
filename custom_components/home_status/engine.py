@@ -16,7 +16,10 @@ from .interpreters import (
     appliance_recent_entity_ids,
     appliance_transition_fact,
     awareness_entity,
+    easystart_current_fact,
+    easystart_owned_entity_ids,
     has_appliance_recent_capability,
+    is_easystart_home_device,
     interpret_appliance_home_device,
     interpret_entity,
 )
@@ -163,6 +166,49 @@ class HomeStatusEngine:
             },
         )
 
+    def _manual_easystart_context(self, selected: HomeDevice) -> HomeDevice:
+        """Borrow physical-device context for one manually selected EasyStart entity."""
+        if not selected.metadata.get("manual_entity") or len(selected.entities) != 1:
+            return selected
+
+        primary = selected.entities[0]
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(primary.entity_id)
+        device_id = getattr(entry, "device_id", None) if entry is not None else None
+        if not device_id:
+            return selected
+        physical = next(
+            (item for item in self.home_devices().values() if item.device_id == device_id),
+            None,
+        )
+        if physical is None or not is_easystart_home_device(physical):
+            return selected
+        return replace(
+            selected,
+            id=physical.id,
+            name=(
+                selected.name
+                if selected.metadata.get("name_overridden")
+                else physical.name
+            ),
+            device_id=physical.device_id,
+            manufacturer=physical.manufacturer,
+            model=physical.model,
+            entities=physical.entities,
+            metadata={
+                **(selected.metadata or {}),
+                "manual_primary_entity_id": primary.entity_id,
+                "semantic_capability": "easystart_monitor",
+            },
+        )
+
+    def _manual_observation_context(self, selected: HomeDevice) -> HomeDevice:
+        """Expand a manual selection only for a recognized semantic capability."""
+        easystart = self._manual_easystart_context(selected)
+        if is_easystart_home_device(easystart):
+            return easystart
+        return self._manual_appliance_context(selected)
+
     def selected_sources(self, options: dict[str, Any]) -> list[HomeSource]:
         selected = options.get("selected_sources", [])
         if not isinstance(selected, list):
@@ -219,7 +265,7 @@ class HomeStatusEngine:
             *(
                 entity.entity_id
                 for selected in manual_selected
-                for entity in self._manual_appliance_context(selected).entities
+                for entity in self._manual_observation_context(selected).entities
             ),
             *(source.entity_id for source in self.selected_sources(options)),
             *(self._household_person_ids(options) if options.get("household_presence_enabled", False) else ()),
@@ -231,6 +277,11 @@ class HomeStatusEngine:
         seen_appliance_ids: set[str] = set()
         selected = [*self.selected_home_devices(options), *self.selected_entities(options)]
         for home_device in selected:
+            easystart_context = self._manual_easystart_context(home_device)
+            if is_easystart_home_device(easystart_context):
+                # Current Status is the authority. Diagnostic/control changes are
+                # not household activity and therefore do not enter Recorder history.
+                continue
             context = self._manual_appliance_context(home_device)
             if not has_appliance_recent_capability(context):
                 entity_ids.extend(
@@ -260,10 +311,17 @@ class HomeStatusEngine:
         return None
 
     def native_current_facts(self, options: dict[str, Any]) -> list[dict[str, Any]]:
-        """Return semantic appliance current facts for the HA-native contract."""
+        """Return semantic capability facts for the HA-native contract."""
         result: list[dict[str, Any]] = []
         seen: set[str] = set()
         for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            easystart_context = self._manual_easystart_context(selected)
+            if is_easystart_home_device(easystart_context):
+                if easystart_context.id not in seen:
+                    seen.add(easystart_context.id)
+                    if fact := easystart_current_fact(self.hass, easystart_context):
+                        result.append(fact)
+                continue
             context = self._manual_appliance_context(selected)
             if context.id in seen or not has_appliance_recent_capability(context):
                 continue
@@ -271,6 +329,18 @@ class HomeStatusEngine:
             if fact := appliance_current_fact(self.hass, context):
                 result.append(fact)
         return result
+
+    def native_owned_entity_ids(self, options: dict[str, Any]) -> set[str]:
+        """Return raw entities replaced or suppressed by semantic capabilities."""
+        entity_ids = self.appliance_owned_entity_ids(options)
+        seen: set[str] = set()
+        for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            context = self._manual_easystart_context(selected)
+            if context.id in seen or not is_easystart_home_device(context):
+                continue
+            seen.add(context.id)
+            entity_ids.update(easystart_owned_entity_ids(context))
+        return entity_ids
 
     def appliance_owned_entity_ids(self, options: dict[str, Any]) -> set[str]:
         """Return raw entities replaced by one semantic appliance fact."""
@@ -333,6 +403,8 @@ class HomeStatusEngine:
         explicit_ids = set(self._selected_entity_ids(options))
         household_people = set(self._household_person_ids(options)) if options.get("household_presence_enabled", False) else set()
         for selected in self.selected_entities(options):
+            if is_easystart_home_device(self._manual_easystart_context(selected)):
+                continue
             for entity in selected.entities:
                 items.extend(awareness_entity(self.hass, selected, entity))
         for home_device in self.selected_home_devices(options):

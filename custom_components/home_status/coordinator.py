@@ -293,15 +293,15 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         active = self.engine.build_active_items(self.options)
         visual_source_items = self._configured_visual_items()
         awareness = [*self.engine.build_awareness_items(self.options), *self.news_articles]
-        appliance_current = self.engine.native_current_facts(self.options)
-        appliance_entity_ids = self.engine.appliance_owned_entity_ids(self.options)
+        semantic_current = self.engine.native_current_facts(self.options)
+        semantic_entity_ids = self.engine.native_owned_entity_ids(self.options)
         native_current_facts = [
             *current_states(
                 self.hass,
-                tuple(entity_id for entity_id in self._observed if entity_id not in appliance_entity_ids),
+                tuple(entity_id for entity_id in self._observed if entity_id not in semantic_entity_ids),
                 self._native_name_for_entity,
             ),
-            *appliance_current,
+            *semantic_current,
         ]
         native_current = present_current_items(native_current_facts, self.options)
         native_recent = present_recent_items(self._native_recent, self.options)

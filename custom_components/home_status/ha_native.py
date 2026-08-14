@@ -328,21 +328,34 @@ def _present_item(
     domain = str(item.get("domain") or entity_id.split(".", 1)[0]).casefold()
     device_class = str(item.get("device_class") or "").casefold()
     appliance = item.get("capability") == "appliance_cycle"
+    easystart = item.get("capability") == "easystart_fault"
     state = str(item.get("state") if current else item.get("to") or "").strip()
     if appliance and state.casefold() in {"completed", "finished", "done"}:
         state = "Complete"
     attention = str(item.get("attention") or "none").casefold()
-    category = _appliance_category(name, entity_id) if appliance else _native_category(domain, device_class)
+    category = (
+        _appliance_category(name, entity_id)
+        if appliance
+        else "maintenance"
+        if easystart
+        else _native_category(domain, device_class)
+    )
     priority = _item_priority(appliance, current, attention, state)
-    display_kind = "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
+    display_kind = "easystart_fault" if easystart else "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
     label = state or "Unknown"
-    title = label if domain == "alarm_control_panel" else f"{name} {label}"
+    if easystart:
+        owner = name if "easystart" in name.casefold() else f"{name} EasyStart"
+        title = f"{owner}: {label}"
+    else:
+        title = label if domain == "alarm_control_panel" else f"{name} {label}"
     item_id = (
         f"native:current:{entity_id}"
         if current
         else f"native:recent:{entity_id}:{item.get('changed_at', '')}"
     )
     safety_alert = current and (
+        easystart
+        or
         domain == "alarm_control_panel"
         or device_class in {
             "moisture", "smoke", "gas", "carbon_monoxide", "safety",
@@ -358,20 +371,20 @@ def _present_item(
         "entity_name": name,
         "title": title,
         "message": title,
-        "summary": _item_summary(item, appliance, current, state),
-        "icon": _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
+        "summary": str(item.get("detail") or "") if easystart else _item_summary(item, appliance, current, state),
+        "icon": "mdi:air-conditioner" if easystart else _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
         "category": category,
         "color_role": _color_role(category, priority, state, current),
         "priority": priority,
         "active": current,
         "state": state,
         "created_at": item.get("changed_at"),
-        "event_type": "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
+        "event_type": "native_easystart_current" if easystart else "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
         "timestamp_mode": timestamp_mode,
         "display_kind": display_kind,
         "capability": item.get("capability"),
         "source": "home_assistant",
-        "ticker_eligible": bool(appliance and current),
+        "ticker_eligible": bool((appliance or easystart) and current),
         "utility_role": "security" if category == "security" else "",
     }
 

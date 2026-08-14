@@ -8,7 +8,7 @@ there is a specific interpretation for them.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import ceil
+from math import ceil, isfinite
 import re
 from typing import Any
 
@@ -65,6 +65,46 @@ _SUPPORTING_NAME_HINTS = (
     "delay start", "current cycle", "program", "temperature setting", "setpoint",
     "signal", "rssi", "wifi", "battery", "firmware", "diagnostic",
 )
+
+# Micro-Air EasyStart exposes one semantic protection status alongside several
+# diagnostic measurements and two controls.  Identify the capability from the
+# entity signature, never from the user's device name.
+_EASYSTART_STATUS_LABELS = {
+    "unexpected curr flt": "Unexpected Current Fault",
+    "short cycle delay": "Short Cycle Delay",
+    "pwr intrrptn fault": "Power Interruption Fault",
+    "stall fault": "Stall Fault",
+    "stuck sr fault": "Stuck Start Relay Fault",
+    "open ovrld fault": "Open Overload Fault",
+    "overcurrent fault": "Overcurrent Fault",
+    "bad wiring fault": "Bad Wiring Fault",
+    "wrong voltage flt": "Wrong Voltage Fault",
+}
+
+_EASYSTART_ROLE_SUFFIXES = {
+    "status": "status",
+    "live current": "live_current",
+    "line frequency": "line_frequency",
+    "last start peak": "last_start_peak",
+    "scpt delay": "scpt_delay",
+    "total faults": "total_faults",
+    "total starts": "total_starts",
+    "mcu temperature": "mcu_temperature",
+    "wifi signal": "wifi_signal",
+    "uptime": "uptime",
+    "read status": "read_status",
+    "restart esp": "restart_esp",
+}
+
+_EASYSTART_NONPRESENTATION_ROLES = frozenset(
+    role for role in _EASYSTART_ROLE_SUFFIXES.values() if role != "status"
+)
+
+_GENERIC_DIAGNOSTIC_DEVICE_CLASSES = {
+    "apparent_power", "battery", "current", "duration", "energy", "frequency",
+    "power", "power_factor", "reactive_energy", "reactive_power",
+    "signal_strength", "timestamp", "voltage",
+}
 
 
 def _now() -> str:
@@ -180,6 +220,113 @@ def _is_supporting_entity(entity: HomeDeviceEntity) -> bool:
 
 def _entity_key(entity: HomeDeviceEntity) -> str:
     return f"{entity.entity_id} {entity.name}".casefold()
+
+
+def _semantic_words(value: str) -> str:
+    return " ".join(part for part in re.split(r"[^a-z0-9]+", value.casefold()) if part)
+
+
+def easystart_entity_role(entity: HomeDeviceEntity) -> str | None:
+    """Return the YAML-defined EasyStart role for an entity, if recognizable."""
+    name = _semantic_words(entity.name)
+    object_id = _semantic_words(entity.entity_id.split(".", 1)[-1])
+    # Match specific multi-word controls ("Read Status") before the generic
+    # primary role ("Status").
+    for suffix, role in sorted(
+        _EASYSTART_ROLE_SUFFIXES.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        if name == suffix or name.endswith(f" {suffix}") or object_id == suffix or object_id.endswith(f" {suffix}"):
+            return role
+    return None
+
+
+def is_easystart_home_device(home_device: HomeDevice) -> bool:
+    """Recognize an EasyStart diagnostic monitor by its entity signature."""
+    roles = {role for entity in home_device.entities if (role := easystart_entity_role(entity))}
+    distinctive = {"last_start_peak", "scpt_delay", "total_faults", "total_starts"}
+    return "status" in roles and "live_current" in roles and bool(roles & distinctive)
+
+
+def easystart_owned_entity_ids(home_device: HomeDevice) -> set[str]:
+    """Return entities whose presentation is owned by the EasyStart capability."""
+    if not is_easystart_home_device(home_device):
+        return set()
+    return {
+        entity.entity_id
+        for entity in home_device.entities
+        if easystart_entity_role(entity) is not None
+    }
+
+
+def easystart_current_fact(
+    hass: HomeAssistant, home_device: HomeDevice
+) -> dict[str, Any] | None:
+    """Return one actionable EasyStart protection fact; healthy stays silent."""
+    if not is_easystart_home_device(home_device):
+        return None
+    by_role = {
+        role: entity
+        for entity in home_device.entities
+        if (role := easystart_entity_role(entity)) is not None
+    }
+    status_entity = by_role.get("status")
+    if status_entity is None or (status := hass.states.get(status_entity.entity_id)) is None:
+        return None
+    raw = str(status.state or "").strip().casefold()
+    if raw in {"", "normal", "unknown", "unavailable", "none"}:
+        return None
+    label = _EASYSTART_STATUS_LABELS.get(raw)
+    if label is None:
+        return None
+
+    detail = "EasyStart protection requires attention"
+    live_entity = by_role.get("live_current")
+    live_state = hass.states.get(live_entity.entity_id) if live_entity is not None else None
+    if live_state is not None:
+        try:
+            current = float(live_state.state)
+        except (TypeError, ValueError):
+            current = None
+        if current is not None and isfinite(current):
+            unit = str(
+                live_state.attributes.get("unit_of_measurement")
+                or live_entity.unit
+                or "A"
+            ).strip()
+            detail = f"EasyStart protection requires attention · Live current {current:g} {unit}".strip()
+
+    return {
+        "entity_id": status_entity.entity_id,
+        "entity_name": home_device.name,
+        "domain": "sensor",
+        "device_class": None,
+        "state": label,
+        "attention": "attention",
+        "changed_at": status.last_changed.isoformat() if status.last_changed else _now(),
+        "capability": "easystart_fault",
+        "detail": detail,
+    }
+
+
+def _generic_diagnostic_sensor(entity: HomeDeviceEntity, state: State) -> bool:
+    """Keep raw measurements/counters out of the generic awareness fallback."""
+    if entity.domain != "sensor":
+        return False
+    if str(entity.entity_category or "").casefold() == "diagnostic":
+        return True
+    device_class = str(
+        state.attributes.get("device_class") or entity.device_class or ""
+    ).casefold()
+    # Temperature and humidity already have explicit awareness semantics. They
+    # remain eligible unless the registry marks them diagnostic or an owning
+    # capability (such as EasyStart) suppresses them before this fallback.
+    if device_class in {"temperature", "humidity"}:
+        return False
+    if str(state.attributes.get("state_class") or "").casefold() in {
+        "measurement", "measurement_angle", "total", "total_increasing",
+    }:
+        return True
+    return device_class in _GENERIC_DIAGNOSTIC_DEVICE_CLASSES
 
 
 def _is_appliance_state_entity(entity: HomeDeviceEntity) -> bool:
@@ -418,6 +565,9 @@ def _has_semantic_owner(home_device: HomeDevice, entity: HomeDeviceEntity) -> bo
     """
     domain = entity.domain
     device_class = str(entity.device_class or "").casefold()
+
+    if is_easystart_home_device(home_device) and easystart_entity_role(entity):
+        return True
 
     if domain == "alarm_control_panel":
         return True
@@ -700,6 +850,20 @@ def awareness_entity(
     """Return quiet current-awareness information for selected HomeDevices."""
     state = hass.states.get(entity.entity_id)
     if state is None or str(state.state).casefold() in {"unknown", "unavailable"}:
+        return []
+
+    # EasyStart has one semantic protection status. Its measurements, counters,
+    # diagnostics, and controls are never independent presentation candidates.
+    easystart_role = easystart_entity_role(entity)
+    if easystart_role and (
+        is_easystart_home_device(home_device)
+        or easystart_role in _EASYSTART_NONPRESENTATION_ROLES
+    ):
+        return []
+
+    # The unrestricted entity selector remains available, but numeric telemetry
+    # must have a dedicated semantic owner before it can enter presentation.
+    if _generic_diagnostic_sensor(entity, state):
         return []
 
     domain = entity.domain

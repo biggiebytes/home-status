@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.3
+
+- Added an integration-owned semantic capability for Micro-Air EasyStart diagnostic/protection monitors, recognized from the YAML-defined entity signature rather than the device name.
+- Kept a healthy `Normal` status silent and converted every defined EasyStart fault/protection status into a meaningful AC attention item.
+- Used `Live Current` only as supporting fault context without inventing an off/running threshold.
+- Excluded Last Start Peak, Line Frequency, SCPT Delay, counters, MCU temperature, Wi-Fi signal, uptime, Read Status, and Restart ESP from all presentation streams.
+- Tightened generic manual-sensor eligibility so unowned measurements, totals, and diagnostic entities cannot become awareness items.
+
 ## 0.9.2
 
 - Keep the left, right, and footer presentation streams moving while the drawer is open.
