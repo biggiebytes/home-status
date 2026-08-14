@@ -7762,12 +7762,73 @@ class HomeStatusCardEditor extends HTMLElement {
 
     this._hass = null;
 
+    this._pendingHassRender =
+      false;
+
+    this._formControlFocused =
+      false;
+
     this._editorLevel =
       'recommended';
+
+    this.shadowRoot.addEventListener(
+      'focusin',
+      event => {
+        if (
+          event.target?.matches?.(
+            'input, select, textarea'
+          )
+        ) {
+          this._formControlFocused =
+            true;
+        }
+      }
+    );
+
+    this.shadowRoot.addEventListener(
+      'focusout',
+      () => {
+        window.setTimeout(
+          () => {
+            this._formControlFocused =
+              Boolean(
+                this.shadowRoot?.activeElement?.matches?.(
+                  'input, select, textarea'
+                )
+              );
+
+            if (
+              this._pendingHassRender &&
+              !this._hasActiveFormControl()
+            ) {
+              this._pendingHassRender =
+                false;
+
+              this._render();
+            }
+          },
+          0
+        );
+      }
+    );
   }
 
   set hass(value) {
     this._hass = value;
+
+    // Home Assistant refreshes hass frequently. Rebuilding this editor while
+    // a native select, datalist, or text input owns focus closes its popup and
+    // can discard an in-progress choice. Apply the newest hass snapshot after
+    // the user leaves the control instead.
+    if (
+      this._hasActiveFormControl()
+    ) {
+      this._pendingHassRender =
+        true;
+
+      return;
+    }
+
     this._render();
   }
 
@@ -7829,6 +7890,16 @@ class HomeStatusCardEditor extends HTMLElement {
 
   connectedCallback() {
     this._render();
+  }
+
+  _hasActiveFormControl() {
+    return (
+      this._formControlFocused ||
+      document.activeElement === this ||
+      Boolean(
+        this.shadowRoot?.activeElement
+      )
+    );
   }
 
   _escape(value) {

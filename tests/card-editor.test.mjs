@@ -135,6 +135,30 @@ try {
   });
   assert.deepEqual(transportContract.fallback, ['Legacy payload']);
 
+  const editorRefreshSafety = await page.evaluate(async () => {
+    const editor = document.createElement('home-status-card-editor');
+    editor.hass = window.testHass;
+    editor.setConfig(customElements.get('home-status-card').getStubConfig());
+    document.querySelector('#editor-host').replaceChildren(editor);
+    const select = editor.shadowRoot.querySelector('[data-profile-picker]');
+    select.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    editor.hass = {
+      ...window.testHass,
+      states: { ...window.testHass.states }
+    };
+    const retainedWhileFocused =
+      editor.shadowRoot.querySelector('[data-profile-picker]') === select;
+    select.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const refreshedAfterBlur =
+      editor.shadowRoot.querySelector('[data-profile-picker]') !== select;
+    return { retainedWhileFocused, refreshedAfterBlur };
+  });
+  assert.deepEqual(editorRefreshSafety, {
+    retainedWhileFocused: true,
+    refreshedAfterBlur: true
+  });
+
   const visualCenterTransitions = await page.evaluate(() => {
     const attributes = {
       ...window.testHass.states['sensor.home_status'].attributes,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.5
+
+- Prevented live Home Assistant updates from rebuilding the card editor while
+  a dropdown, picker, or text field is active. Updates now wait until the
+  control loses focus, so native selection popups remain open.
+
 ## 0.9.4
 
 - Added coordinator-backed Now, Recent, Household, Weather, Calendar, News,
