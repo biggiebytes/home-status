@@ -157,21 +157,32 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         )
         items = []
         selected = value if limit is None else value[:limit]
-        # Awareness is assembled from household context first and RSS articles
-        # second. A simple first-N limit would therefore hide every local-news
-        # item once a home has eight other awareness sources. Reserve one news
-        # slot when present without increasing the Recorder payload budget.
+        # Keep the two durable awareness summaries that are generated outside
+        # a normal selected source list: household presence and the newest
+        # local-news item.  Household presence is appended after configured
+        # devices and sources, so a simple first-N limit can otherwise show it
+        # immediately during startup and then omit it from the sensor payload
+        # once the full awareness collection is published.
         if limit is not None and len(value) > limit:
-            news = [
-                item for item in value
-                if isinstance(item, dict) and item.get("category") == "news"
-            ]
-            if news:
-                non_news = [
+            household = next(
+                (
                     item for item in value
-                    if not isinstance(item, dict) or item.get("category") != "news"
-                ]
-                selected = [*non_news[: limit - 1], news[0]]
+                    if isinstance(item, dict)
+                    and item.get("id") == "home_status:household_presence:awareness"
+                ),
+                None,
+            )
+            news = next(
+                (
+                    item for item in value
+                    if isinstance(item, dict) and item.get("category") == "news"
+                ),
+                None,
+            )
+            protected = [item for item in (household, news) if item is not None][:limit]
+            protected_ids = {id(item) for item in protected}
+            ordinary = [item for item in value if id(item) not in protected_ids]
+            selected = [*ordinary[: max(0, limit - len(protected))], *protected]
         for item in selected:
             if not isinstance(item, dict):
                 continue

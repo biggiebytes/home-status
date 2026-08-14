@@ -51,3 +51,38 @@ def test_current_appliance_cycle_is_prioritized_within_sensor_budget():
 
     assert len(native["current"]) == 8
     assert native["current"][0]["entity_name"] == "Dryer"
+
+
+def test_sensor_payload_keeps_household_presence_when_awareness_is_capped():
+    ordinary = [
+        {
+            "id": f"awareness:{index}",
+            "title": f"Awareness {index}",
+            "category": "calendar",
+        }
+        for index in range(8)
+    ]
+    household = {
+        "id": "home_status:household_presence:awareness",
+        "title": "Everyone Home",
+        "category": "location",
+        "source_kind": "location",
+    }
+    news = {
+        "id": "news:local:latest",
+        "title": "Local news",
+        "category": "news",
+    }
+
+    native = HomeStatusSensor._compact_native({
+        "awareness": [*ordinary, household, news],
+    })
+    ids = [item["id"] for item in native["awareness"]]
+
+    assert len(ids) == 8
+    assert household["id"] in ids
+    assert news["id"] in ids
+    assert household["id"] in [
+        *native["streams"]["left"],
+        *native["streams"]["right"],
+    ]
