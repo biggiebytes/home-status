@@ -173,8 +173,19 @@ def compose_presentation_streams(
         item for item in current
         if isinstance(item, dict) and item.get("active") is not False
     )
-    shared_active = [item for item in active if item.get("ticker_eligible") is not True]
-    ranked_awareness = _ranked_presentable(awareness)
+    rotating_current = [
+        item for item in active if item.get("rotate_with_awareness") is True
+    ]
+    shared_active = [
+        item
+        for item in active
+        if item.get("ticker_eligible") is not True
+        and item.get("rotate_with_awareness") is not True
+    ]
+    # EasyStart's two durable summaries are current measurements, but their
+    # presentation follows the same left/right rotation as Location and other
+    # useful context.  They do not pin both zones just because both are present.
+    ranked_awareness = _ranked_presentable([*rotating_current, *awareness])
 
     if len(shared_active) >= 2:
         left = [shared_active[0]]
@@ -205,7 +216,7 @@ def compose_presentation_streams(
         "left": [str(item["id"]) for item in left],
         "right": [str(item["id"]) for item in right],
         "bottom": [str(item["id"]) for item in bottom],
-        "phone_primary_id": str(active[0]["id"]) if active else "",
+        "phone_primary_id": str(shared_active[0]["id"]) if shared_active else "",
         "phone_fallback": {
             "id": "phone-home-normal",
             "title": "Home Normal",
@@ -395,6 +406,7 @@ def _present_item(
         "capability": item.get("capability"),
         "source": "home_assistant",
         "ticker_eligible": bool((appliance or easystart) and current),
+        "rotate_with_awareness": easystart_current,
         "utility_role": "security" if category == "security" else "",
     }
 

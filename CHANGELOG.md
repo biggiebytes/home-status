@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.8
+
+- Let Micro-Air's two current summaries take part in the usual left/right contextual rotation instead of pinning the two slots.
+
 ## v0.9.7
 
 - Format Micro-Air readings for clear card display without changing their underlying values.

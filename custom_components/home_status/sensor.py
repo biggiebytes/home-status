@@ -140,7 +140,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 "id", "entity_id", "entity_name", "title", "message", "summary",
                 "icon", "category", "color_role", "priority", "active", "state",
                 "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source",
-                "ticker_eligible", "utility_role",
+                "ticker_eligible", "rotate_with_awareness", "utility_role",
             ),
         )
         # The Recorder budget must not hide a live appliance or the two
@@ -336,7 +336,7 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
             "icon", "category", "color_role", "priority", "active", "state", "source",
             "source_kind", "event_type", "created_at", "updated_at", "occurred_at",
             "expires_at", "scheduled_at", "all_day", "timestamp", "timestamp_mode",
-            "display_kind", "capability", "ticker_eligible", "group_labels", "utility_role",
+            "display_kind", "capability", "ticker_eligible", "rotate_with_awareness", "group_labels", "utility_role",
             "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
             "body", "visual_effect", "action", "visual", "zone_visual",
         )

@@ -1,7 +1,10 @@
 """Release-contract tests for the current device-first architecture."""
 
 from custom_components.home_status.normalization import normalize_semantic_state
-from custom_components.home_status.ha_native import present_current_items
+from custom_components.home_status.ha_native import (
+    compose_presentation_streams,
+    present_current_items,
+)
 from custom_components.home_status.home_device import HomeDevice, HomeDeviceEntity
 from custom_components.home_status.interpreters import easystart_current_facts
 
@@ -76,3 +79,9 @@ def test_easystart_uses_two_current_items_for_all_requested_values(hass):
     )
     assert items[0]["id"] != items[1]["id"]
     assert all(item["category"] == "climate" for item in items)
+    assert all(item["rotate_with_awareness"] is True for item in items)
+
+    streams = compose_presentation_streams(items, [], [])
+    assert streams["left"] == [items[0]["id"]]
+    assert streams["right"] == [items[1]["id"]]
+    assert streams["phone_primary_id"] == ""
