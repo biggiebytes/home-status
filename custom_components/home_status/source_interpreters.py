@@ -61,6 +61,25 @@ def _item(
     }
 
 
+def _travel_minutes(value: Any, unit: Any) -> float | None:
+    """Normalize a selected travel-time state to minutes."""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    normalized_unit = str(unit or "min").casefold().strip()
+    if normalized_unit in {"h", "hr", "hrs", "hour", "hours"}:
+        return numeric * 60
+    if normalized_unit in {"s", "sec", "secs", "second", "seconds"}:
+        return numeric / 60
+    return numeric
+
+
+def _travel_label(minutes: float) -> str:
+    rounded = max(0, round(minutes))
+    return f"{rounded} min"
+
+
 def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[str, Any] | None:
     """Build one household-level presence summary from selected people."""
     people = []
@@ -122,6 +141,25 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
         return []
 
     attrs = state.attributes
+
+    if source.kind == "traffic":
+        minutes = _travel_minutes(
+            state.state,
+            attrs.get("unit_of_measurement"),
+        )
+        if minutes is None:
+            return []
+        # The source name is user-facing configuration (for example,
+        # "Downtown"). Do not expose Waze's origin/destination attributes:
+        # those can contain precise coordinates or private addresses.
+        return [_item(
+            source,
+            state,
+            message=f"{source.name}: {_travel_label(minutes)}",
+            detail="Travel time",
+            icon=str(attrs.get("icon") or "mdi:car-clock"),
+            category="traffic",
+        )]
 
     if source.domain == "weather":
         condition = str(state.state).replace("_", " ").title()

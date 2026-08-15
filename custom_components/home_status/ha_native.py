@@ -328,6 +328,7 @@ def _awareness_color_role(
     return {
         "weather": "weather", "waste": "waste", "irrigation": "irrigation",
         "schedule": "calendar", "news": "news", "climate": "climate",
+        "traffic": "traffic",
         "energy": "energy", "laundry": "appliance", "appliance": "appliance",
         "media": "media", "maintenance": "attention",
     }.get(category, "")

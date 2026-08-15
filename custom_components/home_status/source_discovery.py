@@ -8,7 +8,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .source import HomeSource
 
-_SOURCE_DOMAINS = {"weather", "calendar", "person", "zone"}
+_SOURCE_DOMAINS = {"weather", "calendar", "person", "zone", "sensor"}
 
 
 def _name(entry, state) -> str:
@@ -26,7 +26,25 @@ def _kind(domain: str) -> str:
         "calendar": "calendar",
         "person": "location",
         "zone": "location",
+        "sensor": "traffic",
     }[domain]
+
+
+def _is_traffic_sensor(entry, state) -> bool:
+    """Identify a travel-time sensor without promoting ordinary durations."""
+    if entry.entity_id.split(".", 1)[0] != "sensor" or state is None:
+        return False
+    attrs = state.attributes
+    device_class = str(
+        attrs.get("device_class")
+        or getattr(entry, "original_device_class", None)
+        or ""
+    ).casefold()
+    platform = str(getattr(entry, "platform", "") or "").casefold()
+    return device_class == "duration" and (
+        platform == "waze_travel_time"
+        or (attrs.get("origin") is not None and attrs.get("destination") is not None)
+    )
 
 
 def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
@@ -43,6 +61,8 @@ def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
             continue
 
         state = hass.states.get(entry.entity_id)
+        if domain == "sensor" and not _is_traffic_sensor(entry, state):
+            continue
         area_id = getattr(entry, "area_id", None)
         area = areas.async_get_area(area_id) if area_id else None
         result.append(

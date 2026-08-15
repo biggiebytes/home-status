@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.9.10
+
+- Added Traffic awareness for selected Waze and compatible Home Assistant travel-time sources.
+- Traffic shows the current travel time under its configured name and keeps route addresses and coordinates private.
+
 ## v0.9.9
 
 - Added an independent Portrait phone ticker speed setting. Existing card configurations retain their current portrait speed until changed.

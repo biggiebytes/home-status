@@ -68,9 +68,10 @@ remaining, and night state, but should not continuously publish redundant sun
 status.
 
 **Traffic** consumes user-selected travel-time or commute sensors supplied by
-existing Home Assistant integrations. Home Status will not implement routing,
-mapping, or traffic collection. It will normalize current travel time, normal
-travel time, delay, destination, route name, and last update when available.
+existing Home Assistant integrations. Home Status does not implement routing,
+mapping, or traffic collection. It presents the current travel time under the
+user-facing source name and never exposes raw origin, destination, or route
+attributes, which may contain private addresses or precise coordinates.
 
 **Presence** consumes user-selected `person`, `device_tracker`, or presence
 binary sensors. Precise coordinates must never appear in Home Status items or
