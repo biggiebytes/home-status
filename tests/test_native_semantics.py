@@ -68,7 +68,7 @@ def test_easystart_uses_two_current_items_for_all_requested_values(hass):
         "Micro-Air History",
     ]
     assert items[0]["summary"] == (
-        "Line Frequency: 60.0 Hz | Live Current: 12.3 A | "
+        "Line Frequency: 60 Hz | Live Current: 12.3 A | "
         "SCPT Delay: 0 s | Status: Normal"
     )
     assert items[1]["summary"] == (

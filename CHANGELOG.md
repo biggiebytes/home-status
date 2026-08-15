@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.7
+
+- Format Micro-Air readings for clear card display without changing their underlying values.
+
 ## v0.9.6
 
 - Kept the card editor stable while a dropdown, picker, or text field is

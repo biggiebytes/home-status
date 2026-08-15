@@ -8,7 +8,7 @@ there is a specific interpretation for them.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import ceil
+from math import ceil, isfinite
 import re
 from typing import Any
 
@@ -260,6 +260,23 @@ _EASYSTART_HISTORY_FIELDS = (
 )
 
 
+def _format_easystart_value(role: str, raw: str) -> str:
+    """Present EasyStart's numeric protocol values without float artifacts."""
+    if role == "status":
+        return raw
+    try:
+        numeric = float(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isfinite(numeric):
+        return raw
+    if role in {"total_faults", "total_starts"}:
+        return f"{numeric:,.0f}"
+    if numeric.is_integer():
+        return str(int(numeric))
+    return f"{numeric:.1f}".rstrip("0").rstrip(".")
+
+
 def easystart_current_facts(
     hass: HomeAssistant, home_device: HomeDevice
 ) -> list[dict[str, Any]]:
@@ -293,7 +310,8 @@ def easystart_current_facts(
             unit = str(
                 state.attributes.get("unit_of_measurement") or entity.unit or ""
             ).strip()
-            values.append(f"{label}: {raw}{f' {unit}' if unit else ''}")
+            value = _format_easystart_value(role, raw)
+            values.append(f"{label}: {value}{f' {unit}' if unit else ''}")
             if state.last_changed:
                 changed_at.append(state.last_changed)
 
