@@ -828,6 +828,12 @@ class HomeStatusCard extends HTMLElement {
     };
 
     this._baseVisual = null;
+    this._baseVisualQueue = [];
+    this._baseVisualQueueActive = false;
+    this._baseVisualQueueIndex = 0;
+    this._baseVisualQueueSignature = '';
+    this._baseVisualQueueInterval = 0;
+    this._baseVisualQueueTimer = null;
 
     this._zoneSignatures = {
       left: '',
@@ -1180,6 +1186,7 @@ class HomeStatusCard extends HTMLElement {
 
   disconnectedCallback() {
     this._stopZoneRotations();
+    this._stopVisualQueueRotation();
 
     if (this._clockTimer) {
       clearInterval(
@@ -1563,6 +1570,10 @@ class HomeStatusCard extends HTMLElement {
       visual: channels.visual.visual && typeof channels.visual.visual === 'object'
         ? channels.visual.visual
         : null,
+      visual_queue: Array.isArray(channels.visual.visual_queue)
+        ? channels.visual.visual_queue
+        : [],
+      visual_queue_active: channels.visual.visual_queue_active === true,
       weather_visual_effect: channels.visual.weather_visual_effect || '',
       unavailable: !source || ['unknown', 'unavailable'].includes(source.state)
     };
@@ -1667,6 +1678,14 @@ class HomeStatusCard extends HTMLElement {
             ? attrs.visual
             : null,
 
+        visual_queue:
+          Array.isArray(attrs.visual_queue)
+            ? attrs.visual_queue
+            : [],
+
+        visual_queue_active:
+          attrs.visual_queue_active === true,
+
         weather_visual_effect:
           attrs.weather_visual_effect ||
           '',
@@ -1700,6 +1719,14 @@ class HomeStatusCard extends HTMLElement {
         typeof attrs.visual === 'object'
           ? attrs.visual
           : null,
+
+      visual_queue:
+        Array.isArray(attrs.visual_queue)
+          ? attrs.visual_queue
+          : [],
+
+      visual_queue_active:
+        attrs.visual_queue_active === true,
 
       weather_visual_effect:
         attrs.weather_visual_effect ||
@@ -1811,6 +1838,21 @@ class HomeStatusCard extends HTMLElement {
           ? value.article_url.trim()
           : '',
 
+      title:
+        typeof value.title === 'string'
+          ? value.title.trim()
+          : '',
+
+      event_start:
+        typeof value.event_start === 'string'
+          ? value.event_start.trim()
+          : '',
+
+      event_end:
+        typeof value.event_end === 'string'
+          ? value.event_end.trim()
+          : '',
+
       entity_id:
         entityId,
 
@@ -1849,6 +1891,9 @@ class HomeStatusCard extends HTMLElement {
           visual.url,
           visual.entity_id,
           visual.article_url,
+          visual.title,
+          visual.event_start,
+          visual.event_end,
           visual.priority,
           visual.live,
           visual.started_at,
@@ -1857,6 +1902,77 @@ class HomeStatusCard extends HTMLElement {
           visual.mute
         ].join('|')
       : '';
+  }
+
+  _stopVisualQueueRotation() {
+    if (this._baseVisualQueueTimer) {
+      clearInterval(this._baseVisualQueueTimer);
+      this._baseVisualQueueTimer = null;
+    }
+  }
+
+  _queuedBaseVisual() {
+    return this._baseVisualQueueActive
+      ? this._baseVisualQueue[this._baseVisualQueueIndex] || null
+      : null;
+  }
+
+  _syncVisualQueue(data) {
+    const queue = data.visual_queue_active
+      ? (Array.isArray(data.visual_queue)
+          ? data.visual_queue
+              .map(value => this._visualFromData(value))
+              .filter(Boolean)
+          : [])
+      : [];
+    const signature = queue
+      .map(value => this._visualSignature(value))
+      .join('||');
+    const interval = Math.max(
+      1,
+      Number(data.display?.rotation_seconds) || this._config.rotation_seconds || 6
+    );
+
+    if (
+      signature === this._baseVisualQueueSignature &&
+      interval === this._baseVisualQueueInterval
+    ) {
+      this._baseVisualQueueActive = queue.length > 0;
+      return;
+    }
+
+    const previousVisual = this._queuedBaseVisual();
+    const previousSignature = this._visualSignature(previousVisual);
+    const intervalChanged = interval !== this._baseVisualQueueInterval;
+
+    this._baseVisualQueue = queue;
+    this._baseVisualQueueActive = queue.length > 0;
+    this._baseVisualQueueSignature = signature;
+    this._baseVisualQueueInterval = interval;
+
+    const preservedIndex = previousSignature
+      ? queue.findIndex(value => this._visualSignature(value) === previousSignature)
+      : -1;
+    this._baseVisualQueueIndex = preservedIndex >= 0
+      ? preservedIndex
+      : Math.min(this._baseVisualQueueIndex, Math.max(0, queue.length - 1));
+
+    if (queue.length <= 1) {
+      this._stopVisualQueueRotation();
+      return;
+    }
+
+    // Normal HA refreshes can replace/reorder the queue. Keep the existing
+    // interval running so a data refresh cannot shorten or extend a slide.
+    if (intervalChanged || !this._baseVisualQueueTimer) {
+      this._stopVisualQueueRotation();
+      this._baseVisualQueueTimer = setInterval(() => {
+        if (this._rotationPaused) return;
+        this._baseVisualQueueIndex =
+          (this._baseVisualQueueIndex + 1) % this._baseVisualQueue.length;
+        this._syncDisplayedVisual();
+      }, interval * 1000);
+    }
   }
 
   _syncVisualCenter(value) {
@@ -1960,17 +2076,106 @@ class HomeStatusCard extends HTMLElement {
       this._config.home_status_visibility.left ||
       this._config.home_status_visibility.right;
 
+    const queuedVisual = this._queuedBaseVisual();
+    const baseVisual = this._baseVisual;
+    const priorityRank = visual => {
+      const ranks = { critical: 0, attention: 1, activity: 2, normal: 3 };
+      return ranks[String(visual?.priority || 'normal').toLowerCase()] ?? 3;
+    };
+    const baseBeatsQueue =
+      queuedVisual && baseVisual && priorityRank(baseVisual) < priorityRank(queuedVisual);
+
     this._syncVisualCenter(
       this._mediaEnabled && hasMainArea
         ? (
           this._displayedZoneItems.right?.zone_visual ||
           this._displayedZoneItems.left?.zone_visual ||
+          (baseBeatsQueue ? baseVisual : queuedVisual) ||
           this._displayedZoneItems.right?.visual ||
           this._displayedZoneItems.left?.visual ||
-          this._baseVisual
+          baseVisual
         )
         : null
     );
+  }
+
+  _parseVisualEventDate(value) {
+    if (!value) return null;
+
+    // Date-only values are calendar dates, not UTC instants. Construct them
+    // locally so "2026-08-17" cannot become Aug 16 on an EDT tablet.
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const date = dateOnly
+      ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+      : new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+
+  _formatVisualEventDate(startValue, endValue = '') {
+    const start = this._parseVisualEventDate(startValue);
+    if (!start) return '';
+    const end = this._parseVisualEventDate(endValue);
+    const format = value => new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric'
+    }).format(value).toUpperCase();
+
+    if (!end || start.toDateString() === end.toDateString()) {
+      return format(start);
+    }
+
+    const sameMonth = start.getFullYear() === end.getFullYear() &&
+      start.getMonth() === end.getMonth();
+    if (sameMonth) {
+      const month = new Intl.DateTimeFormat(undefined, { month: 'short' })
+        .format(start)
+        .toUpperCase();
+      return `${month} ${start.getDate()}–${end.getDate()}`;
+    }
+    return `${format(start)}–${format(end)}`;
+  }
+
+  _syncVisualOverlay(center, visual) {
+    const existing = center.querySelector(
+      ':scope > .visual-center-overlay'
+    );
+
+    // Event-style overlays are capability-driven: an item only gets this
+    // treatment when it provides both a title and an event timestamp.
+    // This keeps ordinary news, weather, camera and video visuals unchanged.
+    if (!visual.title || !visual.event_start) {
+      existing?.remove();
+      center.classList.remove('has-visual-overlay');
+      return;
+    }
+
+    const dateLabel = this._formatVisualEventDate(
+      visual.event_start,
+      visual.event_end
+    );
+
+    if (!dateLabel) {
+      existing?.remove();
+      center.classList.remove('has-visual-overlay');
+      return;
+    }
+
+    const overlay = existing || document.createElement('span');
+    overlay.className = 'visual-center-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+
+    overlay.innerHTML = `
+      <span class="visual-center-event-badge">
+        <ha-icon icon="mdi:calendar-star"></ha-icon>
+        <span>${this._escape(dateLabel)}</span>
+      </span>
+      <span class="visual-center-event-title">
+        ${this._escape(visual.title)}
+      </span>
+    `;
+
+    if (!existing) center.append(overlay);
+    center.classList.add('has-visual-overlay');
   }
 
   _renderVisualCenter(
@@ -1978,7 +2183,9 @@ class HomeStatusCard extends HTMLElement {
     visual
   ) {
     const existing =
-      center.firstElementChild;
+      center.querySelector(
+        ':scope > .visual-center-media, :scope > .visual-center-camera, :scope > .visual-center-fallback'
+      );
 
     if (
       visual.type === 'image'
@@ -1987,30 +2194,25 @@ class HomeStatusCard extends HTMLElement {
         center
       );
 
-      if (
+      let image =
         existing?.tagName === 'IMG'
-      ) {
-        existing.src = visual.url;
-      } else {
-        const image =
-          document.createElement(
-            'img'
-          );
+          ? existing
+          : null;
 
-        image.className =
-          'visual-center-media';
-
+      if (!image) {
+        image = document.createElement('img');
+        image.className = 'visual-center-media';
         image.alt = '';
         image.loading = 'eager';
-        image.src = visual.url;
-
-        center.replaceChildren(
-          image
-        );
+        center.replaceChildren(image);
       }
 
+      image.src = visual.url;
+      this._syncVisualOverlay(center, visual);
       return;
     }
+
+    this._syncVisualOverlay(center, visual);
 
     if (
       visual.type === 'video'
@@ -2993,15 +3195,35 @@ class HomeStatusCard extends HTMLElement {
         );
   }
 
+  _sideLaneEligible(item) {
+    if (!item || typeof item !== 'object') return false;
+
+    const sourceKind = String(item.source_kind || '').toLowerCase();
+    const category = String(item.category || '').toLowerCase();
+    const displayKind = String(item.display_kind || '').toLowerCase();
+
+    // News belongs to its existing awareness/media paths, not the shared
+    // current-information side lanes. Keep calendar, weather, waste,
+    // measurements, and household current facts eligible.
+    return !(
+      sourceKind === 'news' ||
+      sourceKind === 'live_news' ||
+      category === 'news' ||
+      category === 'live_news' ||
+      displayKind === 'local_news' ||
+      displayKind === 'live_news'
+    );
+  }
+
   _zoneItems(data) {
     const left =
       Array.isArray(data.left)
-        ? data.left.slice()
+        ? data.left.filter(item => this._sideLaneEligible(item))
         : [];
 
     const right =
       Array.isArray(data.right)
-        ? data.right.slice()
+        ? data.right.filter(item => this._sideLaneEligible(item))
         : [];
 
     const showLeft =
@@ -3979,120 +4201,112 @@ class HomeStatusCard extends HTMLElement {
     );
   }
 
-  _renderZone(
-    zone,
-    item,
-    emptyLabel,
-    animate = true
-  ) {
-    const target =
-      this.shadowRoot.querySelector(
-        `[data-zone="${zone}"]`
-      );
+  _laneMarkup(items, emptyLabel, includeNext = false) {
+    const visible = Array.isArray(items) ? items.filter(Boolean) : [];
 
+    if (!visible.length) {
+      return `<span class="zone-lane-viewport"><span class="zone-lane zone-lane-empty"><span class="zone-empty">${this._escape(emptyLabel)}</span></span></span>`;
+    }
+
+    const rows = visible.map(item => {
+      let title = this._glanceableMeasurementTitle(this._label(item));
+      let summary = String(item.summary || item.secondary || '').trim();
+      const displayKind = String(item?.display_kind || '').toLowerCase();
+      const currentWeather = displayKind === 'current_weather';
+      const indoorTemperature = displayKind === 'indoor_temperature';
+
+      if (currentWeather) {
+        title = this._glanceableTemperature(title);
+        summary = this._friendlyWeatherCondition(summary || item.state || '');
+      } else if (indoorTemperature) {
+        title = this._glanceableTemperature(title || summary);
+      }
+
+      const scheduled = item.scheduled_at
+        ? this._friendlyScheduled(item.scheduled_at, item.all_day === true)
+        : '';
+
+      if (scheduled) {
+        summary = [item.source_name || summary, scheduled].filter(Boolean).join(' · ');
+      }
+
+      const relative = !currentWeather && !indoorTemperature && this._showsRelativeAge(item)
+        ? this._relative(this._timestampValue(item))
+        : '';
+
+      if (relative && String(summary).trim().toLowerCase() === String(title).trim().toLowerCase()) {
+        summary = '';
+      }
+
+      if (relative) {
+        summary = [summary, relative].filter(Boolean).join(' — ');
+      }
+
+      const priority = String(item.priority || 'normal').toLowerCase();
+      const nav = this._escape(item.navigation || '');
+      const entity = this._escape(item.entity_id || '');
+      const id = this._escape(item.id || '');
+
+      return `<span class="zone-item lane-item priority-${this._escape(priority)}" data-stream-id="${id}" data-stream-navigation="${nav}" data-stream-entity="${entity}">
+        <span class="lane-icon"><ha-icon class="${this._iconSemanticClass(item)}" icon="${this._escape(item.icon || 'mdi:information-outline')}"${this._iconStyle(item)}></ha-icon></span>
+        <span class="lane-copy">
+          <span class="lane-title">${this._escape(title)}</span>
+          ${summary ? `<span class="lane-summary">${this._escape(summary)}</span>` : ''}
+        </span>
+      </span>`;
+    }).join('');
+
+    return `<span class="zone-lane-viewport"><span class="zone-lane${includeNext ? ' has-next-row' : ''}">${rows}</span></span>`;
+  }
+
+  _laneWindow(items, startIndex, size = 3, includeNext = false) {
+    const values = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (values.length <= size) return values;
+
+    const start = ((Number(startIndex) || 0) % values.length + values.length) % values.length;
+    const count = Math.min(size + (includeNext ? 1 : 0), values.length);
+    return Array.from({ length: count }, (_, offset) => values[(start + offset) % values.length]);
+  }
+
+  _renderZoneLane(zone, items, emptyLabel) {
+    const target = this.shadowRoot.querySelector(`[data-zone="${zone}"]`);
     if (!target) return;
 
-    if (
-      this._zoneRenderTimers[
-        zone
-      ]
-    ) {
-      clearTimeout(
-        this._zoneRenderTimers[
-          zone
-        ]
-      );
+    target.innerHTML = this._laneMarkup(items, emptyLabel, false);
+    this._displayedZoneItems[zone] = Array.isArray(items) && items.length ? items[0] : null;
+    this._syncDisplayedVisual();
+    this._bindStreamItems();
+  }
 
-      delete this
-        ._zoneRenderTimers[
-          zone
-        ];
-    }
+  _advanceZoneLane(zone, items, emptyLabel, visibleCount = 3) {
+    const target = this.shadowRoot.querySelector(`[data-zone="${zone}"]`);
+    if (!target || !Array.isArray(items) || items.length <= visibleCount) return;
 
-    const generation =
-      (
-        this._zoneRenderGenerations[
-          zone
-        ] || 0
-      ) + 1;
-
-    this._zoneRenderGenerations[
-      zone
-    ] = generation;
-
-    const intendedId =
-      item?.id ||
-      item?.entity_id ||
-      item?.message ||
-      null;
-
-    const apply = () => {
-      if (
-        this._zoneRenderGenerations[
-          zone
-        ] !== generation
-      ) {
-        return;
-      }
-
-      const currentId =
-        item?.id ||
-        item?.entity_id ||
-        item?.message ||
-        null;
-
-      if (
-        currentId !==
-        intendedId
-      ) {
-        return;
-      }
-
-      delete this
-        ._zoneRenderTimers[
-          zone
-        ];
-
-      target.innerHTML =
-        this._zoneMarkup(
-          item,
-          emptyLabel
-        );
-
-      this._displayedZoneItems[
-        zone
-      ] =
-        item || null;
-
-      this._syncDisplayedVisual();
-      this._bindHeroMedia(target);
-
-      target.classList.remove(
-        'zone-changing'
-      );
-
-      this._bindStreamItems();
-    };
-
-    if (
-      !animate ||
-      !target.firstElementChild
-    ) {
-      apply();
-      return;
-    }
-
-    target.classList.add(
-      'zone-changing'
+    const nextRows = this._laneWindow(
+      items,
+      this._zoneIndexes[zone],
+      visibleCount,
+      true
     );
 
-    this._zoneRenderTimers[
-      zone
-    ] =
-      window.setTimeout(
-        apply,
-        180
-      );
+    target.innerHTML = this._laneMarkup(nextRows, emptyLabel, true);
+    this._bindStreamItems();
+
+    const track = target.querySelector('.zone-lane.has-next-row');
+    if (!track) return;
+
+    // Start from a fully settled three-row viewport, then move exactly one
+    // complete row. No partially clipped content is left resting on screen.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => track.classList.add('is-advancing'));
+    });
+
+    window.setTimeout(() => {
+      this._zoneIndexes[zone] = (this._zoneIndexes[zone] + 1) % items.length;
+      const stableRows = this._laneWindow(items, this._zoneIndexes[zone], visibleCount, false);
+      this._zoneIds[zone] = stableRows[0]?.id || stableRows[0]?.entity_id || stableRows[0]?.message || null;
+      this._renderZoneLane(zone, stableRows, emptyLabel);
+    }, 430);
   }
 
   _bindHeroMedia(target) {
@@ -4179,285 +4393,78 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _startZoneRotations(data) {
-    const zones =
-      this._zoneItems(data);
+    const zones = this._zoneItems(data);
+    const visibleCount = 3;
 
-    const signatures =
-      Object.fromEntries(
-        Object.entries(
-          zones
-        ).map(
-          (
-            [zone, items]
-          ) => {
-            const config =
-              this._config[zone] ||
-              {};
+    const signatures = Object.fromEntries(
+      Object.entries(zones).map(([zone, items]) => {
+        const config = this._config[zone] || {};
+        const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
+        const legacyRightInterval = zone === 'right'
+          ? Number(data.display?.hero_rotation_seconds)
+          : NaN;
+        const interval = Number.isFinite(backendInterval) && backendInterval > 0
+          ? backendInterval
+          : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
+            ? legacyRightInterval
+            : Number(config.interval) || this._config.rotation_seconds;
 
-            const backendInterval =
-              Number(
-                data.display?.[
-                  `${zone}_rotation_seconds`
-                ]
-              );
-
-            const legacyRightInterval =
-              zone === 'right'
-                ? Number(
-                    data.display
-                      ?.hero_rotation_seconds
-                  )
-                : NaN;
-
-            const interval =
-              Number.isFinite(
-                backendInterval
-              ) &&
-              backendInterval > 0
-                ? backendInterval
-                : Number.isFinite(
-                    legacyRightInterval
-                  ) &&
-                  legacyRightInterval >
-                    0
-                  ? legacyRightInterval
-                  : Number(
-                      config.interval
-                    ) ||
-                    this._config
-                      .rotation_seconds;
-
-            return [
-              zone,
-              `${items.map(item => this._zoneItemSignature(item)).join('||')}::${config.rotate !== false}|${interval}`
-            ];
-          }
-        )
-      );
-
-    ['left', 'right']
-      .forEach(
-        (
+        return [
           zone,
-          index
-        ) => {
-          if (
-            signatures[zone] ===
-            this._zoneSignatures[
-              zone
-            ]
-          ) {
-            return;
-          }
+          `${items.map(item => this._zoneItemSignature(item)).join('||')}::lane:${visibleCount}:${config.rotate !== false}|${interval}`
+        ];
+      })
+    );
 
-          if (
-            this._zoneTimers[
-              zone
-            ]
-          ) {
-            clearInterval(
-              this._zoneTimers[
-                zone
-              ]
-            );
+    ['left', 'right'].forEach(zone => {
+      if (signatures[zone] === this._zoneSignatures[zone]) return;
 
-            delete this
-              ._zoneTimers[
-                zone
-              ];
-          }
+      if (this._zoneTimers[zone]) {
+        clearInterval(this._zoneTimers[zone]);
+        delete this._zoneTimers[zone];
+      }
 
-          this._zoneSignatures[
-            zone
-          ] =
-            signatures[zone];
+      this._zoneSignatures[zone] = signatures[zone];
+      const items = zones[zone];
+      const emptyLabel = 'No current information';
 
-          const ids =
-            zones[zone].map(
-              item =>
-                item.id ||
-                item.entity_id ||
-                item.message
-            );
+      if (!items.length) {
+        this._zoneIndexes[zone] = 0;
+        this._zoneIds[zone] = null;
+        this._renderZoneLane(zone, [], emptyLabel);
+        return;
+      }
 
-          if (
-            !zones[zone].length
-          ) {
-            this._zoneIndexes[
-              zone
-            ] = 0;
+      const ids = items.map(item => item.id || item.entity_id || item.message);
+      const previousId = this._zoneIds[zone];
+      const previous = previousId && ids.includes(previousId)
+        ? ids.indexOf(previousId)
+        : Math.min(this._zoneIndexes[zone] || 0, items.length - 1);
 
-            this._zoneIds[
-              zone
-            ] = null;
+      this._zoneIndexes[zone] = Math.max(0, previous);
+      const stableRows = this._laneWindow(items, this._zoneIndexes[zone], visibleCount, false);
+      this._zoneIds[zone] = stableRows[0]?.id || stableRows[0]?.entity_id || stableRows[0]?.message || null;
+      this._renderZoneLane(zone, stableRows, emptyLabel);
 
-            this._renderZone(
-              zone,
-              null,
-              zone === 'right'
-                ? 'No current events'
-                : 'No upcoming information'
-            );
+      const config = this._config[zone] || {};
+      if (config.rotate === false || items.length <= visibleCount) return;
 
-            return;
-          }
+      const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
+      const legacyRightInterval = zone === 'right'
+        ? Number(data.display?.hero_rotation_seconds)
+        : NaN;
+      const configuredInterval = Number.isFinite(backendInterval) && backendInterval > 0
+        ? backendInterval
+        : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
+          ? legacyRightInterval
+          : Number(config.interval) || this._config.rotation_seconds;
+      const interval = Math.max(4, configuredInterval);
 
-          const previousId =
-            this._zoneIds[
-              zone
-            ];
-
-          const previous =
-            previousId &&
-            ids.indexOf(
-              previousId
-            ) >= 0
-              ? ids.indexOf(
-                  previousId
-                )
-              : this._zoneIndexes[
-                  zone
-                ];
-
-          this._zoneIndexes[
-            zone
-          ] =
-            Math.min(
-              previous,
-              Math.max(
-                0,
-                zones[zone].length -
-                  1
-              )
-            );
-
-          this._zoneIds[
-            zone
-          ] =
-            ids[
-              this._zoneIndexes[
-                zone
-              ]
-            ] || null;
-
-          const config =
-            this._config[zone] ||
-            {};
-
-          const item =
-            zones[zone][
-              this._zoneIndexes[
-                zone
-              ]
-            ];
-
-          this._renderZone(
-            zone,
-            item,
-            zone === 'right'
-              ? 'No current events'
-              : 'No upcoming information'
-          );
-
-          if (
-            config.rotate === false ||
-            zones[zone].length <
-              2
-          ) {
-            return;
-          }
-
-          const backendInterval =
-            Number(
-              data.display?.[
-                `${zone}_rotation_seconds`
-              ]
-            );
-
-          const legacyRightInterval =
-            zone === 'right'
-              ? Number(
-                  data.display
-                    ?.hero_rotation_seconds
-                )
-              : NaN;
-
-          const configuredInterval =
-            Number.isFinite(
-              backendInterval
-            ) &&
-            backendInterval > 0
-              ? backendInterval
-              : Number.isFinite(
-                  legacyRightInterval
-                ) &&
-                legacyRightInterval >
-                  0
-                ? legacyRightInterval
-                : Number(
-                    config.interval
-                  ) ||
-                  this._config
-                    .rotation_seconds;
-
-          const interval =
-            Math.max(
-              zone === 'left'
-                ? 2
-                : 1,
-              configuredInterval
-            );
-
-          this._zoneTimers[
-            zone
-          ] =
-            setInterval(
-              () => {
-                if (
-                  this._rotationPaused
-                ) {
-                  return;
-                }
-
-                this._zoneIndexes[
-                  zone
-                ] =
-                  (
-                    this._zoneIndexes[
-                      zone
-                    ] + 1
-                  ) %
-                  zones[zone]
-                    .length;
-
-                this._zoneIds[
-                  zone
-                ] =
-                  ids[
-                    this._zoneIndexes[
-                      zone
-                    ]
-                  ] || null;
-
-                const item =
-                  zones[zone][
-                    this._zoneIndexes[
-                      zone
-                    ]
-                  ];
-
-                this._renderZone(
-                  zone,
-                  item,
-                  zone === 'right'
-                    ? 'No current events'
-                    : 'No upcoming information'
-                );
-              },
-              interval * 1000
-            );
-        }
-      );
+      this._zoneTimers[zone] = setInterval(() => {
+        if (this._rotationPaused) return;
+        this._advanceZoneLane(zone, items, emptyLabel, visibleCount);
+      }, interval * 1000);
+    });
   }
 
   _utilitySecurityState() {
@@ -6070,14 +6077,6 @@ class HomeStatusCard extends HTMLElement {
   height:var(--hs-card-body-height,380px) !important;
   min-height:var(--hs-card-body-height,380px) !important;
 }
-:host([data-profile="auto"]) .ticker-zone,
-:host([data-profile="tablet"]) .ticker-zone,
-:host([data-profile="desktop"]) .ticker-zone,
-:host([data-profile="auto"]) .secondary-item,
-:host([data-profile="tablet"]) .secondary-item,
-:host([data-profile="desktop"]) .secondary-item {
-  height:var(--hs-main-row-height,150px) !important;
-}
 :host([data-profile="auto"]) .primary-zone .zone-title,
 :host([data-profile="tablet"]) .primary-zone .zone-title,
 :host([data-profile="desktop"]) .primary-zone .zone-title { font-size:var(--hs-left-title-size,23px) !important; }
@@ -6317,6 +6316,8 @@ class HomeStatusCard extends HTMLElement {
 
     this._baseVisual =
       data.visual;
+
+    this._syncVisualQueue(data);
 
     this._startZoneRotations(
       data
@@ -6867,6 +6868,8 @@ class HomeStatusCard extends HTMLElement {
 
     this._baseVisual =
       data.visual;
+
+    this._syncVisualQueue(data);
 
     this._updateUtilityHeader();
 
@@ -9284,6 +9287,7 @@ const CSS = `
 }
 
 .visual-center {
+  position:relative;
   display:grid;
   place-items:center;
   align-self:stretch;
@@ -9309,12 +9313,198 @@ const CSS = `
   min-width:0;
 }
 
+.visual-center-overlay {
+  position:absolute;
+  inset:0;
+  z-index:2;
+  pointer-events:none;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  align-items:flex-start;
+  padding:14px;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(0,0,0,.28) 0%,
+      rgba(0,0,0,0) 34%,
+      rgba(0,0,0,0) 55%,
+      rgba(0,0,0,.76) 100%
+    );
+}
+
+.visual-center-event-badge {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 10px;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:10px;
+  background:rgba(10,12,16,.72);
+  box-shadow:0 4px 14px rgba(0,0,0,.2);
+  backdrop-filter:blur(8px);
+  color:#ce93d8;
+  font-size:14px;
+  font-weight:800;
+  line-height:1;
+  letter-spacing:.025em;
+}
+
+.visual-center-event-badge ha-icon {
+  --mdc-icon-size:18px;
+}
+
+.visual-center-event-title {
+  display:-webkit-box;
+  width:100%;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  color:rgba(255,255,255,.98);
+  font-size:clamp(17px,1.55vw,23px);
+  font-weight:800;
+  line-height:1.12;
+  text-shadow:0 2px 8px rgba(0,0,0,.8);
+}
+
+.visual-center.has-visual-overlay {
+  cursor:pointer;
+}
+
 .visual-center-fallback {
   padding:14px;
   color:var(--secondary-text-color);
   font-size:13px;
   line-height:1.35;
   text-align:center;
+}
+
+/* Shared current-information lanes: three fixed vertical slots use the full side-column height before rotating. */
+:host([data-profile="auto"]) .ticker-zone,
+:host([data-profile="tablet"]) .ticker-zone,
+:host([data-profile="desktop"]) .ticker-zone {
+  align-self:stretch;
+  height:100% !important;
+  min-height:0 !important;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.075);
+  border-radius:16px;
+  background:linear-gradient(180deg,rgba(20,27,34,.34),rgba(11,16,21,.18));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+}
+
+:host([data-profile="auto"]) .secondary-zone,
+:host([data-profile="tablet"]) .secondary-zone,
+:host([data-profile="desktop"]) .secondary-zone {
+  padding-left:0;
+  border-left:1px solid rgba(255,255,255,.075);
+}
+
+.zone-lane-viewport {
+  display:block;
+  width:100%;
+  height:100%;
+  min-height:0;
+  overflow:hidden;
+}
+
+.zone-lane {
+  display:grid;
+  grid-auto-flow:row;
+  grid-auto-rows:calc(100% / 3);
+  width:100%;
+  height:100%;
+  min-height:0;
+  transform:translateY(0);
+}
+
+.zone-lane.has-next-row {
+  height:133.333333%;
+  grid-auto-rows:25%;
+  transition:transform 400ms cubic-bezier(.4,0,.2,1);
+}
+
+.zone-lane.has-next-row.is-advancing {
+  transform:translateY(-25%);
+}
+
+.zone-lane-empty {
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+}
+
+.zone-lane .lane-item {
+  position:relative;
+  display:grid !important;
+  grid-template-columns:38px minmax(0,1fr);
+  align-items:center;
+  width:100%;
+  height:100%;
+  min-height:0;
+  padding:7px 12px;
+  box-sizing:border-box;
+  overflow:hidden;
+  border-bottom:1px solid rgba(255,255,255,.085);
+  opacity:1;
+  background:transparent;
+  transition:background 160ms ease;
+}
+
+.zone-lane .lane-item:hover {
+  background:rgba(255,255,255,.025);
+}
+
+.zone-lane .lane-icon {
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+}
+
+.zone-lane .lane-icon ha-icon {
+  width:29px !important;
+  height:29px !important;
+  --mdc-icon-size:29px;
+}
+
+.zone-lane .lane-copy {
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  min-width:0;
+  max-height:100%;
+  overflow:hidden;
+}
+
+.zone-lane .lane-title {
+  display:-webkit-box;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  color:rgba(255,255,255,.96);
+  font-size:clamp(16px,1.35vw,21px) !important;
+  font-weight:760;
+  line-height:1.12;
+  white-space:normal;
+}
+
+.zone-lane .lane-summary {
+  display:-webkit-box;
+  margin-top:4px;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:1;
+  color:rgba(255,255,255,.66);
+  font-size:clamp(12px,1vw,16px) !important;
+  font-weight:520;
+  line-height:1.18;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zone-lane.has-next-row {
+    transition:none !important;
+  }
 }
 
 .hero-zone-item {

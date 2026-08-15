@@ -104,6 +104,93 @@ def _utility_value(value: Any, attrs: dict[str, Any]) -> str:
     return f"{numeric:,.2f} {unit}".strip()
 
 
+def _safe_url(value: Any) -> str | None:
+    """Accept only external web URLs from an explicitly selected source."""
+    text = str(value or "").strip()
+    return text if text.startswith(("https://", "http://")) else None
+
+
+def _event_feed_items(source: HomeSource, state) -> list[dict[str, Any]]:
+    """Interpret a bounded, opt-in rich-events source without re-ranking it.
+
+    The provider owns selection, order, dates and artwork. Home Status only
+    normalizes those already-composed event records into awareness items.
+    """
+    raw_items = state.attributes.get("home_status_items")
+    if not isinstance(raw_items, list):
+        return []
+
+    result: list[dict[str, Any]] = []
+    # This is a defensive contract bound, not a content-selection rule. The
+    # provider controls the ordered feed and Home Status preserves that order.
+    for raw in raw_items[:100]:
+        if not isinstance(raw, dict):
+            continue
+        event_id = str(raw.get("id") or "").strip()
+        title = str(raw.get("title") or "").strip()
+        if not event_id or not title:
+            continue
+        summary = str(raw.get("body") or raw.get("subtitle") or source.name).strip()
+        detail = str(raw.get("subtitle") or source.name).strip()
+        image_url = _safe_url(raw.get("media_url") or raw.get("image_url"))
+        action = _safe_url(raw.get("action"))
+        priority = str(raw.get("priority") or "normal").casefold()
+        if priority not in {"critical", "attention", "activity", "normal"}:
+            priority = "normal"
+
+        item = _item(
+            source,
+            state,
+            message=title,
+            detail=detail,
+            icon=str(raw.get("icon") or "mdi:calendar-star"),
+            category="calendar",
+        )
+        item.update(
+            {
+                "id": f"home_status:{source.id}:event:{event_id}",
+                "event_type": "event",
+                "summary": summary,
+                "detail": detail,
+                "source_kind": "events",
+                "priority": priority,
+                "image_url": image_url,
+                "media_url": image_url,
+                "media_type": "image" if image_url else None,
+                "action": action,
+                "navigation": action,
+                "created_at": str(raw.get("created_at") or item["created_at"]),
+                "event_phase": str(raw.get("event_phase") or "").casefold(),
+                "event_start": str(raw.get("event_start") or "").strip(),
+                "event_end": str(raw.get("event_end") or "").strip(),
+                # Rich event cards are discovery content. Their artwork belongs
+                # in Visual Center; the destination page owns the full details.
+                "visual_only": bool(image_url),
+                "display_kind": "visual_media" if image_url else "awareness",
+            }
+        )
+        expires_at = str(raw.get("expires_at") or "").strip()
+        if expires_at:
+            item["expires_at"] = expires_at
+        if image_url:
+            item["visual"] = {
+                "type": "image",
+                "url": image_url,
+                "article_url": action,
+                "title": title,
+                "source": source.name,
+                "priority": priority,
+                "live": False,
+                "resumable": True,
+                "started_at": item["created_at"],
+                "expires_at": expires_at or None,
+                "event_start": item.get("event_start") or None,
+                "event_end": item.get("event_end") or None,
+            }
+        result.append(item)
+    return result
+
+
 def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[str, Any] | None:
     """Build one household-level presence summary from selected people."""
     people = []
@@ -165,6 +252,9 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
         return []
 
     attrs = state.attributes
+
+    if source.kind == "events":
+        return _event_feed_items(source, state)
 
     if source.kind == "traffic":
         minutes = _travel_minutes(

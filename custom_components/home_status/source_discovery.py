@@ -56,6 +56,16 @@ def _is_utility_source_sensor(entry, state) -> bool:
     )
 
 
+def _is_event_feed_sensor(entry, state) -> bool:
+    """Identify an explicit, provider-neutral rich event feed."""
+    return (
+        entry.entity_id.split(".", 1)[0] == "sensor"
+        and state is not None
+        and str(state.attributes.get("home_status_feed") or "").casefold()
+        == "events"
+    )
+
+
 def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
     """Return user-facing non-device information sources."""
     entities = er.async_get(hass)
@@ -76,6 +86,8 @@ def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
                 kind = "traffic"
             elif _is_utility_source_sensor(entry, state):
                 kind = "utility"
+            elif _is_event_feed_sensor(entry, state):
+                kind = "events"
             else:
                 continue
         area_id = getattr(entry, "area_id", None)

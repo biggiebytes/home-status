@@ -185,7 +185,13 @@ def compose_presentation_streams(
     # EasyStart's two durable summaries are current measurements, but their
     # presentation follows the same left/right rotation as Location and other
     # useful context.  They do not pin both zones just because both are present.
-    ranked_awareness = _ranked_presentable([*rotating_current, *awareness])
+    # Visual-only awareness remains available to Visual Center but must not be
+    # squeezed into the shared left/right text lanes.
+    text_awareness = [
+        item for item in awareness
+        if item.get("visual_only") is not True
+    ]
+    ranked_awareness = _ranked_presentable([*rotating_current, *text_awareness])
     footer_awareness = [
         item for item in ranked_awareness
         if str(item.get("stream_preference") or "").casefold() == "footer"

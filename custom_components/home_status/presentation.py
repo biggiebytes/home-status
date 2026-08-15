@@ -58,6 +58,29 @@ def select_visual(
     return min(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
 
 
+def media_visual_queue(items: list[dict[str, Any]], *, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Return a provider-neutral queue for image/video awareness media.
+
+    Any semantic item that carries valid image/video media is eligible. The
+    queue preserves source order and only validates/deduplicates the media.
+    """
+    now = now or datetime.now(timezone.utc)
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        visual = _normalized_visual(item.get("visual"), now)
+        if visual is None or visual.get("type") not in {"image", "video"}:
+            continue
+        key = str(visual.get("url") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(visual)
+    return result
+
+
 def _normalized_visual(value: Any, now: datetime) -> dict[str, Any] | None:
     """Validate and normalize the provider-neutral visual contract."""
     if not isinstance(value, dict):
@@ -106,7 +129,7 @@ def _normalized_visual(value: Any, now: datetime) -> dict[str, Any] | None:
     if expires_at is not None:
         result["expires_at"] = expires_at
     # These fields describe a visual without affecting generic selection.
-    for key in ("transport", "article_url", "title", "source"):
+    for key in ("transport", "article_url", "title", "source", "event_start", "event_end"):
         extra = value.get(key)
         if isinstance(extra, str) and extra.strip():
             result[key] = extra.strip()

@@ -32,7 +32,7 @@ from .ha_native import (
     present_recent_items,
     transition_entity_ids,
 )
-from .presentation import select_visual
+from .presentation import media_visual_queue, select_visual
 from .presentation_config import presentation_preferences
 from .news import now_iso, parse_feed, valid_url
 from .providers.live_news import LiveNewsProvider
@@ -321,6 +321,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         visual = self._select_current_visual(
             active, [], non_news_awareness, visual_source_items, self.live_news_items
         )
+        # Image/video media is a presentation capability, not a provider type.
+        # Any current/recent/awareness item that carries valid media joins the
+        # Visual Center rotation automatically.
+        visual_queue = media_visual_queue([*native_current, *awareness, *native_recent])
+        visual_queue_active = bool(visual_queue)
         priority = self._native_priority(native_current)
         weather_effect = self._weather_visual_effect(awareness)
 
@@ -337,6 +342,8 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "priority": priority,
             "active_count": len(native_current),
             "visual": visual,
+            "visual_queue": visual_queue,
+            "visual_queue_active": visual_queue_active,
             "weather_visual_effect": weather_effect,
             "display": {
                 "rotation_seconds": self._int_option("rotation_seconds", 6, minimum=1),

@@ -17,5 +17,5 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/biggiebytes/home-status/issues",
-  "version": "0.9.14"
+  "version": "0.9.16b7"
 }

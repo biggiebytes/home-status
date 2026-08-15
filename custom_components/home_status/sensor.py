@@ -62,6 +62,8 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "priority": data.get("priority", "normal"),
             "weather_visual_effect": data.get("weather_visual_effect"),
             "visual": self._compact_visual(data.get("visual")),
+            "visual_queue": self._compact_visual_queue(data.get("visual_queue")),
+            "visual_queue_active": bool(data.get("visual_queue_active")),
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
@@ -110,9 +112,19 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             return None
         return {
             key: value[key]
-            for key in ("type", "transport", "url", "entity_id", "article_url", "title", "source", "priority", "live", "started_at", "expires_at", "resumable", "mute")
+            for key in ("type", "transport", "url", "entity_id", "article_url", "title", "source", "event_start", "event_end", "priority", "live", "started_at", "expires_at", "resumable", "mute")
             if key in value
         }
+
+    @staticmethod
+    def _compact_visual_queue(value):
+        if not isinstance(value, list):
+            return []
+        return [
+            compact
+            for item in value
+            if (compact := HomeStatusSensor._compact_visual(item)) is not None
+        ]
 
     @staticmethod
     def _compact_native(value):
@@ -189,7 +201,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "occurred_at", "expires_at", "scheduled_at", "all_day", "timestamp",
             "entity_id", "image_url", "media_url", "media_type", "article_url",
             "navigation", "subtitle", "body", "visual_effect", "action", "state",
-            "color_role", "timestamp_mode", "display_kind", "utility_role", "stream_preference", "visual", "zone_visual",
+            "color_role", "timestamp_mode", "display_kind", "utility_role", "stream_preference", "visual_only", "visual", "zone_visual",
         )
         items = []
         selected = value if limit is None else value[:limit]
@@ -304,6 +316,10 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
         }
         if self._channel == "visual":
             payload["visual"] = HomeStatusSensor._compact_visual(data.get("visual"))
+            payload["visual_queue"] = HomeStatusSensor._compact_visual_queue(
+                data.get("visual_queue")
+            )
+            payload["visual_queue_active"] = bool(data.get("visual_queue_active"))
             payload["weather_visual_effect"] = data.get("weather_visual_effect") or ""
         else:
             payload["items"] = self._compact_items(self._items(data))
@@ -338,7 +354,7 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
             "expires_at", "scheduled_at", "all_day", "timestamp", "timestamp_mode",
             "display_kind", "capability", "ticker_eligible", "rotate_with_awareness", "group_labels", "utility_role", "stream_preference",
             "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
-            "body", "visual_effect", "action", "visual", "zone_visual",
+            "body", "visual_effect", "action", "visual_only", "visual", "zone_visual",
         )
         items = []
         for item in value:
@@ -367,4 +383,7 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
         # entity invalid; it does not affect any information channel.
         if size(payload) > 12_000 and payload.get("visual") is not None:
             payload["visual"] = None
+        queue = payload.get("visual_queue")
+        while size(payload) > 12_000 and isinstance(queue, list) and queue:
+            queue.pop()
         return payload
