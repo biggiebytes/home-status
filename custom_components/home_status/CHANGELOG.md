@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.17
+
+- Promoted the latest Home Status visual updates from the 0.9.16b7 build to a stable release.
+
 ## 0.9.5
 
 - Prevented live Home Assistant updates from rebuilding the card editor while
