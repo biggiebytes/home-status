@@ -5176,7 +5176,7 @@ class HomeStatusCard extends HTMLElement {
     data =
       this._getRuntimeData()
   ) {
-    return [
+    const builtInActions = [
       [
         'security',
         'mdi:shield-home',
@@ -5270,10 +5270,70 @@ class HomeStatusCard extends HTMLElement {
             config
           };
         }
-      )
+      );
+
+    const configuredCustomActions =
+      this._config
+        ?.context_actions
+        ?.custom;
+
+    const customActions =
+      (Array.isArray(configuredCustomActions)
+        ? configuredCustomActions
+        : [])
+        .map(
+          (rawConfigured, index) => {
+            const configured =
+              homeStatusObject(rawConfigured);
+            const name =
+              String(
+                configured.name ||
+                ''
+              ).trim() ||
+              'Custom destination';
+
+            const path =
+              String(
+                configured.path ||
+                ''
+              ).trim();
+
+            return {
+              id:
+                `custom-${index}`,
+
+              label: name,
+
+              ...this._contextActionState(
+                'custom',
+                String(
+                  configured.icon ||
+                  'mdi:open-in-new'
+                ).trim() ||
+                'mdi:open-in-new',
+                data
+              ),
+
+              config: {
+                ...configured,
+                type: 'navigate',
+                path
+              },
+
+              custom: true
+            };
+          }
+        );
+
+    return [
+      ...builtInActions,
+      ...customActions
+    ]
       .filter(
         action =>
-          action.config.type
+          action.custom
+            ? action.config.path
+            : action.config.type
       );
   }
 
@@ -6442,6 +6502,14 @@ class HomeStatusCard extends HTMLElement {
           this.style.removeProperty(
             '--home-status-drawer-inline-size'
           );
+
+          host.style.removeProperty(
+            '--home-status-drawer-rows'
+          );
+
+          host.style.removeProperty(
+            '--home-status-drawer-height'
+          );
         };
 
       host.addEventListener(
@@ -6465,6 +6533,31 @@ class HomeStatusCard extends HTMLElement {
       this._contextActions(
         data
       );
+
+    // Keep five buttons per row, but grow the drawer when custom
+    // destinations need more room instead of clipping them below it.
+    const drawerRows =
+      Math.max(
+        2,
+        Math.ceil(
+          actions.length / 5
+        )
+      );
+
+    const drawerHeight =
+      drawerRows * 58 +
+      (drawerRows - 1) * 10 +
+      20;
+
+    host.style.setProperty(
+      '--home-status-drawer-rows',
+      String(drawerRows)
+    );
+
+    host.style.setProperty(
+      '--home-status-drawer-height',
+      `${drawerHeight}px`
+    );
 
     const signature =
       actions
@@ -7606,26 +7699,44 @@ class HomeStatusCard extends HTMLElement {
       this._config?.home_status_visibility?.right === false &&
       this._config?.home_status_visibility?.bottom !== false;
 
-    if (tickerOnly) return 2;
+    if (
+      tickerOnly &&
+      !this._drawerOpen
+    ) {
+      return 2;
+    }
 
     const configured =
       Number(
         this._config?.card_size
       );
 
-    return (
+    const drawerRows =
+      Math.max(
+        2,
+        Math.ceil(
+          this._contextActions()
+            .length / 5
+        )
+      );
+
+    const baseCardSize =
       Number.isFinite(
         configured
       ) &&
       configured > 0
-    )
-      ? configured
-      : this._drawerOpen
-        ? 8
+        ? configured
         : this._config?.profile ===
             'phone'
           ? 2
           : 4;
+
+    return this._drawerOpen
+      ? Math.max(
+          baseCardSize,
+          4 + drawerRows * 2
+        )
+      : baseCardSize;
   }
 
   getGridOptions() {
@@ -8128,6 +8239,27 @@ class HomeStatusCardEditor extends HTMLElement {
     ).join('')}</datalist>`;
   }
 
+  _customNavigationActions() {
+    const actions =
+      this._config
+        ?.context_actions
+        ?.custom;
+
+    return Array.isArray(actions)
+      ? actions.map(homeStatusObject)
+      : [];
+  }
+
+  _customNavigationEditor() {
+    const actions =
+      this._customNavigationActions();
+
+    return `<div class="custom-navigation-editor"><div class="custom-navigation-heading"><strong>Custom drawer buttons</strong><small>Add any dashboard or Home Assistant path. These appear alongside the built-in drawer buttons.</small></div>${actions.map(
+      (action, index) =>
+        `<div class="custom-navigation-row"><label><span>Name</span><input type="text" data-custom-action-index="${index}" data-custom-action-field="name" value="${this._escape(action.name || '')}" placeholder="Micro-Air"></label><label><span>Icon</span><input type="text" data-custom-action-index="${index}" data-custom-action-field="icon" value="${this._escape(action.icon || '')}" placeholder="mdi:air-conditioner"></label><label><span>Path</span><input type="text" data-custom-action-index="${index}" data-custom-action-field="path" value="${this._escape(action.path || '')}" placeholder="/your-dashboard/0"></label><button type="button" class="custom-navigation-remove" data-remove-custom-action="${index}" aria-label="Remove ${this._escape(action.name || 'custom drawer button')}">Remove</button></div>`
+    ).join('')}<button type="button" class="custom-navigation-add" data-add-custom-action>Add drawer button</button></div>`;
+  }
+
   _unknownKeys() {
     return Object.keys(
       this._config
@@ -8284,9 +8416,20 @@ class HomeStatusCardEditor extends HTMLElement {
             .type
       );
 
+    const customActions =
+      this._customNavigationActions()
+        .filter(
+          action =>
+            String(
+              action.path ||
+              ''
+            ).trim()
+        );
+
     if (
       visibility.drawer !== false &&
-      !configuredActions.length
+      !configuredActions.length &&
+      !customActions.length
     ) {
       warnings.push(
         'The drawer is enabled but has no navigation buttons. Add destinations in Advanced, or turn the drawer off.'
@@ -8321,6 +8464,25 @@ class HomeStatusCardEditor extends HTMLElement {
         ) {
           warnings.push(
             `${path.split('.').slice(-2, -1)[0].replaceAll('_', ' ')} page must begin with / or use a full web address.`
+          );
+        }
+      }
+    );
+
+    customActions.forEach(
+      action => {
+        const value =
+          String(
+            action.path ||
+            ''
+          ).trim();
+
+        if (
+          !value.startsWith('/') &&
+          !/^https?:\/\//i.test(value)
+        ) {
+          warnings.push(
+            `${action.name || 'Custom drawer button'} path must begin with / or use a full web address.`
           );
         }
       }
@@ -8463,6 +8625,13 @@ class HomeStatusCardEditor extends HTMLElement {
       details { border:1px solid var(--divider-color); border-radius:12px; overflow:hidden; }
       summary { padding:14px; cursor:pointer; font-weight:650; background:var(--secondary-background-color); }
       .section { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:14px; }
+      .custom-navigation-editor { display:grid; gap:12px; padding:0 14px 14px; }
+      .custom-navigation-heading { display:grid; gap:4px; }
+      .custom-navigation-heading small { color:var(--secondary-text-color); }
+      .custom-navigation-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) auto; gap:10px; align-items:end; padding:12px; border:1px solid var(--divider-color); border-radius:10px; }
+      .custom-navigation-row label { min-width:0; }
+      .custom-navigation-remove { min-height:40px; background:var(--secondary-background-color); color:var(--primary-text-color); }
+      .custom-navigation-add { justify-self:start; min-height:40px; }
       label:not(.toggle) { display:flex; flex-direction:column; gap:6px; min-width:0; }
       label > span { font-weight:600; }
       input,select { min-height:42px; box-sizing:border-box; padding:8px 10px; border:1px solid var(--divider-color); border-radius:8px; background:var(--card-background-color); color:var(--primary-text-color); font:inherit; }
@@ -8485,7 +8654,7 @@ class HomeStatusCardEditor extends HTMLElement {
       .recommended-actions { display:flex; justify-content:flex-start; }
       .recommended-actions button { min-height:42px; }
       .advanced-note { padding:12px 14px; border-left:4px solid var(--warning-color,#ff9800); border-radius:8px; background:color-mix(in srgb,var(--warning-color,#ff9800) 9%,transparent); }
-      @media (max-width:520px) { .section { grid-template-columns:1fr; } }
+      @media (max-width:520px) { .section,.custom-navigation-row { grid-template-columns:1fr; } .custom-navigation-remove { justify-self:start; } }
     </style><div class="editor">
       <div class="intro"><strong>Home Status presentation</strong><br><small>These settings control this card only. Integration discovery and notification rules remain in Settings → Devices & services → Home Status.</small></div>
       ${entityMissing ? `<div class="warning"><strong>Home Status sensor not found</strong><br><span>${this._escape(entity)}</span><small>Finish integration setup or choose an existing Home Status sensor below. The card will show an unavailable message until the entity exists.</small></div>` : ''}
@@ -8554,7 +8723,7 @@ class HomeStatusCardEditor extends HTMLElement {
         ${this._text('context_actions.calendar.path', 'Calendar page', '', 'Optional. No dashboard path is assumed.')}
         ${this._text('context_actions.cameras.path', 'Cameras page', '', 'Optional. No dashboard path is assumed.')}
         ${this._text('context_actions.lighting.path', 'Lights page', '', 'Optional. No dashboard path is assumed.')}
-      </div></details>
+      </div>${this._customNavigationEditor()}</details>
       <details data-section="sizing"${sectionOpen('sizing') ? ' open' : ''}${levelHidden('advanced')}><summary>Card sizing</summary><div class="section">
         ${this._select('grid_options.columns', 'Grid width', [
           { value: '36', label: 'Full width (36 columns)' },
@@ -8707,6 +8876,138 @@ class HomeStatusCardEditor extends HTMLElement {
                   target.type ===
                     'text'
                 );
+
+              this._emit();
+              this._render();
+            }
+          );
+        }
+      );
+
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-custom-action-index]'
+      )
+      .forEach(
+        control => {
+          control.addEventListener(
+            'change',
+            event => {
+              const target =
+                event.currentTarget;
+
+              const index = Number(
+                target.dataset
+                  .customActionIndex
+              );
+
+              const field =
+                target.dataset
+                  .customActionField;
+
+              const actions =
+                this._customNavigationActions();
+
+              if (
+                !Number.isInteger(index) ||
+                !actions[index] ||
+                !['name', 'icon', 'path'].includes(field)
+              ) {
+                return;
+              }
+
+              actions[index] = {
+                ...actions[index],
+                [field]: target.value,
+                type: 'navigate'
+              };
+
+              this._config = {
+                ...this._config,
+                context_actions: {
+                  ...homeStatusObject(
+                    this._config
+                      .context_actions
+                  ),
+                  custom: actions
+                }
+              };
+
+              this._emit();
+              this._render();
+            }
+          );
+        }
+      );
+
+    this.shadowRoot
+      .querySelector(
+        '[data-add-custom-action]'
+      )
+      ?.addEventListener(
+        'click',
+        () => {
+          const actions =
+            this._customNavigationActions();
+
+          actions.push(
+            {
+              name: 'New destination',
+              icon: 'mdi:open-in-new',
+              path: '',
+              type: 'navigate'
+            }
+          );
+
+          this._config = {
+            ...this._config,
+            context_actions: {
+              ...homeStatusObject(
+                this._config
+                  .context_actions
+              ),
+              custom: actions
+            }
+          };
+
+          this._emit();
+          this._render();
+        }
+      );
+
+    this.shadowRoot
+      .querySelectorAll(
+        '[data-remove-custom-action]'
+      )
+      .forEach(
+        button => {
+          button.addEventListener(
+            'click',
+            () => {
+              const index = Number(
+                button.dataset
+                  .removeCustomAction
+              );
+
+              const actions =
+                this._customNavigationActions();
+
+              if (!Number.isInteger(index)) {
+                return;
+              }
+
+              actions.splice(index, 1);
+
+              this._config = {
+                ...this._config,
+                context_actions: {
+                  ...homeStatusObject(
+                    this._config
+                      .context_actions
+                  ),
+                  custom: actions
+                }
+              };
 
               this._emit();
               this._render();
@@ -9529,13 +9830,13 @@ const CSS = `
 
 .context-bar {
   display:grid;
-  grid-template-columns:repeat(10,minmax(0,1fr));
-  grid-template-rows:repeat(2,58px);
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  grid-template-rows:repeat(var(--home-status-drawer-rows,2),58px);
   align-items:stretch;
   gap:10px;
   width:100%;
-  height:146px;
-  min-height:146px;
+  height:var(--home-status-drawer-height,146px);
+  min-height:var(--home-status-drawer-height,146px);
   margin:0;
   padding:10px 16px;
   box-sizing:border-box;
@@ -9548,7 +9849,7 @@ const CSS = `
 
 .context-action {
   display:flex;
-  grid-column:span 2;
+  grid-column:auto;
   align-items:center;
   justify-content:flex-start;
   gap:11px;
@@ -9562,10 +9863,6 @@ const CSS = `
   font:inherit;
   cursor:pointer;
   transition:border-color 180ms ease,background 180ms ease,color 180ms ease;
-}
-
-.context-action:nth-child(6) {
-  grid-column:2 / span 2;
 }
 
 .context-action:hover {

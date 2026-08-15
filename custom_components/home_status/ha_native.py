@@ -186,6 +186,11 @@ def compose_presentation_streams(
     # presentation follows the same left/right rotation as Location and other
     # useful context.  They do not pin both zones just because both are present.
     ranked_awareness = _ranked_presentable([*rotating_current, *awareness])
+    footer_awareness = [
+        item for item in ranked_awareness
+        if str(item.get("stream_preference") or "").casefold() == "footer"
+    ]
+    ranked_awareness = [item for item in ranked_awareness if item not in footer_awareness]
 
     if len(shared_active) >= 2:
         left = [shared_active[0]]
@@ -198,6 +203,7 @@ def compose_presentation_streams(
         right = ranked_awareness[1::2]
 
     bottom_candidates = [
+        *footer_awareness,
         *[item for item in active if item.get("ticker_eligible") is True],
         *[item for item in recent if _presentable_item(item)],
     ]

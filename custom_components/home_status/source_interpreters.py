@@ -80,6 +80,30 @@ def _travel_label(minutes: float) -> str:
     return f"{rounded} min"
 
 
+def _utility_label(name: str) -> str:
+    """Keep a provider's utility item compact while retaining its meaning."""
+    return name
+
+
+def _utility_value(value: Any, attrs: dict[str, Any]) -> str:
+    """Format a utility sensor state without changing its meaning."""
+    device_class = str(attrs.get("device_class") or "").casefold()
+    unit = str(attrs.get("unit_of_measurement") or "").strip()
+    raw = str(value).strip()
+
+    if device_class == "date":
+        return _friendly_schedule(raw, True)
+
+    try:
+        numeric = float(raw)
+    except (TypeError, ValueError):
+        return f"{raw} {unit}".strip()
+
+    if device_class == "monetary":
+        return f"${numeric:,.2f}" if unit in {"USD", "$"} else f"{numeric:,.2f} {unit}".strip()
+    return f"{numeric:,.2f} {unit}".strip()
+
+
 def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[str, Any] | None:
     """Build one household-level presence summary from selected people."""
     people = []
@@ -160,6 +184,27 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
             icon=str(attrs.get("icon") or "mdi:car-clock"),
             category="traffic",
         )]
+
+    if source.kind == "utility":
+        device_class = str(attrs.get("device_class") or "").casefold()
+        fallback_icon = {
+            "monetary": "mdi:cash",
+            "date": "mdi:calendar-clock",
+            "energy": "mdi:lightning-bolt",
+            "volume": "mdi:water",
+        }.get(device_class, "mdi:meter-electric")
+        item = _item(
+            source,
+            state,
+            message=f"{_utility_label(source.name)}: {_utility_value(state.state, attrs)}",
+            detail="Utility account",
+            icon=str(attrs.get("icon") or fallback_icon),
+            category="utility",
+        )
+        item["device_class"] = device_class
+        item["unit_of_measurement"] = str(attrs.get("unit_of_measurement") or "")
+        item["stream_preference"] = "footer"
+        return [item]
 
     if source.domain == "weather":
         condition = str(state.state).replace("_", " ").title()

@@ -26,7 +26,6 @@ def _kind(domain: str) -> str:
         "calendar": "calendar",
         "person": "location",
         "zone": "location",
-        "sensor": "traffic",
     }[domain]
 
 
@@ -47,6 +46,16 @@ def _is_traffic_sensor(entry, state) -> bool:
     )
 
 
+def _is_utility_source_sensor(entry, state) -> bool:
+    """Identify a provider-neutral utility sensor offered to Home Status."""
+    return (
+        entry.entity_id.split(".", 1)[0] == "sensor"
+        and state is not None
+        and str(state.attributes.get("home_status_source") or "").casefold()
+        == "utility"
+    )
+
+
 def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
     """Return user-facing non-device information sources."""
     entities = er.async_get(hass)
@@ -61,15 +70,21 @@ def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
             continue
 
         state = hass.states.get(entry.entity_id)
-        if domain == "sensor" and not _is_traffic_sensor(entry, state):
-            continue
+        kind = _kind(domain) if domain != "sensor" else None
+        if domain == "sensor":
+            if _is_traffic_sensor(entry, state):
+                kind = "traffic"
+            elif _is_utility_source_sensor(entry, state):
+                kind = "utility"
+            else:
+                continue
         area_id = getattr(entry, "area_id", None)
         area = areas.async_get_area(area_id) if area_id else None
         result.append(
             HomeSource(
                 id=f"source:{entry.entity_id}",
                 name=_name(entry, state),
-                kind=_kind(domain),
+                kind=kind,
                 entity_id=entry.entity_id,
                 domain=domain,
                 area_id=area_id,

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.14
+
+- Split Home Status publication into coordinated Now, Recent, Household,
+  Weather, Calendar, News, and Visual channels while keeping the original
+  control sensor compatible with existing cards.
+- Kept each channel on the same revision so the card never combines different
+  update generations, and gave each channel its own payload headroom.
+- Added provider-neutral utility awareness sources that can prefer the footer
+  ticker rather than taking a main awareness slot.
+- Added repeatable custom navigation drawer buttons with a name, icon, and
+  path. The drawer now adds rows for additional buttons instead of clipping
+  them, while preserving the familiar five-button row layout.
+
 ## v0.9.10
 
 - Added Traffic awareness for selected Waze and compatible Home Assistant travel-time sources.

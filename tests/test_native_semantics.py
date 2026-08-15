@@ -85,3 +85,19 @@ def test_easystart_uses_two_current_items_for_all_requested_values(hass):
     assert streams["left"] == [items[0]["id"]]
     assert streams["right"] == [items[1]["id"]]
     assert streams["phone_primary_id"] == ""
+
+
+def test_footer_preferred_awareness_stays_out_of_the_top_slots():
+    utility = {
+        "id": "utility-electric-daily",
+        "title": "Electric Daily Usage: 7 kWh",
+        "stream_preference": "footer",
+    }
+    calendar = {"id": "calendar-event", "title": "School pickup"}
+
+    streams = compose_presentation_streams([], [], [utility, calendar])
+
+    assert utility["id"] not in streams["left"]
+    assert utility["id"] not in streams["right"]
+    assert streams["bottom"] == [utility["id"]]
+    assert calendar["id"] in streams["left"]

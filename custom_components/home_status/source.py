@@ -1,7 +1,8 @@
 """Non-device information sources for Home Status.
 
 Sources represent information that does not belong to a physical Home Device:
-weather, calendars, people/location, zones, and later feed/news adapters.
+weather, calendars, people/location, zones, utility accounts, and later feed/news
+adapters.
 """
 
 from __future__ import annotations

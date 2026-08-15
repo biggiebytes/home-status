@@ -140,7 +140,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 "id", "entity_id", "entity_name", "title", "message", "summary",
                 "icon", "category", "color_role", "priority", "active", "state",
                 "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source",
-                "ticker_eligible", "rotate_with_awareness", "utility_role",
+                "ticker_eligible", "rotate_with_awareness", "utility_role", "stream_preference",
             ),
         )
         # The Recorder budget must not hide a live appliance or the two
@@ -163,7 +163,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             (
                 "id", "entity_id", "entity_name", "title", "message", "summary",
                 "icon", "category", "color_role", "priority", "active", "state",
-                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source", "group_labels", "utility_role",
+                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source", "group_labels", "utility_role", "stream_preference",
             ),
         )[:16]
         awareness = HomeStatusSensor._compact_items(value.get("awareness"), 8)
@@ -189,7 +189,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "occurred_at", "expires_at", "scheduled_at", "all_day", "timestamp",
             "entity_id", "image_url", "media_url", "media_type", "article_url",
             "navigation", "subtitle", "body", "visual_effect", "action", "state",
-            "color_role", "timestamp_mode", "display_kind", "utility_role", "visual", "zone_visual",
+            "color_role", "timestamp_mode", "display_kind", "utility_role", "stream_preference", "visual", "zone_visual",
         )
         items = []
         selected = value if limit is None else value[:limit]
@@ -336,7 +336,7 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
             "icon", "category", "color_role", "priority", "active", "state", "source",
             "source_kind", "event_type", "created_at", "updated_at", "occurred_at",
             "expires_at", "scheduled_at", "all_day", "timestamp", "timestamp_mode",
-            "display_kind", "capability", "ticker_eligible", "rotate_with_awareness", "group_labels", "utility_role",
+            "display_kind", "capability", "ticker_eligible", "rotate_with_awareness", "group_labels", "utility_role", "stream_preference",
             "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
             "body", "visual_effect", "action", "visual", "zone_visual",
         )

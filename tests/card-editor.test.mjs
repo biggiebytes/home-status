@@ -548,6 +548,64 @@ try {
   assert.equal(reopened.speed, '44');
   assert.equal(reopened.preserved, true);
 
+  const customDrawerDestination = await page.evaluate(async () => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      card_size: 4,
+      context_actions: {
+        custom: [{
+          name: 'Equipment',
+          icon: 'mdi:air-conditioner',
+          path: '/equipment/0'
+        }]
+      }
+    });
+
+    const editor = document.createElement('home-status-card-editor');
+    editor.hass = window.testHass;
+    editor.setConfig(card._config);
+    document.querySelector('#editor-host').replaceChildren(editor);
+
+    const changed = new Promise(resolve => editor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));
+    const name = editor.shadowRoot.querySelector('[data-custom-action-index="0"][data-custom-action-field="name"]');
+    name.value = 'Climate';
+    name.dispatchEvent(new Event('change', { bubbles: true }));
+
+    return {
+      actions: card._contextActions(null).filter(action => action.custom),
+      changed: await changed
+    };
+  });
+  assert.equal(customDrawerDestination.actions.length, 1);
+  assert.equal(customDrawerDestination.actions[0].label, 'Equipment');
+  assert.equal(customDrawerDestination.actions[0].icon, 'mdi:air-conditioner');
+  assert.equal(customDrawerDestination.actions[0].config.path, '/equipment/0');
+  assert.equal(customDrawerDestination.changed.context_actions.custom[0].name, 'Climate');
+
+  const expandableDrawer = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      card_size: 4,
+      context_actions: {
+        custom: Array.from({ length: 11 }, (_, index) => ({
+          name: `Destination ${index + 1}`,
+          icon: 'mdi:open-in-new',
+          path: `/destination-${index + 1}/0`
+        }))
+      }
+    });
+    card._drawerOpen = true;
+    return {
+      actionCount: card._contextActions(null).length,
+      cardSize: card.getCardSize()
+    };
+  });
+  assert.deepEqual(expandableDrawer, { actionCount: 11, cardSize: 10 });
+
   const guidedEditor = await page.evaluate(async () => {
     const editor = document.querySelector('home-status-card-editor');
     editor.setConfig({
