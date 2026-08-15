@@ -8,7 +8,7 @@ there is a specific interpretation for them.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import ceil, isfinite
+from math import ceil
 import re
 from typing import Any
 
@@ -69,18 +69,6 @@ _SUPPORTING_NAME_HINTS = (
 # Micro-Air EasyStart exposes one semantic protection status alongside several
 # diagnostic measurements and two controls.  Identify the capability from the
 # entity signature, never from the user's device name.
-_EASYSTART_STATUS_LABELS = {
-    "unexpected curr flt": "Unexpected Current Fault",
-    "short cycle delay": "Short Cycle Delay",
-    "pwr intrrptn fault": "Power Interruption Fault",
-    "stall fault": "Stall Fault",
-    "stuck sr fault": "Stuck Start Relay Fault",
-    "open ovrld fault": "Open Overload Fault",
-    "overcurrent fault": "Overcurrent Fault",
-    "bad wiring fault": "Bad Wiring Fault",
-    "wrong voltage flt": "Wrong Voltage Fault",
-}
-
 _EASYSTART_ROLE_SUFFIXES = {
     "status": "status",
     "live current": "live_current",
@@ -258,54 +246,76 @@ def easystart_owned_entity_ids(home_device: HomeDevice) -> set[str]:
     }
 
 
-def easystart_current_fact(
+_EASYSTART_CURRENT_FIELDS = (
+    ("line_frequency", "Line Frequency"),
+    ("live_current", "Live Current"),
+    ("scpt_delay", "SCPT Delay"),
+    ("status", "Status"),
+)
+
+_EASYSTART_HISTORY_FIELDS = (
+    ("last_start_peak", "Last Start Peak"),
+    ("total_faults", "Total Faults"),
+    ("total_starts", "Total Starts"),
+)
+
+
+def easystart_current_facts(
     hass: HomeAssistant, home_device: HomeDevice
-) -> dict[str, Any] | None:
-    """Return one actionable EasyStart protection fact; healthy stays silent."""
+) -> list[dict[str, Any]]:
+    """Return current and retained EasyStart values as two current items."""
     if not is_easystart_home_device(home_device):
-        return None
+        return []
+
     by_role = {
         role: entity
         for entity in home_device.entities
         if (role := easystart_entity_role(entity)) is not None
     }
     status_entity = by_role.get("status")
-    if status_entity is None or (status := hass.states.get(status_entity.entity_id)) is None:
-        return None
-    raw = str(status.state or "").strip().casefold()
-    if raw in {"", "normal", "unknown", "unavailable", "none"}:
-        return None
-    label = _EASYSTART_STATUS_LABELS.get(raw)
-    if label is None:
-        return None
+    status_state = hass.states.get(status_entity.entity_id) if status_entity else None
+    facts: list[dict[str, Any]] = []
 
-    detail = "EasyStart protection requires attention"
-    live_entity = by_role.get("live_current")
-    live_state = hass.states.get(live_entity.entity_id) if live_entity is not None else None
-    if live_state is not None:
-        try:
-            current = float(live_state.state)
-        except (TypeError, ValueError):
-            current = None
-        if current is not None and isfinite(current):
+    for group, fields in (
+        ("current", _EASYSTART_CURRENT_FIELDS),
+        ("history", _EASYSTART_HISTORY_FIELDS),
+    ):
+        values: list[str] = []
+        changed_at = []
+        for role, label in fields:
+            entity = by_role.get(role)
+            state = hass.states.get(entity.entity_id) if entity else None
+            if state is None:
+                continue
+            raw = str(state.state or "").strip()
+            if raw.casefold() in {"", "unknown", "unavailable", "none"}:
+                continue
             unit = str(
-                live_state.attributes.get("unit_of_measurement")
-                or live_entity.unit
-                or "A"
+                state.attributes.get("unit_of_measurement") or entity.unit or ""
             ).strip()
-            detail = f"EasyStart protection requires attention · Live current {current:g} {unit}".strip()
+            values.append(f"{label}: {raw}{f' {unit}' if unit else ''}")
+            if state.last_changed:
+                changed_at.append(state.last_changed)
 
-    return {
-        "entity_id": status_entity.entity_id,
-        "entity_name": home_device.name,
-        "domain": "sensor",
-        "device_class": None,
-        "state": label,
-        "attention": "attention",
-        "changed_at": status.last_changed.isoformat() if status.last_changed else _now(),
-        "capability": "easystart_fault",
-        "detail": detail,
-    }
+        # A powered-off EasyStart has no Bluetooth presence. Just as Location
+        # omits a group with no usable state, omit that empty Micro-Air item.
+        if not values:
+            continue
+
+        facts.append({
+            "entity_id": status_entity.entity_id if status_entity else "",
+            "entity_name": f"{home_device.name} {'Current' if group == 'current' else 'History'}",
+            "domain": "sensor",
+            "device_class": None,
+            "state": str(status_state.state).strip() if status_state else "",
+            "attention": "none",
+            "changed_at": max(changed_at).isoformat() if changed_at else _now(),
+            "capability": "easystart_current",
+            "easystart_group": group,
+            "detail": " | ".join(values),
+        })
+
+    return facts
 
 
 def _generic_diagnostic_sensor(entity: HomeDeviceEntity, state: State) -> bool:

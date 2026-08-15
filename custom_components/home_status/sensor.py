@@ -143,13 +143,15 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 "ticker_eligible", "utility_role",
             ),
         )
-        # The Recorder budget must not hide a live washer, dryer, or
-        # dishwasher behind otherwise idle household entities. Prioritize
-        # appliance cycles, then actionable items, before retaining neutral
-        # context as space permits.
+        # The Recorder budget must not hide a live appliance or the two
+        # requested Micro-Air Current items behind otherwise idle household
+        # entities. Prioritize those complete current snapshots first, then
+        # actionable items, before retaining neutral context as space permits.
         current.sort(
             key=lambda item: (
-                item.get("capability") != "appliance_cycle",
+                item.get("capability") not in {
+                    "appliance_cycle", "easystart_current"
+                },
                 {"critical": 0, "attention": 1, "activity": 2, "normal": 3}.get(
                     str(item.get("priority") or "normal"), 3
                 ),

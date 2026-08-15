@@ -16,7 +16,7 @@ from .interpreters import (
     appliance_recent_entity_ids,
     appliance_transition_fact,
     awareness_entity,
-    easystart_current_fact,
+    easystart_current_facts,
     easystart_owned_entity_ids,
     has_appliance_recent_capability,
     is_easystart_home_device,
@@ -319,8 +319,9 @@ class HomeStatusEngine:
             if is_easystart_home_device(easystart_context):
                 if easystart_context.id not in seen:
                     seen.add(easystart_context.id)
-                    if fact := easystart_current_fact(self.hass, easystart_context):
-                        result.append(fact)
+                    result.extend(
+                        easystart_current_facts(self.hass, easystart_context)
+                    )
                 continue
             context = self._manual_appliance_context(selected)
             if context.id in seen or not has_appliance_recent_capability(context):

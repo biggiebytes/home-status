@@ -50,7 +50,10 @@ def present_current_items(
         _present_item(item, current=True, options=options)
         for item in items
         if isinstance(item, dict)
-        and (item.get("attention") not in {None, "none"} or item.get("capability") == "appliance_cycle")
+        and (
+            item.get("attention") not in {None, "none"}
+            or item.get("capability") in {"appliance_cycle", "easystart_current"}
+        )
     ]
 
 
@@ -329,6 +332,7 @@ def _present_item(
     device_class = str(item.get("device_class") or "").casefold()
     appliance = item.get("capability") == "appliance_cycle"
     easystart = item.get("capability") == "easystart_fault"
+    easystart_current = item.get("capability") == "easystart_current"
     state = str(item.get("state") if current else item.get("to") or "").strip()
     if appliance and state.casefold() in {"completed", "finished", "done"}:
         state = "Complete"
@@ -338,18 +342,24 @@ def _present_item(
         if appliance
         else "maintenance"
         if easystart
+        else "climate"
+        if easystart_current
         else _native_category(domain, device_class)
     )
-    priority = _item_priority(appliance, current, attention, state)
-    display_kind = "easystart_fault" if easystart else "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
+    priority = "normal" if easystart_current else _item_priority(appliance, current, attention, state)
+    display_kind = "easystart_current" if easystart_current else "easystart_fault" if easystart else "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
     label = state or "Unknown"
-    if easystart:
+    if easystart_current:
+        title = name
+    elif easystart:
         owner = name if "easystart" in name.casefold() else f"{name} EasyStart"
         title = f"{owner}: {label}"
     else:
         title = label if domain == "alarm_control_panel" else f"{name} {label}"
     item_id = (
-        f"native:current:{entity_id}"
+        f"native:current:{entity_id}:{item.get('easystart_group')}"
+        if current and easystart_current
+        else f"native:current:{entity_id}"
         if current
         else f"native:recent:{entity_id}:{item.get('changed_at', '')}"
     )
@@ -371,15 +381,15 @@ def _present_item(
         "entity_name": name,
         "title": title,
         "message": title,
-        "summary": str(item.get("detail") or "") if easystart else _item_summary(item, appliance, current, state),
-        "icon": "mdi:air-conditioner" if easystart else _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
+        "summary": str(item.get("detail") or "") if easystart or easystart_current else _item_summary(item, appliance, current, state),
+        "icon": "mdi:air-conditioner" if easystart or easystart_current else _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
         "category": category,
         "color_role": _color_role(category, priority, state, current),
         "priority": priority,
         "active": current,
         "state": state,
         "created_at": item.get("changed_at"),
-        "event_type": "native_easystart_current" if easystart else "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
+        "event_type": "native_easystart_current" if easystart or easystart_current else "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
         "timestamp_mode": timestamp_mode,
         "display_kind": display_kind,
         "capability": item.get("capability"),

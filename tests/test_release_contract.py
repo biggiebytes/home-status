@@ -18,8 +18,8 @@ def test_manifest_and_frontend_use_the_current_release_versions():
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))
     constants = (COMPONENT / "const.py").read_text(encoding="utf-8")
 
-    assert manifest["version"] == "0.9.5"
-    assert '"version": "0.9.5"' in constants
+    assert manifest["version"] == "0.9.6"
+    assert '"version": "0.9.6"' in constants
     assert "recorder" in manifest["after_dependencies"]
 
 
@@ -55,6 +55,29 @@ def test_current_appliance_cycle_is_prioritized_within_sensor_budget():
 
     assert len(native["current"]) == 8
     assert native["current"][0]["entity_name"] == "Dryer"
+
+
+def test_current_micro_air_items_are_retained_within_sensor_budget():
+    neutral = [
+        {"entity_id": f"binary_sensor.neutral_{index}", "attention": "none"}
+        for index in range(8)
+    ]
+    micro_air = [
+        {
+            "entity_id": "sensor.micro_air_status",
+            "entity_name": f"Micro-Air {group.title()}",
+            "capability": "easystart_current",
+            "easystart_group": group,
+        }
+        for group in ("current", "history")
+    ]
+
+    native = HomeStatusSensor._compact_native({"current": [*neutral, *micro_air]})
+
+    assert len(native["current"]) == 8
+    assert [item["entity_name"] for item in native["current"][:2]] == [
+        "Micro-Air Current", "Micro-Air History"
+    ]
 
 
 def test_sensor_payload_keeps_household_presence_when_awareness_is_capped():

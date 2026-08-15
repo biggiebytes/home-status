@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.6
+
+- Kept the card editor stable while a dropdown, picker, or text field is
+  active, so a live Home Assistant refresh no longer closes the control.
+- Added Micro-Air EasyStart Current and History items. The card presents the
+  configured diagnostic values as two responsive Current items instead of
+  reducing the device to fault-only output.
+
 ## v0.9.2
 
 ### Integration-owned presentation
