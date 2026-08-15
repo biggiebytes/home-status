@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.9
+
+- Added an independent Portrait phone ticker speed setting. Existing card configurations retain their current portrait speed until changed.
+
 ## v0.9.8
 
 - Let Micro-Air's two current summaries take part in the usual left/right contextual rotation instead of pinning the two slots.

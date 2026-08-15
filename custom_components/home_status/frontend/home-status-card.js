@@ -650,6 +650,7 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'left',
   'right',
   'bottom',
+  'phone_ticker',
   'hero',
   'sidebar',
   'footer',
@@ -663,7 +664,8 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'time_entity',
   'recent_drawer_limit',
   'rotation_seconds',
-  'footer_speed'
+  'footer_speed',
+  'phone_ticker_speed'
 ]);
 
 function homeStatusClone(value) {
@@ -895,6 +897,17 @@ class HomeStatusCard extends HTMLElement {
         config.footer_speed
       );
 
+    const phoneTickerConfig =
+      homeStatusObject(
+        config.phone_ticker
+      );
+
+    const requestedPhoneTickerSpeed =
+      Number(
+        phoneTickerConfig.speed ??
+        config.phone_ticker_speed
+      );
+
     const namespacedVisibility =
       homeStatusObject(
         config.home_status_visibility
@@ -963,6 +976,28 @@ class HomeStatusCard extends HTMLElement {
               requestedBottomSpeed
             )
           : 35,
+
+      phone_ticker: {
+        speed:
+          Number.isFinite(
+            requestedPhoneTickerSpeed
+          )
+            ? Math.max(
+                1,
+                requestedPhoneTickerSpeed
+              )
+            // Existing cards used Bottom ticker speed for portrait as well.
+            // Keep that behavior until a user explicitly chooses its new
+            // independent portrait setting.
+            : Number.isFinite(
+                requestedBottomSpeed
+              )
+              ? Math.max(
+                  1,
+                  requestedBottomSpeed
+                )
+              : 35
+      },
 
       display:
         config.display || {},
@@ -1097,7 +1132,7 @@ class HomeStatusCard extends HTMLElement {
       '--home-status-phone-ticker-seconds',
       `${Math.max(
         1,
-        this._config.bottom_speed
+        this._config.phone_ticker.speed
       )}s`
     );
 
@@ -8489,6 +8524,7 @@ class HomeStatusCardEditor extends HTMLElement {
       </div></details>
       <details data-section="ticker"${sectionOpen('ticker', true) ? ' open' : ''}${levelHidden('customize')}><summary>Motion & timing</summary><div class="section">
         ${this._number('bottom.speed', 'Bottom ticker speed', 35, 8, 120, 'Lower values move faster.')}
+        ${this._number('phone_ticker.speed', 'Portrait phone ticker speed', this._value('bottom.speed', 35), 8, 120, 'Seconds per loop in portrait. Lower values move faster. This does not affect the tablet or landscape ticker.')}
         ${this._number('right.interval', 'Right rotation time', 4, 1, 120)}
         ${this._number('left.interval', 'Left rotation time', 7, 2, 120)}
         ${this._toggle('left.rotate', 'Rotate left items', true)}

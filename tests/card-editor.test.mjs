@@ -72,6 +72,22 @@ try {
   assert.deepEqual(registration.stub.grid_options, { columns: 36, rows: 7 });
   assert.equal(registration.editorTag, 'HOME-STATUS-CARD-EDITOR');
 
+  const portraitTickerSpeed = await page.evaluate(() => {
+    const card = document.createElement('home-status-card');
+    card.setConfig({
+      type: 'custom:home-status-card',
+      entity: 'sensor.home_status',
+      bottom: { speed: 48 },
+      phone_ticker: { speed: 18 }
+    });
+    return {
+      bottom: card._config.bottom_speed,
+      portrait: card._config.phone_ticker.speed,
+      css: card.style.getPropertyValue('--home-status-phone-ticker-seconds')
+    };
+  });
+  assert.deepEqual(portraitTickerSpeed, { bottom: 48, portrait: 18, css: '18s' });
+
   const transportContract = await page.evaluate(() => {
     const item = (id, title, category = 'activity') => ({
       id, title, message: title, summary: '', category,
