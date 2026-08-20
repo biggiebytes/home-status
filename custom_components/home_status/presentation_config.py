@@ -47,19 +47,19 @@ DEFAULTS: dict[str, Any] = {
     "main_row_height": 150,
     "bottom_height": 102,
     "card_max_width": 0,
-    "left_title_size": 23,
-    "left_summary_size": 15,
-    "left_icon_size": 40,
-    "right_title_size": 23,
-    "right_summary_size": 15,
-    "right_icon_size": 40,
+    "left_title_size": 48,
+    "left_summary_size": 32,
+    "left_icon_size": 60,
+    "right_title_size": 48,
+    "right_summary_size": 32,
+    "right_icon_size": 60,
     "bottom_title_size": 26,
     "bottom_summary_size": 21,
     "bottom_icon_size": 38,
     "emphasize_measurements": True,
-    "left_measurement_size": 64,
-    "right_measurement_size": 48,
-    "right_weather_size": 44,
+    "left_measurement_size": 72,
+    "right_measurement_size": 72,
+    "right_weather_size": 72,
     "bottom_measurement_size": 38,
     # Color behavior.
     "semantic_colors": True,
@@ -82,6 +82,12 @@ DEFAULTS: dict[str, Any] = {
     # Visual Center remains absent until a valid visual is available. This
     # option only controls whether the presentation layer may show a winner.
     "visual_center_enabled": True,
+    # Actual on-screen Visual Center turn durations. The shared scheduler
+    # remains source-fair; these user settings control how long each source
+    # type keeps its turn before the next normal-priority source advances.
+    "visual_event_duration": 6,
+    "visual_news_duration": 12,
+    "visual_stream_duration": 24,
 }
 
 def option(options: dict[str, Any], key: str) -> Any:

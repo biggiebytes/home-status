@@ -188,7 +188,7 @@ explicitly enable them.
 
 ## Technical notes
 
-This README describes the validated **0.9.3** behavior. For contributors, run
+This README describes the validated **0.9.18** behavior. For contributors, run
 the release checks with:
 
 ```sh

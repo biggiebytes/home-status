@@ -57,13 +57,14 @@ def _is_utility_source_sensor(entry, state) -> bool:
 
 
 def _is_event_feed_sensor(entry, state) -> bool:
-    """Identify an explicit, provider-neutral rich event feed."""
-    return (
-        entry.entity_id.split(".", 1)[0] == "sensor"
-        and state is not None
-        and str(state.attributes.get("home_status_feed") or "").casefold()
-        == "events"
-    )
+    """Identify a provider-neutral sensor exposing structured event metadata."""
+    if entry.entity_id.split(".", 1)[0] != "sensor" or state is None:
+        return False
+
+    # Rich-event providers expose their source data as an ``events`` list.
+    # Home Status owns interpretation and presentation; providers do not need
+    # Home Status-specific routing attributes such as home_status_feed.
+    return isinstance(state.attributes.get("events"), list)
 
 
 def discover_sources(hass: HomeAssistant) -> list[HomeSource]:

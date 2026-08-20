@@ -18,6 +18,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.components.recorder import get_instance
 
@@ -157,7 +158,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _refresh_live_news(self) -> None:
         sample_interval = self._int_option("live_news_sample_interval", 1800, minimum=30)
-        display_duration = self._int_option("live_news_display_duration", 30, minimum=1)
+        display_duration = self._int_option("visual_stream_duration", 24, minimum=1)
         muted = bool(self.options.get("live_news_mute", True))
         sources = []
         for configured in self.options.get("live_news_sources", []):
@@ -179,7 +180,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # video visual left by the retired RSS-enclosure experiment.
         self.news_visuals = {
             article_id: visual for article_id, visual in self.news_visuals.items()
-            if not isinstance(visual, dict) or visual.get("type") != "video"
+            if (
+                isinstance(visual, dict)
+                and visual.get("type") == "image"
+                and visual.get("source_id")
+            )
         }
         session = async_get_clientsession(self.hass)
         for feed in self.options.get("news_sources", []):
@@ -206,16 +211,23 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     newest_with_media = next((article for article in parsed if article.get("image")), None)
                     if newest_with_media:
                         started = now_iso()
-                        self.news_visuals[newest_with_media["id"]] = self._news_visual(newest_with_media, feed, started)
+                        source_id = f"news:{feed_id}"
+                        self.news_visuals = {
+                            article_id: value for article_id, value in self.news_visuals.items()
+                            if not isinstance(value, dict) or value.get("source_id") != source_id
+                        }
+                        self.news_visuals[newest_with_media["id"]] = self._news_visual(newest_with_media, feed, started, source_id)
             for article in parsed:
                 is_new = not bootstrap and article["id"] not in seen
                 visual = self.news_visuals.get(article["id"])
-                if visual and str(visual.get("expires_at") or "") <= now_iso():
-                    self.news_visuals.pop(article["id"], None)
-                    visual = None
                 if is_new and feed.get("show_visual", True) and article.get("image"):
                     started = now_iso()
-                    visual = self._news_visual(article, feed, started)
+                    source_id = f"news:{feed_id}"
+                    self.news_visuals = {
+                        article_id: value for article_id, value in self.news_visuals.items()
+                        if not isinstance(value, dict) or value.get("source_id") != source_id
+                    }
+                    visual = self._news_visual(article, feed, started, source_id)
                     self.news_visuals[article["id"]] = visual
                 media_url = str(article.get("video") or article.get("image") or "")
                 media_type = "video" if article.get("video") else "image"
@@ -226,8 +238,28 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._save_state()
 
     @staticmethod
-    def _news_visual(article: dict[str, str], feed: dict[str, Any], started: str) -> dict[str, Any]:
-        return {"type":"image", "url":article["image"], "article_url":article["url"], "title":article["title"], "source":str(feed.get("name") or "News"), "priority":str(feed.get("priority") or "normal"), "live":False, "started_at":started, "expires_at":(datetime.now(timezone.utc) + timedelta(seconds=max(1, int(feed.get("visual_duration", 60))))).isoformat(), "resumable":True}
+    def _news_visual(
+        article: dict[str, str],
+        feed: dict[str, Any],
+        started: str,
+        source_id: str,
+    ) -> dict[str, Any]:
+        # The RSS visual-duration option is presentation metadata, not an
+        # eligibility lease. Keep the newest feed image available to the
+        # shared scheduler until a newer feed image replaces it.
+        return {
+            "type": "image",
+            "url": article["image"],
+            "article_url": article["url"],
+            "title": article["title"],
+            "source": str(feed.get("name") or "News"),
+            "source_id": source_id,
+            "source_kind": "news",
+            "priority": str(feed.get("priority") or "normal"),
+            "live": False,
+            "started_at": started,
+            "resumable": True,
+        }
 
     @callback
     def _state_changed(self, event: Event) -> None:
@@ -310,16 +342,23 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
         native_current = present_current_items(native_current_facts, self.options)
         native_recent = present_recent_items(self._native_recent, self.options)
+        # Recent/footer events should deep-link to Home Assistant's native
+        # device Activity page when the originating entity belongs to a device.
+        # Standalone entities keep the normal More Info fallback in the card.
+        entity_registry = er.async_get(self.hass)
+        for item in native_recent:
+            entity_id = str(item.get("entity_id") or "")
+            if not entity_id:
+                continue
+            registry_entry = entity_registry.async_get(entity_id)
+            if registry_entry is not None and registry_entry.device_id:
+                item["device_id"] = registry_entry.device_id
         awareness = present_awareness_items(awareness, self.options)
         streams = compose_presentation_streams(native_current, native_recent, awareness)
-        # RSS media follows the article currently shown by the card.  It is not
-        # independently selected here, so Visual Center has one normal-source
-        # fallback when no displayed news item carries media.
-        non_news_awareness = [
-            item for item in awareness if item.get("source_kind") != "news"
-        ]
+        # All eligible awareness media, including RSS/news article visuals,
+        # participates in the same Visual Center selection path.
         visual = self._select_current_visual(
-            active, [], non_news_awareness, visual_source_items, self.live_news_items
+            active, [], awareness, visual_source_items, self.live_news_items
         )
         # Image/video media is a presentation capability, not a provider type.
         # Any current/recent/awareness item that carries valid media joins the
@@ -347,6 +386,9 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "weather_visual_effect": weather_effect,
             "display": {
                 "rotation_seconds": self._int_option("rotation_seconds", 6, minimum=1),
+                "visual_event_duration": self._int_option("visual_event_duration", 6, minimum=1),
+                "visual_news_duration": self._int_option("visual_news_duration", 12, minimum=1),
+                "visual_stream_duration": self._int_option("visual_stream_duration", 24, minimum=1),
                 "media_enabled": bool(self.options.get("media_enabled", True)),
             },
             "presentation": presentation_preferences(self.options),

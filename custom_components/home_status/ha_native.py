@@ -7,12 +7,13 @@ wire contract for the card: current facts and recent state transitions.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import Any, Callable
 
 from homeassistant.components.recorder import get_instance, history
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 
 
 _MEASUREMENT_DEVICE_CLASSES = frozenset({
@@ -53,8 +54,26 @@ def present_current_items(
         and (
             item.get("attention") not in {None, "none"}
             or item.get("capability") in {"appliance_cycle", "easystart_current"}
+            or _is_active_irrigation_valve_fact(item)
         )
     ]
+
+
+def _is_active_irrigation_valve_fact(item: dict[str, Any]) -> bool:
+    """Return True for an explicitly irrigation-like valve that is currently open."""
+    entity_id = str(item.get("entity_id") or "").casefold()
+    name = str(item.get("entity_name") or "").casefold()
+    domain = str(item.get("domain") or entity_id.split(".", 1)[0]).casefold()
+    state = str(item.get("state") or "").casefold()
+    context = f"{entity_id} {name}"
+    return (
+        domain == "valve"
+        and state in {"open", "opening", "on"}
+        and (
+            item.get("capability") == "irrigation_valve"
+            or any(hint in context for hint in ("sprinkler", "irrigation", "watering"))
+        )
+    )
 
 
 def present_recent_items(
@@ -176,11 +195,13 @@ def compose_presentation_streams(
     rotating_current = [
         item for item in active if item.get("rotate_with_awareness") is True
     ]
+    # Current household state belongs in the side lanes.  The footer is a
+    # historical surface, so a current item's old ticker_eligible hint must
+    # never route live state into recent activity.
     shared_active = [
         item
         for item in active
-        if item.get("ticker_eligible") is not True
-        and item.get("rotate_with_awareness") is not True
+        if item.get("rotate_with_awareness") is not True
     ]
     # EasyStart's two durable summaries are current measurements, but their
     # presentation follows the same left/right rotation as Location and other
@@ -192,11 +213,21 @@ def compose_presentation_streams(
         if item.get("visual_only") is not True
     ]
     ranked_awareness = _ranked_presentable([*rotating_current, *text_awareness])
-    footer_awareness = [
-        item for item in ranked_awareness
-        if str(item.get("stream_preference") or "").casefold() == "footer"
-    ]
-    ranked_awareness = [item for item in ranked_awareness if item not in footer_awareness]
+    # Awareness/utility information stays in the side lanes.  The footer has
+    # one meaning only: recent Recorder-backed household events.
+
+    # The six-slot lane engine consumes one ordered side-candidate stream.
+    # Placement is a frontend layout concern; the integration only ranks
+    # semantic candidates. Keep legacy left/right streams during migration so
+    # older cards remain compatible with the same backend.
+    side_candidates: list[dict[str, Any]] = []
+    seen_side_ids: set[str] = set()
+    for item in [*shared_active, *ranked_awareness]:
+        item_id = str(item.get("id") or "")
+        if not item_id or item_id in seen_side_ids:
+            continue
+        seen_side_ids.add(item_id)
+        side_candidates.append(item)
 
     if len(shared_active) >= 2:
         left = [shared_active[0]]
@@ -208,10 +239,13 @@ def compose_presentation_streams(
         left = ranked_awareness[::2]
         right = ranked_awareness[1::2]
 
+    # Keep the live ticker intentionally short even when the user retains a
+    # much deeper history.  Retained `recent` remains available to History;
+    # only the newest 12 hours participate in the marquee.
+    ticker_cutoff = (datetime.now(timezone.utc) - timedelta(hours=12)).timestamp()
     bottom_candidates = [
-        *footer_awareness,
-        *[item for item in active if item.get("ticker_eligible") is True],
-        *[item for item in recent if _presentable_item(item)],
+        item for item in recent
+        if _presentable_item(item) and _item_timestamp(item) >= ticker_cutoff
     ]
     alarm_transitions = [
         item for item in bottom_candidates
@@ -225,6 +259,7 @@ def compose_presentation_streams(
     ]
 
     return {
+        "side": [str(item["id"]) for item in side_candidates],
         "left": [str(item["id"]) for item in left],
         "right": [str(item["id"]) for item in right],
         "bottom": [str(item["id"]) for item in bottom],
@@ -355,12 +390,14 @@ def _present_item(
     domain = str(item.get("domain") or entity_id.split(".", 1)[0]).casefold()
     device_class = str(item.get("device_class") or "").casefold()
     appliance = item.get("capability") == "appliance_cycle"
+    irrigation_transition = (not current and item.get("capability") == "irrigation_valve")
     easystart = item.get("capability") == "easystart_fault"
     easystart_current = item.get("capability") == "easystart_current"
     state = str(item.get("state") if current else item.get("to") or "").strip()
     if appliance and state.casefold() in {"completed", "finished", "done"}:
         state = "Complete"
     attention = str(item.get("attention") or "none").casefold()
+    irrigation_valve = current and _is_active_irrigation_valve_fact(item)
     category = (
         _appliance_category(name, entity_id)
         if appliance
@@ -368,9 +405,11 @@ def _present_item(
         if easystart
         else "climate"
         if easystart_current
+        else "irrigation"
+        if irrigation_valve or irrigation_transition
         else _native_category(domain, device_class)
     )
-    priority = "normal" if easystart_current else _item_priority(appliance, current, attention, state)
+    priority = "activity" if irrigation_valve else "normal" if easystart_current else _item_priority(appliance, current, attention, state)
     display_kind = "easystart_current" if easystart_current else "easystart_fault" if easystart else "appliance_current" if appliance and current else "appliance_transition" if appliance else "contact_transition" if not current and device_class in {"door", "window", "opening", "garage_door"} else "current_state" if current else "state_transition"
     label = state or "Unknown"
     if easystart_current:
@@ -378,6 +417,10 @@ def _present_item(
     elif easystart:
         owner = name if "easystart" in name.casefold() else f"{name} EasyStart"
         title = f"{owner}: {label}"
+    elif irrigation_valve:
+        title = f"{name} Watering"
+    elif irrigation_transition:
+        title = f"{name} Watering Stopped"
     else:
         title = label if domain == "alarm_control_panel" else f"{name} {label}"
     item_id = (
@@ -405,15 +448,15 @@ def _present_item(
         "entity_name": name,
         "title": title,
         "message": title,
-        "summary": str(item.get("detail") or "") if easystart or easystart_current else _item_summary(item, appliance, current, state),
-        "icon": "mdi:air-conditioner" if easystart or easystart_current else _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
+        "summary": "Sprinkler zone is watering" if irrigation_valve else "Watering finished" if irrigation_transition else str(item.get("detail") or "") if easystart or easystart_current else _item_summary(item, appliance, current, state),
+        "icon": "mdi:sprinkler-variant" if irrigation_valve or irrigation_transition else "mdi:air-conditioner" if easystart or easystart_current else _native_icon(domain, device_class, state, name) if not appliance else _appliance_icon(name, entity_id),
         "category": category,
         "color_role": _color_role(category, priority, state, current),
         "priority": priority,
         "active": current,
         "state": state,
         "created_at": item.get("changed_at"),
-        "event_type": "native_easystart_current" if easystart or easystart_current else "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
+        "event_type": "native_irrigation_current" if irrigation_valve else "native_irrigation_transition" if irrigation_transition else "native_easystart_current" if easystart or easystart_current else "native_appliance_current" if appliance and current else "native_current" if current else "native_transition",
         "timestamp_mode": timestamp_mode,
         "display_kind": display_kind,
         "capability": item.get("capability"),
@@ -421,6 +464,13 @@ def _present_item(
         "ticker_eligible": bool((appliance or easystart) and current),
         "rotate_with_awareness": easystart_current,
         "utility_role": "security" if category == "security" else "",
+        # Recent footer events should open the broadest useful native HA
+        # history context. If Recorder's originating entity belongs to a real
+        # HA device, open that device page (combined Activity). Standalone
+        # entities fall back to HA More Info / Activity. Current/live items
+        # keep their normal operational navigation.
+        "history_target": "device" if (not current and item.get("device_id")) else "entity",
+        "device_id": item.get("device_id"),
     }
 
 
@@ -506,6 +556,8 @@ def _color_role(category: str, priority: str, state: str, current: bool) -> str:
         return "security"
     if category == "security":
         return "success" if normalized in {"closed", "locked", "clear", "safe", "connected", "alarm off", "disarmed", "off"} else "security"
+    if category == "irrigation":
+        return "irrigation" if current else "success"
     if category in {"laundry", "appliance"}:
         return "appliance" if current else "success" if normalized == "complete" else "attention" if normalized in {"fault", "alert", "error"} else "appliance"
     if priority == "attention":
@@ -609,18 +661,24 @@ async def async_recent_transitions(
         return []
 
     transitions: list[dict[str, Any]] = []
+    entity_registry = er.async_get(hass)
     for entity_id, states in states_by_entity.items():
         previous: State | None = None
         current = hass.states.get(entity_id)
+        registry_entry = entity_registry.async_get(entity_id)
+        device_id = registry_entry.device_id if registry_entry is not None else None
         for state in states:
             if (
                 previous is not None
                 and state.state != previous.state
                 and _is_meaningful_transition(entity_id, previous, state, current)
             ):
-                transitions.append(
-                    _transition_fact(entity_id, previous, state, current, name_for_entity)
+                fact = _transition_fact(
+                    entity_id, previous, state, current, name_for_entity
                 )
+                if device_id:
+                    fact["device_id"] = device_id
+                transitions.append(fact)
             previous = state
     ordered = sorted(transitions, key=lambda item: item["changed_at"], reverse=True)
     # Recorder remains the authority for the facts. The ticker needs the newest
@@ -665,7 +723,7 @@ def _is_meaningful_transition(
 
 def _is_transition_entity(entity_id: str, state: State) -> bool:
     domain = entity_id.split(".", 1)[0]
-    if domain in {"binary_sensor", "lock", "alarm_control_panel"}:
+    if domain in {"binary_sensor", "lock", "alarm_control_panel", "valve"}:
         return True
     return domain == "sensor" and state.attributes.get("device_class") not in _MEASUREMENT_DEVICE_CLASSES
 

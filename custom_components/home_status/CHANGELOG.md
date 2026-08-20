@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.18
+
+- Preserved the live Visual Center sampling cadence and the Recorder-only
+  footer contract.
+- Bounded the compatibility sensor's current and awareness collections while
+  retaining priority, household-presence, and local-news items.
+- Enforced the compatibility sensor's 12 KB attribute budget without changing
+  split transport channels or the frontend architecture.
+
 ## 0.9.17
 
 - Promoted the latest Home Status visual updates from the 0.9.16b7 build to a stable release.

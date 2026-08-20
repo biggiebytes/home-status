@@ -22,6 +22,7 @@ from .interpreters import (
     is_easystart_home_device,
     interpret_appliance_home_device,
     interpret_entity,
+    _is_irrigation_context,
 )
 from .source import HomeSource
 from .source_discovery import discover_sources
@@ -310,9 +311,35 @@ class HomeStatusEngine:
                 return context
         return None
 
+    def _irrigation_valve_contexts(self, options: dict[str, Any]) -> dict[str, HomeDevice]:
+        """Return explicitly selected irrigation valve entities with semantic context."""
+        result: dict[str, HomeDevice] = {}
+        for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
+            for entity in selected.entities:
+                if entity.domain == "valve" and _is_irrigation_context(selected, entity):
+                    result[entity.entity_id] = selected
+        return result
+
     def native_current_facts(self, options: dict[str, Any]) -> list[dict[str, Any]]:
         """Return semantic capability facts for the HA-native contract."""
         result: list[dict[str, Any]] = []
+        for entity_id, context in self._irrigation_valve_contexts(options).items():
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            entity = next((item for item in context.entities if item.entity_id == entity_id), None)
+            if entity is None:
+                continue
+            result.append({
+                "entity_id": entity_id,
+                "entity_name": entity.name,
+                "domain": "valve",
+                "device_class": entity.device_class,
+                "state": str(state.state or "").replace("_", " ").title(),
+                "changed_at": state.last_changed.isoformat(),
+                "attention": "none",
+                "capability": "irrigation_valve",
+            })
         seen: set[str] = set()
         for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
             easystart_context = self._manual_easystart_context(selected)
@@ -334,6 +361,7 @@ class HomeStatusEngine:
     def native_owned_entity_ids(self, options: dict[str, Any]) -> set[str]:
         """Return raw entities replaced or suppressed by semantic capabilities."""
         entity_ids = self.appliance_owned_entity_ids(options)
+        entity_ids.update(self._irrigation_valve_contexts(options))
         seen: set[str] = set()
         for selected in [*self.selected_home_devices(options), *self.selected_entities(options)]:
             context = self._manual_easystart_context(selected)
@@ -360,7 +388,16 @@ class HomeStatusEngine:
     ) -> list[dict[str, Any]]:
         """Apply appliance meaning to Recorder rows, leaving other rows intact."""
         result: list[dict[str, Any]] = []
+        irrigation = self._irrigation_valve_contexts(options)
         for transition in transitions:
+            entity_id = str(transition.get("entity_id") or "")
+            if entity_id in irrigation:
+                to_state = str(transition.get("to") or "").casefold()
+                if to_state in {"closed", "close", "off"}:
+                    context = irrigation[entity_id]
+                    entity = next((item for item in context.entities if item.entity_id == entity_id), None)
+                    result.append({**transition, "entity_name": entity.name if entity else transition.get("entity_name"), "capability": "irrigation_valve"})
+                continue
             context = self.appliance_context_for_entity(
                 options, str(transition.get("entity_id") or "")
             )

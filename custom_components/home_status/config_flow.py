@@ -547,13 +547,13 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             options = self._options()
             feeds = [item for item in options.get("news_sources", []) if isinstance(item, dict) and item.get("id") != self._news_source_id]
             if not user_input.get("remove_source", False):
-                feeds.append({"id": self._news_source_id or uuid4().hex, "name":str(user_input["name"]).strip() or "News", "url":url, "enabled":bool(user_input.get("enabled", True)), "priority":str(user_input.get("priority", "normal")), "show_visual":bool(user_input.get("show_visual", True)), "visual_duration":max(1, min(3600, int(user_input.get("visual_duration", 60))) )})
+                feeds.append({"id": self._news_source_id or uuid4().hex, "name":str(user_input["name"]).strip() or "News", "url":url, "enabled":bool(user_input.get("enabled", True)), "priority":str(user_input.get("priority", "normal")), "show_visual":bool(user_input.get("show_visual", True))})
             options["news_sources"] = feeds
             return await self._save_options_and_return(options, "sources")
         return self.async_show_form(step_id="news_source_edit", data_schema=self._news_schema(current))
 
     def _news_schema(self, current):
-        return vol.Schema({vol.Required("name", default=current.get("name", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(), vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value":p,"label":p.title()} for p in ("normal","activity","attention","critical")], mode=selector.SelectSelectorMode.DROPDOWN)), vol.Optional("show_visual", default=current.get("show_visual", True)): selector.BooleanSelector(), vol.Optional("visual_duration", default=current.get("visual_duration", 60)): self._number(1,3600,1), vol.Optional("remove_source", default=False): selector.BooleanSelector()})
+        return vol.Schema({vol.Required("name", default=current.get("name", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Required("url", default=current.get("url", "")): selector.TextSelector(selector.TextSelectorConfig()), vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(), vol.Optional("priority", default=current.get("priority", "normal")): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value":p,"label":p.title()} for p in ("normal","activity","attention","critical")], mode=selector.SelectSelectorMode.DROPDOWN)), vol.Optional("show_visual", default=current.get("show_visual", True)): selector.BooleanSelector(), vol.Optional("remove_source", default=False): selector.BooleanSelector()})
 
     async def async_step_live_news_sources(self, user_input=None):
         """Choose a Direct HTTPS HLS source to add or edit."""
@@ -610,14 +610,12 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             options = self._options()
             options["live_news_sample_interval"] = max(30, min(86400, int(user_input.get("sample_interval", 1800))))
-            options["live_news_display_duration"] = max(1, min(3600, int(user_input.get("display_duration", 30))))
             options["live_news_mute"] = bool(user_input.get("mute", True))
             return await self._save_options_and_return(options, "sources")
         return self.async_show_form(
             step_id="live_news_settings",
             data_schema=vol.Schema({
                 vol.Optional("sample_interval", default=self.entry.options.get("live_news_sample_interval", 1800)): self._number(30, 86400, 30),
-                vol.Optional("display_duration", default=self.entry.options.get("live_news_display_duration", 30)): self._number(1, 3600, 1),
                 vol.Optional("mute", default=self.entry.options.get("live_news_mute", True)): selector.BooleanSelector(),
             }),
         )
@@ -941,6 +939,9 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             options = self._options()
             options["visual_center_enabled"] = bool(user_input.get("visual_center_enabled", True))
+            options["visual_event_duration"] = max(1, min(300, int(user_input.get("visual_event_duration", 6))))
+            options["visual_news_duration"] = max(1, min(300, int(user_input.get("visual_news_duration", 12))))
+            options["visual_stream_duration"] = max(1, min(300, int(user_input.get("visual_stream_duration", 24))))
             return await self._save_options_and_return(options, "presentation")
         return self.async_show_form(
             step_id="visual_center",
@@ -949,6 +950,18 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                     "visual_center_enabled",
                     default=self._option_value("visual_center_enabled"),
                 ): selector.BooleanSelector(),
+                vol.Optional(
+                    "visual_event_duration",
+                    default=self._option_value("visual_event_duration"),
+                ): self._number(1, 300, 1),
+                vol.Optional(
+                    "visual_news_duration",
+                    default=self._option_value("visual_news_duration"),
+                ): self._number(1, 300, 1),
+                vol.Optional(
+                    "visual_stream_duration",
+                    default=self._option_value("visual_stream_duration"),
+                ): self._number(1, 300, 1),
             }),
         )
 

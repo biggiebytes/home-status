@@ -120,7 +120,7 @@
       "news_source_edit": {
         "title": "RSS/Atom feed",
         "description": "Configure a generic news feed. An image is used only when the feed itself supplies one.",
-        "data": {"name":"Name","url":"RSS/Atom feed URL","enabled":"Enabled","priority":"Priority","show_visual":"Show in Visual Center","visual_duration":"Visual display duration (seconds)","remove_source":"Remove this feed"}
+        "data": {"name":"Name","url":"RSS/Atom feed URL","enabled":"Enabled","priority":"Priority","show_visual":"Show in Visual Center","remove_source":"Remove this feed"}
       },
       "live_news_sources": {
         "title": "Live News sources",
@@ -135,9 +135,9 @@
       },
       "live_news_settings": {
         "title": "Live News sampling settings",
-        "description": "Set one shared cadence for the whole Live News rotation. Each sample selects exactly one enabled source, then advances to the next source.",
-        "data": {"sample_interval":"Time between samples (seconds)","display_duration":"Video duration (seconds)","mute":"Mute audio"},
-        "data_description": {"sample_interval":"How long Home Status waits before selecting the next source in the rotation.","display_duration":"How long the selected channel stays in Visual Center unless a higher-priority visual takes over.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
+        "description": "Set the shared Live News sampling cadence. Actual on-screen stream duration is controlled under Presentation & behavior → Visual Center.",
+        "data": {"sample_interval":"Time between samples (seconds)","mute":"Mute audio"},
+        "data_description": {"sample_interval":"How long Home Status waits before selecting the next live channel in the rotation.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
       },
       "information_sources": {
         "title": "Information sources",
@@ -554,12 +554,18 @@
       },
       "visual_center": {
         "title": "Visual Center",
-        "description": "Control whether Home Status may show the current generic visual winner between the existing left and right areas. It takes no space when no valid visual is available.",
+        "description": "Control Visual Center availability and the actual on-screen duration of each shared source turn.",
         "data": {
-          "visual_center_enabled": "Show Visual Center when visual content is available"
+          "visual_center_enabled": "Show Visual Center when visual content is available",
+          "visual_event_duration": "Event artwork duration (seconds)",
+          "visual_news_duration": "News artwork duration (seconds)",
+          "visual_stream_duration": "Live stream duration (seconds)"
         },
         "data_description": {
-          "visual_center_enabled": "When enabled, the highest-priority valid visual source can appear in the center. Turn this off to keep the card in its normal two-column layout."
+          "visual_center_enabled": "When enabled, the highest-priority valid visual source can appear in the center. Turn this off to keep the card in its normal two-column layout.",
+          "visual_event_duration": "How long each event artwork card stays on screen during its turn. Default: 6 seconds.",
+          "visual_news_duration": "How long each RSS/news artwork card stays on screen during its turn. Default: 12 seconds.",
+          "visual_stream_duration": "How long each live HLS stream stays on screen during its turn. Default: 24 seconds."
         }
       },
       "back_to_init": {

@@ -147,6 +147,7 @@ def manual_home_device_for_entity(
 ) -> HomeDevice | None:
     """Wrap any HA entity as a one-entity HomeDevice for explicit monitoring."""
     registry = er.async_get(hass)
+    devices = dr.async_get(hass)
     areas = ar.async_get(hass)
     entry = registry.async_get(entity_id)
     state = hass.states.get(entity_id)
@@ -155,9 +156,12 @@ def manual_home_device_for_entity(
     if entry is None and state is None:
         return None
 
+    parent_device_name = ""
     if entry is not None:
         item = _entity_record(entry, state)
         area_id = getattr(entry, "area_id", None)
+        if entry.device_id and (device := devices.async_get(entry.device_id)) is not None:
+            parent_device_name = str(device.name_by_user or device.name or "").strip()
     else:
         domain = entity_id.split(".", 1)[0]
         attrs = state.attributes if state else {}
@@ -180,7 +184,7 @@ def manual_home_device_for_entity(
         area_id=area_id,
         area_name=area.name if area else None,
         entities=[item],
-        metadata={"manual_entity": True},
+        metadata={"manual_entity": True, "parent_device_name": parent_device_name},
     )
 
 

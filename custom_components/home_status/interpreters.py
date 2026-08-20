@@ -498,8 +498,11 @@ def _is_irrigation_context(home_device: HomeDevice, entity: HomeDeviceEntity | N
     """
     text = " ".join([
         home_device.name,
+        str(home_device.metadata.get("parent_device_name") or ""),
         *(item.name for item in home_device.entities),
+        *(item.entity_id for item in home_device.entities),
         entity.name if entity is not None else "",
+        entity.entity_id if entity is not None else "",
     ]).casefold()
     return home_device.kind == "irrigation" or any(
         hint in text for hint in ("sprinkler", "irrigation", "watering", "rain delay", "rain_delay")
@@ -891,7 +894,15 @@ def awareness_entity(
 
     # The unrestricted entity selector remains available, but numeric telemetry
     # must have a dedicated semantic owner before it can enter presentation.
-    if _generic_diagnostic_sensor(entity, state):
+    # Irrigation's explicit Next Watering timestamp is a semantic schedule item,
+    # so it must be allowed through before the generic timestamp/telemetry guard.
+    entity_text_for_semantics = entity.name.casefold().replace("_", " ")
+    irrigation_next_watering = (
+        _is_irrigation_context(home_device, entity)
+        and entity.domain == "sensor"
+        and ("next watering" in entity_text_for_semantics or "next water" in entity_text_for_semantics)
+    )
+    if _generic_diagnostic_sensor(entity, state) and not irrigation_next_watering:
         return []
 
     domain = entity.domain

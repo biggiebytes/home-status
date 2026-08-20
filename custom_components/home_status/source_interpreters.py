@@ -111,39 +111,44 @@ def _safe_url(value: Any) -> str | None:
 
 
 def _event_feed_items(source: HomeSource, state) -> list[dict[str, Any]]:
-    """Interpret a bounded, opt-in rich-events source without re-ranking it.
+    """Interpret neutral event metadata into Home Status awareness items.
 
-    The provider owns selection, order, dates and artwork. Home Status only
-    normalizes those already-composed event records into awareness items.
+    The provider supplies factual event records, artwork and destination URLs.
+    Home Status owns the awareness/visual contract. Source order and cardinality
+    are preserved; this function does not rank, select, or reduce the feed.
     """
-    raw_items = state.attributes.get("home_status_items")
+    raw_items = state.attributes.get("events")
     if not isinstance(raw_items, list):
         return []
 
     result: list[dict[str, Any]] = []
-    # This is a defensive contract bound, not a content-selection rule. The
-    # provider controls the ordered feed and Home Status preserves that order.
-    for raw in raw_items[:100]:
+    # Preserve the full neutral event list. Visual Center chooses one event
+    # from this source at a time; event records themselves are not expanded
+    # into simultaneous visual candidates here.
+    for raw in raw_items:
         if not isinstance(raw, dict):
             continue
         event_id = str(raw.get("id") or "").strip()
         title = str(raw.get("title") or "").strip()
         if not event_id or not title:
             continue
-        summary = str(raw.get("body") or raw.get("subtitle") or source.name).strip()
+
+        summary = str(
+            raw.get("body")
+            or raw.get("description")
+            or raw.get("subtitle")
+            or source.name
+        ).strip()
         detail = str(raw.get("subtitle") or source.name).strip()
-        image_url = _safe_url(raw.get("media_url") or raw.get("image_url"))
-        action = _safe_url(raw.get("action"))
-        priority = str(raw.get("priority") or "normal").casefold()
-        if priority not in {"critical", "attention", "activity", "normal"}:
-            priority = "normal"
+        image_url = _safe_url(raw.get("image_url") or raw.get("media_url"))
+        action = _safe_url(raw.get("url") or raw.get("action"))
 
         item = _item(
             source,
             state,
             message=title,
             detail=detail,
-            icon=str(raw.get("icon") or "mdi:calendar-star"),
+            icon="mdi:calendar-star",
             category="calendar",
         )
         item.update(
@@ -153,40 +158,22 @@ def _event_feed_items(source: HomeSource, state) -> list[dict[str, Any]]:
                 "summary": summary,
                 "detail": detail,
                 "source_kind": "events",
-                "priority": priority,
+                "priority": "normal",
                 "image_url": image_url,
                 "media_url": image_url,
                 "media_type": "image" if image_url else None,
                 "action": action,
                 "navigation": action,
-                "created_at": str(raw.get("created_at") or item["created_at"]),
-                "event_phase": str(raw.get("event_phase") or "").casefold(),
                 "event_start": str(raw.get("event_start") or "").strip(),
                 "event_end": str(raw.get("event_end") or "").strip(),
-                # Rich event cards are discovery content. Their artwork belongs
-                # in Visual Center; the destination page owns the full details.
-                "visual_only": bool(image_url),
+                "all_day": bool(raw.get("all_day")),
+                # Neutral rich-event sources supply Visual Center discovery
+                # metadata only. They never consume the shared left/right
+                # awareness lanes; records without artwork remain inert there.
+                "visual_only": True,
                 "display_kind": "visual_media" if image_url else "awareness",
             }
         )
-        expires_at = str(raw.get("expires_at") or "").strip()
-        if expires_at:
-            item["expires_at"] = expires_at
-        if image_url:
-            item["visual"] = {
-                "type": "image",
-                "url": image_url,
-                "article_url": action,
-                "title": title,
-                "source": source.name,
-                "priority": priority,
-                "live": False,
-                "resumable": True,
-                "started_at": item["created_at"],
-                "expires_at": expires_at or None,
-                "event_start": item.get("event_start") or None,
-                "event_end": item.get("event_end") or None,
-            }
         result.append(item)
     return result
 

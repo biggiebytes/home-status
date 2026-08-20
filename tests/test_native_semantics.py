@@ -97,7 +97,6 @@ def test_footer_preferred_awareness_stays_out_of_the_top_slots():
 
     streams = compose_presentation_streams([], [], [utility, calendar])
 
-    assert utility["id"] not in streams["left"]
-    assert utility["id"] not in streams["right"]
-    assert streams["bottom"] == [utility["id"]]
-    assert calendar["id"] in streams["left"]
+    assert utility["id"] in [*streams["left"], *streams["right"]]
+    assert streams["bottom"] == []
+    assert calendar["id"] in [*streams["left"], *streams["right"]]

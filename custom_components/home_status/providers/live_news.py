@@ -98,7 +98,11 @@ class LiveNewsProvider:
             "priority": source["priority"],
             "mute": source["mute"],
             "started_at": started_at.isoformat(),
-            "expires_at": (started_at + timedelta(seconds=source["display_duration"])).isoformat(),
+            # Sampling cadence controls how long this channel remains the
+            # selected live source. Actual on-screen time is owned by the
+            # shared Visual Center scheduler.
+            "display_duration": source["display_duration"],
+            "expires_at": (started_at + timedelta(seconds=source["sample_interval"])).isoformat(),
         }
         self._state["active"] = active
         self._state["rotation_index"] = (index + 1) % len(sources)
@@ -157,7 +161,10 @@ class LiveNewsProvider:
                 "url": active["url"],
                 "title": active["name"],
                 "source": "Live News",
+                "source_id": f"live_news:{active['source_id']}",
+                "source_kind": "live_news",
                 "priority": active["priority"],
+                "display_duration": max(1, int(active.get("display_duration", 24))),
                 "live": True,
                 "started_at": active["started_at"],
                 "expires_at": active["expires_at"],

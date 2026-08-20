@@ -28,7 +28,7 @@ def test_creates_one_temporary_hls_visual():
     assert visual["type"] == "video"
     assert visual["transport"] == "hls"
     assert visual["live"] is True
-    assert visual["expires_at"] == (NOW + timedelta(seconds=30)).isoformat()
+    assert visual["expires_at"] == (NOW + timedelta(minutes=30)).isoformat()
 
 
 def test_expiry_and_preemption_do_not_immediately_resume():
