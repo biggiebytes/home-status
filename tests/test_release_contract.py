@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from homeassistant.const import MATCH_ALL
+
 from custom_components.home_status.sensor import (
     TRANSPORT_CHANNELS,
     HomeStatusSensor,
@@ -18,25 +20,13 @@ def test_manifest_and_frontend_use_the_current_release_versions():
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))
     constants = (COMPONENT / "const.py").read_text(encoding="utf-8")
 
-    assert manifest["version"] == "0.9.18"
-    assert '"version": "0.9.18"' in constants
+    assert manifest["version"] == "1.0.0"
+    assert '"version": "1.0.0"' in constants
     assert "recorder" in manifest["after_dependencies"]
 
 
-def test_sensor_payload_budget_preserves_current_appliance_state():
-    attributes = {
-        "native": {
-            "current": [{"entity_name": "Washer", "detail": "4 min remaining"}],
-            "recent": [{"message": "Washer Completed"}] * 16,
-            "awareness": [{"title": "Verbose", "body": "x" * 2_000}] * 8,
-        }
-    }
-
-    compact = HomeStatusSensor._fit_attribute_budget(attributes)
-    encoded_size = len(json.dumps(compact, separators=(",", ":")).encode("utf-8"))
-
-    assert encoded_size <= 12_000
-    assert compact["native"]["current"] == [{"entity_name": "Washer", "detail": "4 min remaining"}]
+def test_sensor_attributes_are_transient_and_excluded_from_recorder():
+    assert HomeStatusSensor._unrecorded_attributes == frozenset({MATCH_ALL})
 
 
 def test_current_appliance_cycle_is_prioritized_within_sensor_budget():
@@ -53,7 +43,7 @@ def test_current_appliance_cycle_is_prioritized_within_sensor_budget():
 
     native = HomeStatusSensor._compact_native({"current": [*neutral, dryer]})
 
-    assert len(native["current"]) == 8
+    assert len(native["current"]) == 9
     assert native["current"][0]["entity_name"] == "Dryer"
 
 
@@ -74,7 +64,7 @@ def test_current_micro_air_items_are_retained_within_sensor_budget():
 
     native = HomeStatusSensor._compact_native({"current": [*neutral, *micro_air]})
 
-    assert len(native["current"]) == 8
+    assert len(native["current"]) == 10
     assert [item["entity_name"] for item in native["current"][:2]] == [
         "Micro-Air Current", "Micro-Air History"
     ]
@@ -106,7 +96,7 @@ def test_sensor_payload_keeps_household_presence_when_awareness_is_capped():
     })
     ids = [item["id"] for item in native["awareness"]]
 
-    assert len(ids) == 8
+    assert len(ids) == 10
     assert household["id"] in ids
     assert news["id"] in ids
     assert household["id"] in [

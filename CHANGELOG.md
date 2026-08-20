@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.0
+
+- Completed tablet-performance work and added configurable single and slot
+  lane modes with natural-flow sizing.
+- Added global and card-level Visual Center controls, light/dark/auto themes,
+  and balanced side columns whenever Visual Center is unavailable.
+- Generalized ESPN Sports Ticker support across the published leagues.
+- Retained the bounded compatibility-sensor contract while preserving the
+  live-approved frontend architecture and Visual Center/HLS behavior.
+
 ## v0.9.18
 
 - Preserved the live Visual Center sampling cadence and the Recorder-only

@@ -178,6 +178,305 @@ def _event_feed_items(source: HomeSource, state) -> list[dict[str, Any]]:
     return result
 
 
+
+
+
+def _sports_entity_stem(entity_id: str) -> str:
+    """Return Sports Ticker's stable ESPN entity stem."""
+    value = str(entity_id or "").casefold()
+    if value.startswith("sensor.espn_"):
+        value = value[len("sensor.espn_"):]
+    for suffix in ("_next_game", "_scoreboard_raw"):
+        if value.endswith(suffix):
+            value = value[:-len(suffix)]
+            break
+    return value.strip("_")
+
+
+def _sports_scoreboard_entity_id(source: HomeSource, attrs: dict[str, Any]) -> str | None:
+    """Return the raw scoreboard companion for a compact next-game source."""
+    entity_id = str(source.entity_id or "")
+    if entity_id.casefold().endswith("_scoreboard_raw"):
+        return entity_id
+    if entity_id.casefold().endswith("_next_game"):
+        return f"sensor.espn_{_sports_entity_stem(entity_id)}_scoreboard_raw"
+
+    league = str(attrs.get("league") or "").casefold().strip().replace("-", "_").replace(" ", "_")
+    return f"sensor.espn_{league}_scoreboard_raw" if league else None
+
+
+def _sports_event_competitors(event: dict[str, Any]) -> list[dict[str, Any]]:
+    competitions = event.get("competitions")
+    if not isinstance(competitions, list) or not competitions or not isinstance(competitions[0], dict):
+        return []
+    competitors = competitions[0].get("competitors")
+    return [item for item in competitors if isinstance(item, dict)] if isinstance(competitors, list) else []
+
+
+def _sports_event_for_team(events: Any, favorite_team: str) -> dict[str, Any] | None:
+    """Find a favorite team's event in an ESPN scoreboard."""
+    if not isinstance(events, list) or not favorite_team:
+        return None
+    favorite = favorite_team.casefold()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        for competitor in _sports_event_competitors(event):
+            team = competitor.get("team") if isinstance(competitor.get("team"), dict) else {}
+            values = {
+                str(team.get("abbreviation") or "").casefold(),
+                str(team.get("displayName") or "").casefold(),
+                str(team.get("shortDisplayName") or "").casefold(),
+                str(team.get("name") or "").casefold(),
+            }
+            if favorite in values:
+                return event
+    return None
+
+
+def _sports_event_state(event: dict[str, Any]) -> tuple[str, bool, dict[str, Any]]:
+    status = event.get("status") if isinstance(event.get("status"), dict) else {}
+    status_type = status.get("type") if isinstance(status.get("type"), dict) else {}
+    state = str(status_type.get("state") or "pre").casefold()
+    return state, bool(status_type.get("completed")), status
+
+
+def _sports_best_event(events: Any, favorite_team: str = "") -> dict[str, Any] | None:
+    """Choose the most relevant ESPN event, preferring favorite/live/upcoming."""
+    if not isinstance(events, list):
+        return None
+    if favorite_team:
+        favorite_event = _sports_event_for_team(events, favorite_team)
+        if favorite_event is not None:
+            return favorite_event
+
+    valid = [event for event in events if isinstance(event, dict)]
+    if not valid:
+        return None
+    rank = {"in": 0, "pre": 1, "post": 2}
+    return sorted(valid, key=lambda event: rank.get(_sports_event_state(event)[0], 3))[0]
+
+
+def _sports_competitors(event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    valid = _sports_event_competitors(event)
+    if len(valid) < 2:
+        return None
+    home = next((item for item in valid if str(item.get("homeAway") or "").casefold() == "home"), valid[0])
+    away = next((item for item in valid if str(item.get("homeAway") or "").casefold() == "away"), valid[1])
+    return away, home
+
+
+def _sports_team_abbreviation(competitor: dict[str, Any]) -> str:
+    team = competitor.get("team") if isinstance(competitor.get("team"), dict) else {}
+    return str(
+        team.get("abbreviation")
+        or team.get("shortDisplayName")
+        or team.get("displayName")
+        or competitor.get("name")
+        or ""
+    ).strip()
+
+
+def _sports_icon(league: str) -> str:
+    league = str(league or "").casefold().replace("-", "_")
+    if league in {"nfl", "college_football", "ncaaf"}:
+        return "mdi:football"
+    if league in {"mlb", "baseball"}:
+        return "mdi:baseball"
+    if league in {"nba", "wnba", "basketball"}:
+        return "mdi:basketball"
+    if league in {"nhl", "hockey"}:
+        return "mdi:hockey-puck"
+    if league in {"mls", "soccer"}:
+        return "mdi:soccer"
+    if league in {"nascar", "racing"}:
+        return "mdi:flag-checkered"
+    if league in {"pga", "pga_tour", "golf"}:
+        return "mdi:golf"
+    return "mdi:trophy-outline"
+
+
+def _sports_live_detail(league: str, status: dict[str, Any]) -> str:
+    """Format only the few ESPN sport-state differences Home Status must know."""
+    status_type = status.get("type") if isinstance(status.get("type"), dict) else {}
+    detail = str(status_type.get("shortDetail") or status_type.get("detail") or "").strip()
+    if detail:
+        return detail
+
+    period = status.get("period")
+    clock = str(status.get("displayClock") or "").strip()
+    normalized = str(league or "").casefold().replace("-", "_")
+
+    if normalized in {"mlb", "baseball"}:
+        period_label = f"Inning {period}" if period not in (None, "", 0, "0") else "Live"
+    elif normalized in {"nhl", "hockey"}:
+        period_label = f"P{period}" if period not in (None, "", 0, "0") else "Live"
+    elif normalized in {"mls", "soccer"}:
+        period_label = "Live"
+    elif normalized in {"nba", "wnba", "basketball", "nfl", "college_football", "ncaaf"}:
+        period_label = f"Q{period}" if period not in (None, "", 0, "0") else "Live"
+    else:
+        period_label = "Live"
+
+    return " · ".join(part for part in (period_label, clock) if part)
+
+
+def _sports_event_name(event: dict[str, Any], source: HomeSource) -> str:
+    return str(
+        event.get("shortName")
+        or event.get("name")
+        or event.get("short_name")
+        or source.name
+    ).strip()
+
+
+def _sports_item(hass: HomeAssistant, source: HomeSource, state) -> list[dict[str, Any]]:
+    """Normalize any supported ESPN Sports Ticker source into Home Status."""
+    attrs = state.attributes
+    league = str(attrs.get("league") or _sports_entity_stem(source.entity_id)).casefold()
+    favorite = str(attrs.get("favorite_team") or "").strip()
+    scoreboard_id = _sports_scoreboard_entity_id(source, attrs)
+    scoreboard = hass.states.get(scoreboard_id) if scoreboard_id else None
+    scoreboard_attrs = scoreboard.attributes if scoreboard is not None else attrs
+    events = scoreboard_attrs.get("events")
+    event = _sports_best_event(events, favorite)
+
+    # A compact Next Game source remains the preferred upcoming-game authority.
+    # Raw scoreboard data becomes authoritative once it can describe live/final
+    # state, and is also the fallback for leagues without Next Game entities.
+    if event is not None:
+        status_state, completed, status = _sports_event_state(event)
+        pair = _sports_competitors(event)
+        icon = _sports_icon(league)
+
+        if pair is not None:
+            away, home = pair
+            away_abbr = _sports_team_abbreviation(away)
+            home_abbr = _sports_team_abbreviation(home)
+            away_score = str(away.get("score") or "0")
+            home_score = str(home.get("score") or "0")
+            score_message = f"{away_abbr} {away_score} · {home_abbr} {home_score}".strip()
+
+            if status_state == "in":
+                item = _item(
+                    source, state,
+                    message=score_message,
+                    detail=_sports_live_detail(league, status),
+                    icon=icon,
+                    category="sports",
+                )
+                item.update({
+                    "id": f"home_status:{source.id}:sports:{event.get('id') or favorite or league}",
+                    "event_type": "sports_live",
+                    "priority": "high",
+                    "active": True,
+                    "state": "live",
+                    "sports_state": "live",
+                    "league": league,
+                    "favorite_team": favorite,
+                    "scoreboard_entity_id": scoreboard_id,
+                })
+                return [item]
+
+            if completed or status_state == "post":
+                item = _item(
+                    source, state,
+                    message=score_message,
+                    detail="Final",
+                    icon=icon,
+                    category="sports",
+                )
+                item.update({
+                    "id": f"home_status:{source.id}:sports:{event.get('id') or favorite or league}",
+                    "event_type": "sports_final",
+                    "priority": "normal",
+                    "state": "final",
+                    "sports_state": "final",
+                    "league": league,
+                    "favorite_team": favorite,
+                    "scoreboard_entity_id": scoreboard_id,
+                })
+                return [item]
+
+            # Raw scoreboard fallback for upcoming team sports.
+            if not source.entity_id.casefold().endswith("_next_game"):
+                status_type = status.get("type") if isinstance(status.get("type"), dict) else {}
+                detail = str(status_type.get("shortDetail") or status_type.get("detail") or "").strip()
+                item = _item(
+                    source, state,
+                    message=_sports_event_name(event, source),
+                    detail=detail,
+                    icon=icon,
+                    category="sports",
+                )
+                item.update({
+                    "id": f"home_status:{source.id}:sports:{event.get('id') or favorite or league}",
+                    "event_type": "sports_upcoming",
+                    "state": "upcoming",
+                    "sports_state": "upcoming",
+                    "league": league,
+                    "favorite_team": favorite,
+                    "scoreboard_entity_id": scoreboard_id,
+                    "scheduled_at": str(event.get("date") or ""),
+                })
+                return [item]
+
+        # Event sports (PGA/NASCAR) and any ESPN source without two teams.
+        status_type = status.get("type") if isinstance(status.get("type"), dict) else {}
+        event_name = _sports_event_name(event, source)
+        detail = str(status_type.get("shortDetail") or status_type.get("detail") or "").strip()
+        sports_state = "final" if completed or status_state == "post" else "live" if status_state == "in" else "upcoming"
+        item = _item(
+            source, state,
+            message=event_name,
+            detail=("Final" if sports_state == "final" else detail or ("Live" if sports_state == "live" else "")),
+            icon=icon,
+            category="sports",
+        )
+        item.update({
+            "id": f"home_status:{source.id}:sports:{event.get('id') or league}",
+            "event_type": f"sports_{sports_state}",
+            "priority": "high" if sports_state == "live" else "normal",
+            "active": sports_state == "live",
+            "state": sports_state,
+            "sports_state": sports_state,
+            "league": league,
+            "favorite_team": favorite,
+            "scoreboard_entity_id": scoreboard_id,
+            "scheduled_at": str(event.get("date") or ""),
+        })
+        return [item]
+
+    # Compact next-game fallback.
+    if attrs.get("has_upcoming_game") is False:
+        return []
+    matchup = str(attrs.get("matchup") or attrs.get("short_name") or attrs.get("event_name") or "").strip()
+    if not matchup:
+        return []
+    detail = str(attrs.get("status_detail") or "").strip()
+    venue = str(attrs.get("venue") or "").strip()
+    if venue and venue not in detail:
+        detail = f"{detail} · {venue}" if detail else venue
+    item = _item(
+        source, state,
+        message=matchup,
+        detail=detail or str(attrs.get("favorite_team_name") or source.name),
+        icon=_sports_icon(league),
+        category="sports",
+    )
+    item.update({
+        "id": f"home_status:{source.id}:sports:{attrs.get('event_id') or favorite or league}",
+        "event_type": "sports_upcoming",
+        "state": "upcoming",
+        "sports_state": "upcoming",
+        "league": league,
+        "favorite_team": favorite,
+        "scoreboard_entity_id": scoreboard_id,
+        "scheduled_at": str(attrs.get("date") or ""),
+    })
+    return [item]
+
+
 def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[str, Any] | None:
     """Build one household-level presence summary from selected people."""
     people = []
@@ -242,6 +541,9 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
 
     if source.kind == "events":
         return _event_feed_items(source, state)
+
+    if source.kind == "sports":
+        return _sports_item(hass, source, state)
 
     if source.kind == "traffic":
         minutes = _travel_minutes(

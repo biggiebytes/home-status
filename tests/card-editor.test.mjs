@@ -182,15 +182,22 @@ try {
     };
     const card = document.createElement('home-status-card');
     card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status', profile: 'tablet' });
+    card._ambientVisible = true;
     const setVisual = visual => {
       card.hass = {
         ...window.testHass,
         states: {
         ...window.testHass.states,
-          'sensor.home_status': { state: 'normal', attributes: { ...attributes, visual } },
+          'sensor.home_status': {
+            state: 'normal',
+            last_updated: `2026-08-20T16:45:${visual?.type || 'none'}Z`,
+            attributes: { ...attributes, visual }
+          },
           'camera.front_door': { entity_id: 'camera.front_door', state: 'idle', attributes: {} }
         }
       };
+      card._ambientVisible = true;
+      card._syncDisplayedVisual();
     };
     setVisual(null);
     document.querySelector('#card-host').replaceChildren(card);
@@ -270,7 +277,17 @@ try {
     await Promise.resolve();
     const instance = instances[0];
     const video = card.shadowRoot.querySelector('[data-visual-center] video');
-    card.hass = { ...card.hass, states: { ...card.hass.states, 'sensor.home_status': { state: 'normal', attributes: { ...card.hass.states['sensor.home_status'].attributes, visual: null } } } };
+    card.hass = {
+      ...card.hass,
+      states: {
+        ...card.hass.states,
+        'sensor.home_status': {
+          state: 'normal',
+          last_updated: '2026-08-20T16:45:00Z',
+          attributes: { ...card.hass.states['sensor.home_status'].attributes, visual: null }
+        }
+      }
+    };
     HTMLMediaElement.prototype.canPlayType = originalCanPlayType;
     return { source: instance?.url, muted: video?.muted, destroyed: instance?.destroyed };
   });
@@ -281,15 +298,15 @@ try {
     return {
       closedDoor: card._iconSemanticClass({
         provider: 'security', message: 'Door Closed', state: 'resolved',
-        active: false, resolved_at: '2026-08-05T06:00:00-04:00'
+        active: false, resolved_at: '2026-08-05T06:00:00-04:00', color_role: 'success'
       }),
       clearedSmoke: card._iconSemanticClass({
         provider: 'security', message: 'Smoke Cleared', state: 'resolved',
-        active: false, resolved_at: '2026-08-05T06:00:00-04:00'
+        active: false, resolved_at: '2026-08-05T06:00:00-04:00', color_role: 'success'
       }),
       openDoor: card._iconSemanticClass({
         provider: 'security', message: 'Door Open', state: 'active',
-        active: true, priority: 'attention'
+        active: true, priority: 'attention', color_role: 'attention'
       })
     };
   });
@@ -387,12 +404,13 @@ try {
   assert.equal(cardRegressionCoverage.streamActivated, true);
   assert.equal(cardRegressionCoverage.streamPath, '/details');
 
-  const adaptiveZonePlacement = await page.evaluate(() => {
+  const laneSlotPlacement = await page.evaluate(() => {
     const card = document.createElement('home-status-card');
     card.setConfig({
       type: 'custom:home-status-card',
       entity: 'sensor.home_status',
-      home_status_visibility: { hero: true, sidebar: true, footer: true, phone_ticker: true }
+      lane_mode: 'slots',
+      home_status_visibility: { left: true, right: true, bottom: true, phone_ticker: true }
     });
     const compactHousehold = {
       id: 'presence',
@@ -415,31 +433,29 @@ try {
       provider: 'maintenance',
       priority: 'critical'
     };
-    const flexible = card._zoneItems({ sidebar: [compactHousehold], hero: [verboseNews] });
-    const priorityFirst = card._zoneItems({ sidebar: [compactHousehold], hero: [verboseNews, urgentHousehold] });
-    const single = card._zoneItems({ sidebar: [], hero: [verboseNews] });
+    const pools = card._laneSlotPools({
+      active: [{ ...urgentHousehold, active: true }],
+      side_stream_available: true,
+      side: [compactHousehold, verboseNews]
+    });
     return {
-      flexibleLeft: flexible.left.map(item => item.id),
-      flexibleRight: flexible.right.map(item => item.id),
-      priorityLeft: priorityFirst.left.map(item => item.id),
-      singleLeft: single.left.map(item => item.id),
-      singleRight: single.right.map(item => item.id)
+      left: pools.left.map(slot => slot.map(item => item.id)),
+      right: pools.right.map(slot => slot.map(item => item.id))
     };
   });
-  assert.deepEqual(adaptiveZonePlacement.flexibleLeft, ['nhc-news']);
-  assert.deepEqual(adaptiveZonePlacement.flexibleRight, ['presence']);
-  assert.deepEqual(adaptiveZonePlacement.priorityLeft.slice(0, 2), ['leak', 'nhc-news']);
-  assert.deepEqual(adaptiveZonePlacement.singleLeft, ['nhc-news']);
-  assert.deepEqual(adaptiveZonePlacement.singleRight, []);
+  assert.deepEqual(laneSlotPlacement.left, [['leak'], ['nhc-news'], []]);
+  assert.deepEqual(laneSlotPlacement.right, [['presence'], [], []]);
 
   const glanceableWeather = await page.evaluate(() => {
     const card = document.createElement('home-status-card');
     card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
     const markup = card._zoneMarkup({
       id: 'current:weather:weather.home',
-      title: 'Weather',
-      summary: '75° • Partlycloudy',
+      title: '75°',
+      summary: 'Partlycloudy',
       provider: 'weather',
+      display_kind: 'current_weather',
+      color_role: 'weather',
       icon: 'mdi:weather-partly-cloudy'
     }, '');
     return {
@@ -460,9 +476,11 @@ try {
     card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
     const item = {
       id: 'current:weather:weather.home',
-      title: 'Weather',
-      summary: '75° • Partlycloudy',
+      title: '75°',
+      summary: 'Partlycloudy',
       provider: 'weather',
+      display_kind: 'current_weather',
+      color_role: 'weather',
       icon: 'mdi:weather-partly-cloudy'
     };
     const display = card._formatFooterItem(item);
@@ -481,9 +499,11 @@ try {
     card.setConfig({ type: 'custom:home-status-card', entity: 'sensor.home_status' });
     const item = {
       id: 'current:climate:sensor.indoor_temperature',
-      title: 'Indoor Temperature',
-      summary: '78.0°F',
+      title: '78.0°F',
+      summary: 'Indoors',
       provider: 'climate',
+      display_kind: 'indoor_temperature',
+      color_role: 'climate',
       icon: 'mdi:home-thermometer-outline'
     };
     const display = card._formatFooterItem(item);
@@ -526,12 +546,12 @@ try {
     editor.hass = window.testHass;
     editor.setConfig(config);
     const changed = new Promise(resolve => editor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));
-    const input = editor.shadowRoot.querySelector('[data-path="footer.speed"]');
+    const input = editor.shadowRoot.querySelector('[data-path="bottom.speed"]');
     input.value = '44';
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return changed;
   }, original);
-  assert.equal(edited.footer.speed, 44);
+  assert.equal(edited.bottom.speed, 44);
   assert.deepEqual(edited.mystery_option, { nested: 'keep me' });
   assert.equal(edited.context_actions.custom.path, '/custom');
 
@@ -541,7 +561,7 @@ try {
     editor.setConfig(config);
     document.querySelector('#editor-host').replaceChildren(editor);
     return {
-      speed: editor.shadowRoot.querySelector('[data-path="footer.speed"]').value,
+      speed: editor.shadowRoot.querySelector('[data-path="bottom.speed"]').value,
       preserved: editor.shadowRoot.textContent.includes('mystery_option')
     };
   }, edited);
@@ -634,7 +654,7 @@ try {
     const advancedHiddenInCustomize = editor.shadowRoot.querySelector('details[data-section="sizing"]').hidden;
     const visibilitySection = editor.shadowRoot.querySelector('details[data-section="visibility"]');
     visibilitySection.open = true;
-    const normalToggle = editor.shadowRoot.querySelector('[data-path="show_normal_items"]');
+    const normalToggle = editor.shadowRoot.querySelector('[data-path="home_status_visibility.left"]');
     const changed = new Promise(resolve => editor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));
     normalToggle.checked = true;
     normalToggle.dispatchEvent(new Event('change', { bubbles: true }));
@@ -655,7 +675,7 @@ try {
       advancedHiddenInCustomize,
       advancedVisible,
       stayedOpen,
-      changedNormalItems: changedConfig.show_normal_items,
+      changedLeftVisibility: changedConfig.home_status_visibility.left,
       warningText,
       restored
     };
@@ -667,14 +687,14 @@ try {
   assert.equal(guidedEditor.advancedHiddenInCustomize, true);
   assert.equal(guidedEditor.advancedVisible, true);
   assert.equal(guidedEditor.stayedOpen, true, 'open editor section remains open after a field change');
-  assert.equal(guidedEditor.changedNormalItems, true);
+  assert.equal(guidedEditor.changedLeftVisibility, true);
   assert.match(guidedEditor.warningText, /36 columns/);
   assert.match(guidedEditor.warningText, /at least 7 rows/);
   assert.match(guidedEditor.warningText, /appear empty/);
   assert.match(guidedEditor.warningText, /no navigation buttons/);
   assert.equal(guidedEditor.restored.profile, 'auto');
   assert.deepEqual(guidedEditor.restored.grid_options, { columns: 36, rows: 7 });
-  assert.equal(guidedEditor.restored.home_status_visibility.hero, true);
+  assert.equal(guidedEditor.restored.home_status_visibility.left, true);
   assert.deepEqual(guidedEditor.restored.visibility, [
     { condition: 'screen', media_query: '(min-width: 600px)' }
   ]);
@@ -710,7 +730,7 @@ try {
     return changed;
   }, edited);
   assert.equal(preset.profile, 'phone');
-  assert.equal(preset.home_status_visibility.hero, false);
+  assert.equal(preset.home_status_visibility.left, false);
   assert.deepEqual(preset.mystery_option, { nested: 'keep me' });
 
   const presetPreviews = await page.evaluate(async () => {
@@ -927,7 +947,7 @@ try {
       visibility: { hero: false, drawer: true }
     });
     const legacyChanged = new Promise(resolve => legacyEditor.addEventListener('config-changed', event => resolve(event.detail.config), { once: true }));
-    const legacyToggle = legacyEditor.shadowRoot.querySelector('[data-path="home_status_visibility.hero"]');
+    const legacyToggle = legacyEditor.shadowRoot.querySelector('[data-path="home_status_visibility.left"]');
     legacyToggle.checked = true;
     legacyToggle.dispatchEvent(new Event('change', { bubbles: true }));
     return { nativeConfig: await nativeChanged, legacyConfig: await legacyChanged };
@@ -937,7 +957,7 @@ try {
   ]);
   assert.equal(visibilityCompatibility.nativeConfig.home_status_visibility.drawer, true);
   assert.equal(visibilityCompatibility.legacyConfig.visibility, undefined);
-  assert.equal(visibilityCompatibility.legacyConfig.home_status_visibility.hero, true);
+  assert.equal(visibilityCompatibility.legacyConfig.home_status_visibility.left, true);
   assert.equal(visibilityCompatibility.legacyConfig.home_status_visibility.drawer, true);
   const forcedPhone = await renderAt(1440, 'phone');
   assert.notEqual(forcedPhone.phone, 'none');

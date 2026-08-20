@@ -363,7 +363,12 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Image/video media is a presentation capability, not a provider type.
         # Any current/recent/awareness item that carries valid media joins the
         # Visual Center rotation automatically.
-        visual_queue = media_visual_queue([*native_current, *awareness, *native_recent])
+        visual_center_enabled = bool(self.options.get("visual_center_enabled", True))
+        visual_queue = (
+            media_visual_queue([*native_current, *awareness, *native_recent])
+            if visual_center_enabled
+            else []
+        )
         visual_queue_active = bool(visual_queue)
         priority = self._native_priority(native_current)
         weather_effect = self._weather_visual_effect(awareness)
@@ -390,6 +395,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "visual_news_duration": self._int_option("visual_news_duration", 12, minimum=1),
                 "visual_stream_duration": self._int_option("visual_stream_duration", 24, minimum=1),
                 "media_enabled": bool(self.options.get("media_enabled", True)),
+                "visual_center_enabled": visual_center_enabled,
             },
             "presentation": presentation_preferences(self.options),
             "last_updated": self._now(),

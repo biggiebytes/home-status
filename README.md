@@ -15,6 +15,11 @@ household view. Rather than asking everyone to scan a dashboard full of entity
 cards, it brings together the information that deserves attention and presents
 it in a form that makes sense at a glance.
 
+Version 1.0.0 adds tablet-performance improvements, configurable single and
+slot lane modes with natural-flow sizing, global and card-level Visual Center
+controls, light/dark/auto themes, balanced columns when no Visual Center is
+available, and ESPN Sports Ticker support across the published leagues.
+
 It complements the dashboards you already use for control and exploration. Use
 Home Status to understand the house; open your existing security, camera,
 climate, music, or energy views when you want to act.
@@ -188,7 +193,7 @@ explicitly enable them.
 
 ## Technical notes
 
-This README describes the validated **0.9.18** behavior. For contributors, run
+This README describes the validated **1.0.0** behavior. For contributors, run
 the release checks with:
 
 ```sh

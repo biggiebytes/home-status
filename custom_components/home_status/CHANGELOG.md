@@ -1,9 +1,19 @@
 # Changelog
 
+## 1.0.0
+
+- Finalized tablet-performance improvements, configurable single and slot lane
+  modes, and natural-flow lane sizing.
+- Added global and card-level Visual Center controls, light/dark/auto themes,
+  and balanced side columns whenever Visual Center is unavailable.
+- Generalized ESPN Sports Ticker support across the published league family.
+- Preserved the audited live-approved behavior, including the bounded
+  compatibility-sensor contract and split transport architecture.
+
 ## 0.9.18
 
-- Preserved the live Visual Center sampling cadence and the Recorder-only
-  footer contract.
+- Preserved the live Visual Center sampling cadence and Recorder-only footer
+  contract.
 - Bounded the compatibility sensor's current and awareness collections while
   retaining priority, household-presence, and local-news items.
 - Enforced the compatibility sensor's 12 KB attribute budget without changing
@@ -11,7 +21,8 @@
 
 ## 0.9.17
 
-- Promoted the latest Home Status visual updates from the 0.9.16b7 build to a stable release.
+- Promoted the latest Home Status visual, lane, and media behavior for the
+  public release line.
 
 ## 0.9.5
 

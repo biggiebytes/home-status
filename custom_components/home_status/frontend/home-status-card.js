@@ -665,6 +665,7 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'recent_drawer_limit',
   'rotation_seconds',
   'lane_mode',
+  'theme_mode',
   'footer_speed',
   'phone_ticker_speed'
 ]);
@@ -1130,6 +1131,14 @@ class HomeStatusCard extends HTMLElement {
         ? config.lane_mode
         : 'slots';
 
+    // Dark remains the compatibility default so upgrading an existing card
+    // never changes its appearance merely because Home Assistant is light.
+    // Users can explicitly choose Auto to follow HA's current appearance.
+    const themeMode =
+      ['auto', 'light', 'dark'].includes(config.theme_mode)
+        ? config.theme_mode
+        : 'dark';
+
     this._rawConfig =
       homeStatusClone(config);
 
@@ -1151,6 +1160,9 @@ class HomeStatusCard extends HTMLElement {
 
       lane_mode:
         laneMode,
+
+      theme_mode:
+        themeMode,
 
       left:
         leftConfig,
@@ -1310,6 +1322,8 @@ class HomeStatusCard extends HTMLElement {
       this._config.animation.level
     );
 
+    this._applyThemeMode();
+
     this.style.maxWidth =
       this._config.sizing.max_width
         ? `${this._config.sizing.max_width}px`
@@ -1345,6 +1359,30 @@ class HomeStatusCard extends HTMLElement {
     this._updateCard();
   }
 
+  _applyThemeMode(hass = this._hass) {
+    const requested = this._config?.theme_mode || 'dark';
+    let resolved = requested;
+
+    if (requested === 'auto') {
+      const haDark = hass?.themes?.darkMode;
+      // HA exposes darkMode on the theme manager. Fall back to the browser
+      // preference only until hass is available during initial card setup.
+      resolved = typeof haDark === 'boolean'
+        ? (haDark ? 'dark' : 'light')
+        : (window.matchMedia?.('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light');
+    }
+
+    if (!['light', 'dark'].includes(resolved)) resolved = 'dark';
+    if (this.dataset.themeMode !== resolved) {
+      this.dataset.themeMode = resolved;
+    }
+    if (this.dataset.themePreference !== requested) {
+      this.dataset.themePreference = requested;
+    }
+  }
+
   _hassInputSignature(hass) {
     const parts = [];
     const seen = new Set();
@@ -1378,6 +1416,7 @@ class HomeStatusCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this._applyThemeMode(hass);
 
     const nextInputSignature = this._hassInputSignature(hass);
     if (
@@ -7162,13 +7201,16 @@ class HomeStatusCard extends HTMLElement {
       this._config.display
         ?.media_enabled;
 
+    const globalVisualCenterEnabled =
+      data.display?.visual_center_enabled !== false;
+
     this._mediaEnabled =
-      configuredMedia === undefined
-        ? data.display
-            ?.media_enabled !==
-          false
-        : configuredMedia !==
-          false;
+      globalVisualCenterEnabled &&
+      (
+        configuredMedia === undefined
+          ? data.display?.media_enabled !== false
+          : configuredMedia !== false
+      );
 
     if (data.unavailable) {
       this.shadowRoot.innerHTML =
@@ -7829,13 +7871,16 @@ class HomeStatusCard extends HTMLElement {
       this._config.display
         ?.media_enabled;
 
+    const globalVisualCenterEnabled =
+      data.display?.visual_center_enabled !== false;
+
     const mediaEnabled =
-      configuredMedia === undefined
-        ? data.display
-            ?.media_enabled !==
-          false
-        : configuredMedia !==
-          false;
+      globalVisualCenterEnabled &&
+      (
+        configuredMedia === undefined
+          ? data.display?.media_enabled !== false
+          : configuredMedia !== false
+      );
 
     if (
       mediaEnabled !==
@@ -8870,6 +8915,9 @@ class HomeStatusCard extends HTMLElement {
       lane_mode:
         'slots',
 
+      theme_mode:
+        'dark',
+
       time_entity:
         '',
 
@@ -9748,6 +9796,11 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'slots', label: 'Three independent slots' },
           { value: 'single', label: 'Single rotating item (original)' }
         ], 'slots', 'Choose the enhanced three-row lanes or the original one-item-per-side presentation.')}
+        ${this._select('theme_mode', 'Appearance', [
+          { value: 'dark', label: 'Dark' },
+          { value: 'light', label: 'Light' },
+          { value: 'auto', label: 'Auto (follow Home Assistant)' }
+        ], 'dark', 'Dark preserves the existing Home Status look. Auto follows Home Assistant light/dark appearance.')}
       </div></details>
       <details data-section="visibility"${sectionOpen('visibility', true) ? ' open' : ''}${levelHidden('customize')}><summary>What appears</summary><div class="section">
         ${this._toggle('utility_header.enabled', 'Clock, security & music header', true)}
@@ -10210,6 +10263,104 @@ const CSS = `
   container-type:inline-size;
 }
 
+/* Local appearance system. Dark is the compatibility baseline; light can be
+   forced independently or selected automatically from Home Assistant. */
+:host([data-theme-mode="light"]) {
+  --primary-text-color:#1f2933;
+  --secondary-text-color:#66727e;
+  --card-background-color:#f7f9fb;
+  --secondary-background-color:#edf1f5;
+  --divider-color:rgba(36,49,61,.14);
+  color:#1f2933;
+}
+
+:host([data-theme-mode="light"]) ha-card {
+  color:#1f2933;
+}
+
+:host([data-theme-mode="light"]) .utility-header,
+:host([data-theme-mode="light"]) .ticker {
+  border-color:rgba(36,49,61,.14);
+  background:linear-gradient(135deg,rgba(250,252,254,.96),rgba(235,240,245,.94));
+  box-shadow:0 8px 24px rgba(36,49,61,.12),inset 0 1px 0 rgba(255,255,255,.9);
+}
+
+:host([data-theme-mode="light"]) .ticker-zone {
+  border-color:rgba(36,49,61,.11) !important;
+  background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(231,237,242,.48)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.88) !important;
+}
+
+:host([data-theme-mode="light"]) .secondary-zone,
+:host([data-theme-mode="light"]) .utility-security,
+:host([data-theme-mode="light"]) .utility-weather,
+:host([data-theme-mode="light"]) .utility-music {
+  border-color:rgba(36,49,61,.12) !important;
+}
+
+:host([data-theme-mode="light"]) .utility-time,
+:host([data-theme-mode="light"]) .utility-security strong,
+:host([data-theme-mode="light"]) .utility-weather-temp,
+:host([data-theme-mode="light"]) .utility-weather-copy strong,
+:host([data-theme-mode="light"]) .utility-music-summary strong {
+  color:#18222c;
+}
+
+:host([data-theme-mode="light"]) .utility-time small,
+:host([data-theme-mode="light"]) .utility-date,
+:host([data-theme-mode="light"]) .utility-security small,
+:host([data-theme-mode="light"]) .utility-weather-copy small,
+:host([data-theme-mode="light"]) .utility-music-summary small,
+:host([data-theme-mode="light"]) .utility-music-summary em,
+:host([data-theme-mode="light"]) .music-source > span {
+  color:#66727e;
+}
+
+:host([data-theme-mode="light"]) .utility-security:hover,
+:host([data-theme-mode="light"]) .utility-security:focus-visible,
+:host([data-theme-mode="light"]) .utility-music-summary:hover,
+:host([data-theme-mode="light"]) .utility-music-summary:focus-visible {
+  background:rgba(36,49,61,.055);
+}
+
+:host([data-theme-mode="light"]) .utility-music-art,
+:host([data-theme-mode="light"]) .utility-music-controls button {
+  background:rgba(36,49,61,.07);
+  box-shadow:inset 0 0 0 1px rgba(36,49,61,.06);
+}
+
+:host([data-theme-mode="light"]) .utility-music-controls button { color:#44515e; }
+:host([data-theme-mode="light"]) .utility-music-controls button:hover,
+:host([data-theme-mode="light"]) .utility-music-controls button:focus-visible {
+  background:rgba(36,49,61,.12);
+  color:#18222c;
+}
+:host([data-theme-mode="light"]) .utility-music-controls .music-play-toggle {
+  background:rgba(76,175,80,.14);
+  color:#2e7d32;
+}
+:host([data-theme-mode="light"]) .music-volume-icon { color:#66727e; }
+:host([data-theme-mode="light"]) .music-source select {
+  border-color:rgba(36,49,61,.13);
+  background:rgba(255,255,255,.72);
+  color:#27333e;
+}
+
+:host([data-theme-mode="light"]) .visual-center {
+  border-color:rgba(36,49,61,.14);
+  background:rgba(218,225,231,.72);
+}
+
+/* Media overlays intentionally remain dark translucent scrims in both themes
+   so titles remain readable over arbitrary photographs/video. */
+:host([data-theme-mode="light"]) .semantic-white { color:#52606d; }
+
+:host([data-theme-mode="light"]) .drawer-host,
+:host([data-theme-mode="light"]) .context-bar,
+:host([data-theme-mode="light"]) .drawer-panel {
+  color:#1f2933;
+}
+
 :host([data-drawer-open]) {
   width:var(--home-status-drawer-inline-size) !important;
   min-width:var(--home-status-drawer-inline-size) !important;
@@ -10329,7 +10480,7 @@ const CSS = `
 
 .ticker-zones {
   display:grid;
-  grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr) 30px;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
   gap:10px;
   align-items:center;
   width:100%;
@@ -10575,7 +10726,13 @@ const CSS = `
 
 .zone-lane {
   display:grid;
-  grid-template-rows:repeat(3,minmax(0,1fr));
+  /*
+   * Three-slot mode means "up to three visible items", not three rigid
+   * one-third-height boxes. Each row gets at least its natural content
+   * height, then shares whatever vertical room remains.
+   */
+  grid-template-rows:repeat(3,minmax(min-content,1fr));
+  align-content:stretch;
   width:100%;
   height:100%;
   min-height:0;
@@ -10586,7 +10743,7 @@ const CSS = `
   display:block;
   width:100%;
   min-width:0;
-  min-height:0;
+  min-height:min-content;
   overflow:hidden;
 }
 
@@ -10626,8 +10783,8 @@ const CSS = `
   grid-template-columns:38px minmax(0,1fr);
   align-items:center;
   width:100%;
-  height:100%;
-  min-height:0;
+  height:auto;
+  min-height:100%;
   padding:7px 12px;
   box-sizing:border-box;
   overflow:hidden;
@@ -10667,19 +10824,24 @@ const CSS = `
   flex-direction:column;
   justify-content:center;
   min-width:0;
-  max-height:100%;
-  overflow:hidden;
+  max-height:none;
+  overflow:visible;
 }
 
 .zone-lane .lane-title {
   display:-webkit-box;
   overflow:hidden;
   -webkit-box-orient:vertical;
-  -webkit-line-clamp:2;
+  /*
+   * Let normal content wrap naturally. Four lines is only a guardrail for
+   * malformed/novel-length payloads, not the normal row geometry.
+   */
+  -webkit-line-clamp:4;
   color:rgba(255,255,255,.96);
   font-weight:760;
   line-height:1.08;
   white-space:normal;
+  overflow-wrap:anywhere;
 }
 
 .primary-zone .zone-lane .lane-title {
@@ -10707,10 +10869,12 @@ const CSS = `
   margin-top:4px;
   overflow:hidden;
   -webkit-box-orient:vertical;
-  -webkit-line-clamp:1;
+  -webkit-line-clamp:3;
   color:rgba(255,255,255,.66);
   font-weight:520;
   line-height:1.12;
+  white-space:normal;
+  overflow-wrap:anywhere;
 }
 
 .primary-zone .zone-lane .lane-summary {
@@ -12054,6 +12218,46 @@ const CSS = `
   font-size:21px !important;
   font-weight:680 !important;
 }
+
+/* Light-theme readability overrides.
+   Keep these at the end of the card stylesheet so later tablet typography
+   rules cannot restore dark-theme white text. Dark mode is untouched. */
+:host([data-theme-mode="light"]) .zone-single .lane-title,
+:host([data-theme-mode="light"]) .zone-lane .lane-title,
+:host([data-theme-mode="light"]) .zone-empty,
+:host([data-theme-mode="light"]) .footer-marquee-copy strong,
+:host([data-theme-mode="light"]) .phone-status-ticker-copy strong {
+  color:#1f2933 !important;
+  text-shadow:none !important;
+}
+
+:host([data-theme-mode="light"]) .zone-single .lane-summary,
+:host([data-theme-mode="light"]) .zone-lane .lane-summary,
+:host([data-theme-mode="light"]) .footer-marquee-copy small,
+:host([data-theme-mode="light"]) .phone-status-ticker-copy small {
+  color:#66727e !important;
+  opacity:1 !important;
+  text-shadow:none !important;
+}
+
+:host([data-theme-mode="light"]) .lane-slot:not(:last-child) {
+  border-bottom-color:rgba(36,49,61,.13) !important;
+}
+
+:host([data-theme-mode="light"][data-lane-mode="single"]) .secondary-zone {
+  border-left-color:rgba(36,49,61,.13) !important;
+}
+
+:host([data-theme-mode="light"]) .zone-lane .lane-item:hover {
+  background:rgba(36,49,61,.045) !important;
+}
+
+:host([data-theme-mode="light"]) .footer-marquee-item::after,
+:host([data-theme-mode="light"]) .footer-sequence > .footer-marquee-item:not(:last-child)::after {
+  border-color:rgba(36,49,61,.13) !important;
+  background:rgba(36,49,61,.13) !important;
+}
+
 `;
 
 if (

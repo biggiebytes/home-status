@@ -56,6 +56,29 @@ def _is_utility_source_sensor(entry, state) -> bool:
     )
 
 
+
+
+def _is_sports_source_sensor(entry, state) -> bool:
+    """Identify user-selectable ESPN Sports Ticker sources."""
+    if entry.entity_id.split(".", 1)[0] != "sensor" or state is None:
+        return False
+    entity_id = entry.entity_id.casefold()
+    if not entity_id.startswith("sensor.espn_"):
+        return False
+    if entity_id.endswith("_player_leaders_raw"):
+        return False
+    if not (entity_id.endswith("_next_game") or entity_id.endswith("_scoreboard_raw")):
+        return False
+    return str(state.attributes.get("source") or "espn").casefold() == "espn"
+
+
+def _sports_compact_companion_entity_id(entity_id: str) -> str | None:
+    value = str(entity_id or "").casefold()
+    if not value.endswith("_scoreboard_raw"):
+        return None
+    return f"{value[:-len('_scoreboard_raw')]}_next_game"
+
+
 def _is_event_feed_sensor(entry, state) -> bool:
     """Identify a provider-neutral sensor exposing structured event metadata."""
     if entry.entity_id.split(".", 1)[0] != "sensor" or state is None:
@@ -87,6 +110,11 @@ def discover_sources(hass: HomeAssistant) -> list[HomeSource]:
                 kind = "traffic"
             elif _is_utility_source_sensor(entry, state):
                 kind = "utility"
+            elif _is_sports_source_sensor(entry, state):
+                companion = _sports_compact_companion_entity_id(entry.entity_id)
+                if companion and hass.states.get(companion) is not None:
+                    continue
+                kind = "sports"
             elif _is_event_feed_sensor(entry, state):
                 kind = "events"
             else:

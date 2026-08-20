@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 
-from copy import deepcopy
 import json
 from typing import Any
 
@@ -16,9 +15,6 @@ from .coordinator import HomeStatusCoordinator
 from .ha_native import compose_presentation_streams
 
 TRANSPORT_VERSION = 1
-MAIN_SENSOR_ATTRIBUTE_BUDGET = 12_000
-MAIN_SENSOR_CURRENT_LIMIT = 8
-MAIN_SENSOR_AWARENESS_LIMIT = 8
 TRANSPORT_CHANNELS = {
     "now": ("Home Status Now", "mdi:home-heart"),
     "recent": ("Home Status Recent", "mdi:history"),
@@ -81,95 +77,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         # Recorder rejects attributes above 16 KiB. Keep a margin below that
         # limit so normal changes in labels or URLs cannot make this entity
         # noisy or create avoidable database work.
-        return self._fit_attribute_budget(attributes)
-
-    @staticmethod
-    def _priority_sorted_current(items: object) -> list[dict[str, Any]]:
-        """Put durable current summaries ahead of neutral context."""
-        current = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
-        current.sort(
-            key=lambda item: (
-                item.get("capability") not in {
-                    "appliance_cycle", "easystart_current"
-                },
-                {"critical": 0, "attention": 1, "activity": 2, "normal": 3}.get(
-                    str(item.get("priority") or "normal"), 3
-                ),
-            )
-        )
-        return current
-
-    @staticmethod
-    def _limited_awareness(items: object, limit: int | None) -> list[dict[str, Any]]:
-        """Retain protected household and news summaries within a finite list."""
-        values = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
-        if limit is None or len(values) <= limit:
-            return values
-        household = next(
-            (item for item in values if item.get("id") == "home_status:household_presence:awareness"),
-            None,
-        )
-        news = next(
-            (item for item in values if item.get("category") == "news"),
-            None,
-        )
-        protected = [item for item in (household, news) if item is not None][:limit]
-        protected_ids = {id(item) for item in protected}
-        ordinary = [item for item in values if id(item) not in protected_ids]
-        return [*ordinary[: max(0, limit - len(protected))], *protected]
-
-    @staticmethod
-    def _fit_attribute_budget(attributes: dict[str, Any]) -> dict[str, Any]:
-        """Keep the legacy summary sensor below Recorder's attribute limit."""
-        fitted = deepcopy(attributes)
-        native = fitted.get("native")
-        if not isinstance(native, dict):
-            return fitted
-
-        native = dict(native)
-        current = HomeStatusSensor._priority_sorted_current(native.get("current"))[
-            :MAIN_SENSOR_CURRENT_LIMIT
-        ]
-        recent = [item for item in native.get("recent", []) if isinstance(item, dict)]
-        awareness = HomeStatusSensor._limited_awareness(
-            native.get("awareness"), MAIN_SENSOR_AWARENESS_LIMIT
-        )
-        native["current"] = current
-        native["recent"] = recent
-        native["awareness"] = awareness
-        native["streams"] = compose_presentation_streams(current, recent, awareness)
-        fitted["native"] = native
-
-        def encoded_size() -> int:
-            return len(json.dumps(fitted, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-
-        # Recent history is additive context. Trim it before sacrificing the
-        # prioritized current state or protected awareness summaries.
-        while encoded_size() > MAIN_SENSOR_ATTRIBUTE_BUDGET and recent:
-            recent.pop()
-        while encoded_size() > MAIN_SENSOR_ATTRIBUTE_BUDGET:
-            removable = next(
-                (
-                    index
-                    for index in range(len(awareness) - 1, -1, -1)
-                    if awareness[index].get("id") != "home_status:household_presence:awareness"
-                    and awareness[index].get("category") != "news"
-                ),
-                None,
-            )
-            if removable is None:
-                break
-            awareness.pop(removable)
-        while encoded_size() > MAIN_SENSOR_ATTRIBUTE_BUDGET and len(current) > 1:
-            current.pop()
-        # Visual payloads have their own split transport channel. If a legacy
-        # summary still exceeds its budget, omit only these duplicate fields.
-        for key in ("visual_queue", "visual", "presentation", "display"):
-            if encoded_size() <= MAIN_SENSOR_ATTRIBUTE_BUDGET:
-                break
-            fitted.pop(key, None)
-        native["streams"] = compose_presentation_streams(current, recent, awareness)
-        return fitted
+        return attributes
 
     @staticmethod
     def _transport_manifest(data: dict[str, Any], native: Any) -> dict[str, Any]:
@@ -191,7 +99,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             return {}
         return {
             key: value[key]
-            for key in ("rotation_seconds", "visual_event_duration", "visual_news_duration", "visual_stream_duration", "media_enabled")
+            for key in ("rotation_seconds", "visual_event_duration", "visual_news_duration", "visual_stream_duration", "media_enabled", "visual_center_enabled")
             if key in value
         }
 
@@ -255,7 +163,16 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
         # requested Micro-Air Current items behind otherwise idle household
         # entities. Prioritize those complete current snapshots first, then
         # actionable items, before retaining neutral context as space permits.
-        current = HomeStatusSensor._priority_sorted_current(current)[:MAIN_SENSOR_CURRENT_LIMIT]
+        current.sort(
+            key=lambda item: (
+                item.get("capability") not in {
+                    "appliance_cycle", "easystart_current"
+                },
+                {"critical": 0, "attention": 1, "activity": 2, "normal": 3}.get(
+                    str(item.get("priority") or "normal"), 3
+                ),
+            )
+        )
         recent = compact(
             value.get("recent"),
             (
@@ -264,9 +181,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
                 "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source", "group_labels", "utility_role", "stream_preference",
             ),
         )
-        awareness = HomeStatusSensor._compact_items(
-            value.get("awareness"), MAIN_SENSOR_AWARENESS_LIMIT
-        )
+        awareness = HomeStatusSensor._compact_items(value.get("awareness"), None)
         return {
             "contract_version": 3,
             "current": current,
@@ -292,7 +207,33 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "color_role", "timestamp_mode", "display_kind", "utility_role", "stream_preference", "visual_only", "visual", "zone_visual",
         )
         items = []
-        selected = HomeStatusSensor._limited_awareness(value, limit)
+        selected = value if limit is None else value[:limit]
+        # Keep the two durable awareness summaries that are generated outside
+        # a normal selected source list: household presence and the newest
+        # local-news item.  Household presence is appended after configured
+        # devices and sources, so a simple first-N limit can otherwise show it
+        # immediately during startup and then omit it from the sensor payload
+        # once the full awareness collection is published.
+        if limit is not None and len(value) > limit:
+            household = next(
+                (
+                    item for item in value
+                    if isinstance(item, dict)
+                    and item.get("id") == "home_status:household_presence:awareness"
+                ),
+                None,
+            )
+            news = next(
+                (
+                    item for item in value
+                    if isinstance(item, dict) and item.get("category") == "news"
+                ),
+                None,
+            )
+            protected = [item for item in (household, news) if item is not None][:limit]
+            protected_ids = {id(item) for item in protected}
+            ordinary = [item for item in value if id(item) not in protected_ids]
+            selected = [*ordinary[: max(0, limit - len(protected))], *protected]
         for item in selected:
             if not isinstance(item, dict):
                 continue

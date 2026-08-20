@@ -269,6 +269,12 @@ class HomeStatusEngine:
                 for entity in self._manual_observation_context(selected).entities
             ),
             *(source.entity_id for source in self.selected_sources(options)),
+            *(
+                f"{source.entity_id[:-len('_next_game')]}_scoreboard_raw"
+                for source in self.selected_sources(options)
+                if source.kind == "sports"
+                and source.entity_id.casefold().endswith("_next_game")
+            ),
             *(self._household_person_ids(options) if options.get("household_presence_enabled", False) else ()),
         ]))
 
