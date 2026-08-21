@@ -4,9 +4,13 @@
 
 Home Status turns the signals already in Home Assistant into one calm, glanceable view: what needs attention now, what just changed, and what is coming up next. It complements the dashboards you use for control; Home Status helps everyone understand the home at a glance.
 
+![Home Status overview animation](docs/screenshots/home-status-overview.gif)
+
+*Home Status brings live information, recent activity, and optional Visual Center media into one tablet-first Notification Center.*
+
 ![Home Status in dark theme with Visual Center](docs/screenshots/v1-dark-visual-center.png)
 
-*A tablet-first Notification Center with live information, recent activity, and optional Visual Center media.*
+*Dark theme with Visual Center enabled.*
 
 ## What Home Status shows
 
