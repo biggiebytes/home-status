@@ -32,6 +32,10 @@ __pycache__/
 htmlcov/
 .venv/
 venv/
+.tox/
+.nox/
+.hypothesis/
+*.egg-info/
 
 # JavaScript
 node_modules/
@@ -45,6 +49,8 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+*.code-workspace
+.fleet/
 *.swp
 *.swo
 
@@ -52,9 +58,16 @@ desktop.ini
 dist/
 build/
 coverage/
+playwright-report/
+test-results/
+reports/
 tmp/
 temp/
 .codex-live-staging/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 *.before
 *.bak
 *.orig
