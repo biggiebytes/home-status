@@ -67,9 +67,6 @@ def _entity_friendly_name(hass, entity_id: str) -> str:
     )
 
 
-def _raw_entity_name(entity_id: str) -> str:
-    return entity_id.split(".", 1)[-1]
-
 
 class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -137,8 +134,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_presentation()
         if parent == "sources":
             return await self.async_step_sources()
-        if parent == "advanced":
-            return await self.async_step_advanced()
         if parent == "names":
             return await self.async_step_names()
         return await self.async_step_init()
@@ -191,7 +186,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open the compact native Home Status reconfiguration navigator."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["monitoring", "sources", "presentation", "advanced"],
+            menu_options=["monitoring", "sources", "presentation"],
         )
 
     async def async_step_back_to_init(self, user_input=None):
@@ -206,15 +201,11 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Return to Presentation & behavior."""
         return await self.async_step_presentation()
 
-    async def async_step_back_to_advanced(self, user_input=None):
-        """Return to Advanced settings."""
-        return await self.async_step_advanced()
-
     async def async_step_monitoring(self, user_input=None):
         """Open dedicated monitoring management pages."""
         return self.async_show_menu(
             step_id="monitoring",
-            menu_options=["monitoring_entities", "monitoring_devices", "back_to_init"],
+            menu_options=["monitoring_devices", "monitoring_entities", "household_presence", "information_sources", "news_sources", "back_to_init"],
         )
 
     async def async_step_monitoring_entities(self, user_input=None):
@@ -438,7 +429,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open information and visual source settings."""
         return self.async_show_menu(
             step_id="sources",
-            menu_options=["information_sources", "household_presence", "news_sources", "live_news_sources", "visual_sources", "back_to_init"],
+            menu_options=["visual_sources", "live_news_sources", "back_to_init"],
         )
 
     async def async_step_information_sources(self, user_input=None):
@@ -447,7 +438,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             options = self._options()
             options["selected_sources"] = list(user_input.get("selected_sources", []))
-            return await self._save_options_and_return(options, "sources")
+            return await self._save_options_and_return(options, "monitoring")
         return self.async_show_form(
             step_id="information_sources",
             data_schema=vol.Schema({
@@ -471,7 +462,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             options["household_presence_enabled"] = bool(user_input.get("enabled", False))
             options["household_presence_people"] = list(user_input.get("people", []))
-            return await self._save_options_and_return(options, "sources")
+            return await self._save_options_and_return(options, "monitoring")
         return self.async_show_form(
             step_id="household_presence",
             data_schema=vol.Schema({
@@ -483,7 +474,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _visual_source_choices(self):
-        choices = [{"value": "__add__", "label": "Add camera visual source"}]
+        choices = [{"value": "__add__", "label": "Add a camera"}]
         for source in self.entry.options.get("visual_sources", []):
             if not isinstance(source, dict) or source.get("type") != "camera":
                 continue
@@ -494,7 +485,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 continue
             choices.append({
                 "value": source_id,
-                "label": f"{_entity_friendly_name(self.hass, camera)} when {_entity_friendly_name(self.hass, trigger)} is {source.get('trigger_state', 'on')}",
+                "label": f"{_entity_friendly_name(self.hass, camera)} — shows when {_entity_friendly_name(self.hass, trigger)} is {source.get('trigger_state', 'on')}",
             })
         return choices
 
@@ -549,7 +540,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             if not user_input.get("remove_source", False):
                 feeds.append({"id": self._news_source_id or uuid4().hex, "name":str(user_input["name"]).strip() or "News", "url":url, "enabled":bool(user_input.get("enabled", True)), "priority":str(user_input.get("priority", "normal")), "show_visual":bool(user_input.get("show_visual", True))})
             options["news_sources"] = feeds
-            return await self._save_options_and_return(options, "sources")
+            return await self._save_options_and_return(options, "monitoring")
         return self.async_show_form(step_id="news_source_edit", data_schema=self._news_schema(current))
 
     def _news_schema(self, current):
@@ -669,46 +660,6 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("enabled", default=current.get("enabled", True)): selector.BooleanSelector(),
                 vol.Optional("resumable", default=current.get("resumable", True)): selector.BooleanSelector(),
                 vol.Optional("remove_source", default=False): selector.BooleanSelector(),
-            }),
-        )
-
-    async def async_step_advanced(self, user_input=None):
-        return self.async_show_menu(
-            step_id="advanced",
-            menu_options=["devices", "entities_advanced", "back_to_init"],
-        )
-
-    async def async_step_devices(self, user_input=None):
-        current = _selected(self.entry, "selected_devices")
-        if user_input is not None:
-            options = self._options()
-            options["selected_devices"] = list(user_input.get("selected_devices", []))
-            return await self._save_options_and_return(options, "advanced")
-        return self.async_show_form(
-            step_id="devices",
-            data_schema=vol.Schema({
-                vol.Optional("selected_devices", default=current): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=_home_device_choices(self.hass),
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }),
-        )
-
-    async def async_step_entities_advanced(self, user_input=None):
-        current = _selected(self.entry, "selected_entities")
-        if user_input is not None:
-            options = self._options()
-            options["selected_entities"] = list(user_input.get("selected_entities", []))
-            return await self._save_options_and_return(options, "advanced")
-        return self.async_show_form(
-            step_id="entities_advanced",
-            data_schema=vol.Schema({
-                vol.Optional("selected_entities", default=current): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                )
             }),
         )
 
@@ -942,7 +893,7 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
             options["visual_event_duration"] = max(1, min(300, int(user_input.get("visual_event_duration", 6))))
             options["visual_news_duration"] = max(1, min(300, int(user_input.get("visual_news_duration", 12))))
             options["visual_stream_duration"] = max(1, min(300, int(user_input.get("visual_stream_duration", 24))))
-            return await self._save_options_and_return(options, "presentation")
+            return await self._save_options_and_return(options, "sources")
         return self.async_show_form(
             step_id="visual_center",
             data_schema=vol.Schema({

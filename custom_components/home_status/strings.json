@@ -3,16 +3,16 @@
     "step": {
       "user": {
         "title": "Set up Home Status",
-        "description": "Choose what Home Status should watch and surface. Select individual entities for precise control, whole devices when related sensors should be interpreted together, and non-device information such as weather or calendars. You can change these selections later.",
+        "description": "Start by choosing a few things you want Home Status to understand. You can add or remove anything later. Use a whole device when several related entities describe one thing, an individual entity when you only need one specific state, and an information source for awareness such as weather or calendars.",
         "data": {
-          "selected_entities": "Entities you want to monitor",
-          "selected_devices": "Whole devices you want to monitor",
+          "selected_entities": "Individual entities",
+          "selected_devices": "Whole devices",
           "selected_sources": "Information sources"
         },
         "data_description": {
-          "selected_entities": "Use this for exact control over specific sensors, binary sensors, alarms, or other entities you want Home Status to watch.",
-          "selected_devices": "Use a whole device when several related entities belong together, such as a washer, dryer, dishwasher, thermostat, or similar device.",
-          "selected_sources": "Choose supported information that is not primarily a device, such as weather, calendars, location, or other Home Status sources."
+          "selected_entities": "Choose a specific Home Assistant entity when that one state is what matters. Examples: a door contact, leak sensor, motion sensor, alarm, or a single template sensor.",
+          "selected_devices": "Choose the whole device when Home Status should understand several related entities together. This is usually best for washers, dryers, dishwashers, locks, thermostats, and similar devices.",
+          "selected_sources": "Choose non-device awareness information such as weather, calendars, location/traffic, or other supported Home Status sources. News, cameras, and live media can be added after setup."
         }
       }
     }
@@ -20,13 +20,12 @@
   "options": {
     "step": {
       "init": {
-        "title": "Home Status - Reconfiguration",
-        "description": "Configure what Home Status monitors, how information is presented on the card, and how recent activity is retained. These settings affect Home Status only; they do not change your Home Assistant devices, entities, or Recorder history.",
+        "title": "Home Status - Configuration",
+        "description": "Choose what Home Status should display, add video or image sources for Visual Center, and customize shared display behavior. Each section explains what belongs there. Looking for settings for one specific dashboard card—such as lane mode, ticker speed, section visibility, or that card’s theme? Open your dashboard, edit the Home Status card, and use its visual card editor.",
         "menu_options": {
-          "monitoring": "Monitoring",
-          "sources": "Information sources",
-          "presentation": "Presentation & behavior",
-          "advanced": "Advanced settings"
+          "monitoring": "Items to Display",
+          "sources": "Video & Image Sources",
+          "presentation": "Customize Display & Behavior"
         }
       },
       "manage": {
@@ -101,113 +100,153 @@
         }
       },
       "sources": {
-        "title": "Information Sources",
-        "description": "Manage the information Home Status can surface and the generic visual sources available to Visual Center.",
+        "title": "Video & Image Sources",
+        "description": "Add cameras and live video to Visual Center. A camera can appear automatically when another Home Assistant entity activates—for example, show your front door camera when the doorbell is pressed, or show a driveway camera when motion is detected. Use Live video for direct HLS streams.",
         "menu_options": {
-          "information_sources": "Information sources",
-          "household_presence": "Household presence",
-          "news_sources": "News sources",
-          "live_news_sources": "Live News sources",
-          "visual_sources": "Visual sources",
-          "back_to_init": "← Back to Reconfiguration"
+          "visual_sources": "Cameras",
+          "live_news_sources": "Live video (HLS)",
+          "back_to_init": "← Back to Configuration"
         }
       },
       "news_sources": {
-        "title": "News sources",
-        "description": "Add one generic RSS or Atom feed. Feed-provided images may appear in Visual Center only for genuinely new articles.",
-        "data": {"news_source":"News source"}
-      },
-      "news_source_edit": {
-        "title": "RSS/Atom feed",
-        "description": "Configure a generic news feed. An image is used only when the feed itself supplies one.",
-        "data": {"name":"Name","url":"RSS/Atom feed URL","enabled":"Enabled","priority":"Priority","show_visual":"Show in Visual Center","remove_source":"Remove this feed"}
-      },
-      "live_news_sources": {
-        "title": "Live News sources",
-        "description": "Add Direct HTTPS HLS streams for shared, rotating Visual Center samples. These streams do not create ticker or history items.",
-        "data": {"live_news_source":"Live News source"}
-      },
-      "live_news_source_edit": {
-        "title": "Live HLS source",
-        "description": "Configure one source for the shared Live News rotation. Higher-priority visuals take over immediately; Live News waits for its next scheduled sample.",
-        "data": {"name":"Name","url":"Direct HTTPS HLS URL (.m3u8)","enabled":"Enabled","priority":"Visual priority","remove_source":"Remove this source"},
-        "data_description": {"url":"Use a direct HTTPS HLS manifest URL. Home Status does not scrape or adapt publisher websites."}
-      },
-      "live_news_settings": {
-        "title": "Live News sampling settings",
-        "description": "Set the shared Live News sampling cadence. Actual on-screen stream duration is controlled under Presentation & behavior → Visual Center.",
-        "data": {"sample_interval":"Time between samples (seconds)","mute":"Mute audio"},
-        "data_description": {"sample_interval":"How long Home Status waits before selecting the next live channel in the rotation.","mute":"Keep autoplay muted. This is recommended for unattended household displays."}
-      },
-      "information_sources": {
-        "title": "Information sources",
-        "description": "Choose non-device information Home Status can surface, such as weather, calendars, location, and other supported sources. What appears on the card can be controlled separately under Presentation & behavior.",
+        "title": "News feeds",
+        "description": "Add RSS or Atom feeds for headlines. When a feed supplies an image, Home Status can also send that image to Visual Center.",
         "data": {
-          "selected_sources": "Information sources"
+          "news_source": "News feed"
         },
         "data_description": {
-          "selected_sources": "Select the information feeds Home Status may use. What appears on the card can be controlled separately under Presentation & behavior."
+          "news_source": "Choose Add RSS/Atom feed to add one, or select an existing feed to edit or remove it."
+        }
+      },
+      "news_source_edit": {
+        "title": "RSS/Atom news feed",
+        "description": "Add a standard RSS or Atom feed. Home Status reads the feed for new headlines; feed-provided images can optionally appear in Visual Center.",
+        "data": {
+          "name": "Name",
+          "url": "RSS/Atom feed URL",
+          "enabled": "Enabled",
+          "priority": "Priority",
+          "show_visual": "Show in Visual Center",
+          "remove_source": "Remove this feed"
+        },
+        "data_description": {
+          "name": "A friendly name shown in Home Status, such as Local News or Technology.",
+          "url": "Paste the direct RSS or Atom feed URL, not the normal web page address.",
+          "enabled": "Turn this feed on or off without deleting it.",
+          "priority": "Controls how strongly items from this feed compete with other Home Status information. Normal is recommended unless the feed is especially important.",
+          "show_visual": "When the feed provides an article image, allow that image to appear in Visual Center.",
+          "remove_source": "Delete this feed from Home Status when you save."
+        }
+      },
+      "live_news_sources": {
+        "title": "Live video",
+        "description": "Add direct HTTPS HLS (.m3u8) streams that Visual Center can sample and rotate. This is for direct stream URLs; Home Status does not scrape streaming websites.",
+        "data": {
+          "live_news_source": "Live video source"
+        },
+        "data_description": {
+          "live_news_source": "Choose Add live HLS source to add a stream, Live News sampling settings to control rotation behavior, or select an existing source to edit it."
+        }
+      },
+      "live_news_source_edit": {
+        "title": "Live HLS video",
+        "description": "Add one direct HTTPS HLS stream for Visual Center. This feature is intended for compatible .m3u8 streams that can play in the browser.",
+        "data": {
+          "name": "Name",
+          "url": "Direct HTTPS HLS URL (.m3u8)",
+          "enabled": "Enabled",
+          "priority": "Visual priority",
+          "remove_source": "Remove this source"
+        },
+        "data_description": {
+          "name": "A friendly name for this stream, such as Local News or Weather Channel.",
+          "url": "Paste the direct HTTPS .m3u8 HLS manifest URL. A normal website or video page URL will not work.",
+          "enabled": "Turn this stream on or off without deleting it.",
+          "priority": "Controls whether this stream should yield to or interrupt other available visual content. Normal is recommended for routine rotating streams.",
+          "remove_source": "Delete this live video source from Home Status when you save."
+        }
+      },
+      "live_news_settings": {
+        "title": "Live video rotation",
+        "description": "Control how often Home Status samples the next live HLS source and whether stream audio stays muted. The amount of time each stream remains on screen is set under Visual Center behavior.",
+        "data": {
+          "sample_interval": "Time between live-video samples (seconds)",
+          "mute": "Mute live-video audio"
+        },
+        "data_description": {
+          "sample_interval": "How long Home Status waits before selecting the next live HLS source for another sample.",
+          "mute": "Keep unattended streams muted so browser autoplay remains reliable. Recommended for wall tablets."
+        }
+      },
+      "information_sources": {
+        "title": "Weather, calendars & other information",
+        "description": "Add information here when it provides ongoing context rather than reporting the state of a physical device. Weather, calendars, traffic, utility information, sports, schedules, and event feeds belong here because Home Status uses them for awareness and upcoming information. Use Individual entities for things you want Home Status to watch for state changes, such as a door, leak sensor, motion sensor, or appliance state.",
+        "data": {
+          "selected_sources": "Information to use"
+        },
+        "data_description": {
+          "selected_sources": "The selections above are the information sources you have already added. To remove one from Home Status, click the X next to it, then select Submit."
         }
       },
       "household_presence": {
         "title": "Household presence",
-        "description": "Show one household summary such as Everyone Home, Everyone Away, or 2 of 4 Home. Select the people who belong in the household. While this is enabled, those people are grouped into one Home Status item instead of appearing separately in the card and ticker.",
+        "description": "Combine selected people into one easy-to-read household status such as Everyone Home, Everyone Away, or 2 of 4 Home. This avoids filling the card with a separate item for every person.",
         "data": {
-          "enabled": "Show one household presence summary",
+          "enabled": "Use one household presence summary",
           "people": "People in this household"
         },
         "data_description": {
-          "enabled": "Turn this on to replace separate person/location items for the selected people with one combined household item.",
-          "people": "Choose the Home Assistant person entities that should be counted together. Leave this empty to use all available person entities."
+          "enabled": "Turn this on to summarize the selected people as one Home Status item instead of showing separate person/location items.",
+          "people": "Choose the Home Assistant person entities that belong in the household. Leave this empty to use all available person entities."
         }
       },
       "visual_sources": {
-        "title": "Visual sources",
-        "description": "Add or edit visual content that Visual Center can show. Each source is generic: select a Home Assistant camera and the entity state that makes it available.",
+        "title": "Cameras",
+        "description": "Add cameras that Home Status should show when something happens. For example, show a front-door camera when a doorbell or visitor sensor turns on, or show a driveway camera when a motion sensor detects movement. Existing camera rules are listed here so you can edit or remove them.",
         "data": {
-          "visual_source": "Camera visual source"
+          "visual_source": "Camera setup"
         },
         "data_description": {
-          "visual_source": "Select an existing camera visual source to edit, or choose Add camera visual source."
+          "visual_source": "Choose Add a camera to create a new setup, or choose an existing camera to change when it appears."
         }
       },
       "visual_camera": {
-        "title": "Camera visual source",
-        "description": "Show the selected Home Assistant camera while the selected trigger entity has the chosen state. Home Status uses Home Assistant's camera capabilities; it does not require a direct stream URL.",
+        "title": "Camera setup",
+        "description": "Choose the camera to show and what should make it appear. Home Status uses your existing Home Assistant camera entity; no direct stream URL is required.",
         "data": {
-          "camera_entity_id": "Camera",
-          "trigger_entity_id": "Trigger entity",
+          "camera_entity_id": "Camera to show",
+          "trigger_entity_id": "Show this camera when…",
           "trigger_state": "Trigger state",
-          "priority": "Visual priority",
-          "hold_seconds": "Hold after trigger (seconds)",
-          "enabled": "Enable this visual source",
-          "resumable": "Allow this visual to resume",
-          "remove_source": "Remove this visual source"
+          "priority": "Importance",
+          "hold_seconds": "Keep showing after trigger clears (seconds)",
+          "enabled": "Use this camera setup",
+          "resumable": "Return to this camera after an interruption",
+          "remove_source": "Remove this camera setup"
         },
         "data_description": {
-          "camera_entity_id": "The Home Assistant camera to render when this source is active.",
-          "trigger_entity_id": "Any Home Assistant entity whose state determines when this camera visual is available.",
-          "trigger_state": "This source becomes active when the trigger entity exactly matches this state. The common default is on.",
-          "priority": "Higher-priority visuals temporarily take over Visual Center and lower-priority resumable visuals may return afterward.",
-          "hold_seconds": "After the trigger clears, keep this visual eligible for this many seconds. Set 0 to remove it immediately.",
-          "enabled": "Turn this source off without deleting its configuration.",
-          "resumable": "Keep this visual eligible again after a higher-priority visual ends.",
-          "remove_source": "Remove this camera visual source when you save."
+          "camera_entity_id": "Select the Home Assistant camera you want Visual Center to display.",
+          "trigger_entity_id": "Select the entity that tells Home Status when this camera is useful. Examples: a doorbell Visitor sensor, motion sensor, driveway sensor, gate contact, or another binary sensor.",
+          "trigger_state": "The camera appears when the trigger entity exactly matches this state. Most doorbell and motion binary sensors use on.",
+          "priority": "Controls which visual wins if more than one becomes available at the same time. Normal works for most cameras; use a higher level only when this camera should interrupt other visual content.",
+          "hold_seconds": "After the trigger stops, keep the camera available for this many additional seconds. Use 0 to remove it immediately.",
+          "enabled": "Turn this camera setup on or off without deleting it.",
+          "resumable": "If a higher-priority visual interrupts this camera, allow it to return afterward while it is still active or within its hold time.",
+          "remove_source": "Delete this camera setup when you save. This does not remove the camera from Home Assistant."
         }
       },
       "names": {
-        "title": "Names",
-        "description": "Choose a monitored item and set the name people see in Home Status. The list uses friendly names; raw entity IDs and provider data are not shown.",
+        "title": "Custom display names",
+        "description": "Give an item a friendlier, shorter, or more familiar name when it appears in Home Status. This is useful when the Home Assistant name is too technical or too long. For example, show “Front Door” instead of “Front Door Contact Sensor”. The original Home Assistant name is not changed.",
         "data": {
-          "item": "Item to rename"
+          "item": "Item to customize"
         },
         "data_description": {
-          "item": "Select the item whose Home Status display name you want to review or change."
+          "item": "Choose the item whose displayed name you want to customize in Home Status."
         }
       },
       "name_edit": {
-        "title": "Display name",
-        "description": "Use the normal Home Assistant friendly name or set a custom display name for Home Status.",
+        "title": "Custom display name",
+        "description": "Choose the normal Home Assistant friendly name or enter a different name to show only in Home Status. This does not rename the entity or device in Home Assistant.",
         "data": {
           "name_mode": "Name to display",
           "custom_name": "Custom name"
@@ -218,8 +257,8 @@
         }
       },
       "timing": {
-        "title": "Timing & history",
-        "description": "Control relative timestamps such as “Just now” or “5 min ago,” how long recent completed activity stays visible, and how much Home Status event history is retained.",
+        "title": "Recent activity & timestamps",
+        "description": "Choose how Home Status shows the time on recent activity, such as “Just now” or “5 min ago,” and how long completed activity stays available.",
         "sections": {
           "timestamps": {
             "name": "Relative timestamps",
@@ -234,92 +273,64 @@
             }
           },
           "retention": {
-            "name": "Retention",
+            "name": "Recent activity window",
             "data": {
-              "ticker_event_minutes": "Recorder recent activity window (minutes)"
+              "ticker_event_minutes": "Look back this many minutes"
             },
-            "description": "Set how long recent completed activity remains available for display and how many days of Home Status event history are kept.",
+            "description": "Choose how long completed or resolved activity remains available in Home Status, such as a door closing, a washer finishing, or a problem clearing.",
             "data_description": {
-              "ticker_event_minutes": "How far back Home Status reads Recorder transitions for recent activity."
+              "ticker_event_minutes": "Home Status keeps completed or resolved activity available for this many minutes. Increase the value if you want older activity to remain visible longer."
             }
           }
         }
       },
-      "advanced": {
-        "title": "Advanced settings",
-        "description": "Directly manage the selected entity and device lists. Most users should use Monitoring instead.",
-        "menu_options": {
-          "devices": "Whole device selection",
-          "entities_advanced": "Individual entity selection",
-          "back_to_init": "← Back to Reconfiguration"
-        }
-      },
-      "devices": {
-        "title": "Whole Device Selection",
-        "description": "Directly review the whole devices Home Status is monitoring as grouped devices.",
-        "data": {
-          "selected_devices": "Selected devices"
-        },
-        "data_description": {
-          "selected_devices": "Whole devices currently selected for grouped Home Status monitoring."
-        }
-      },
-      "entities_advanced": {
-        "title": "Individual entity selection",
-        "description": "Directly review every individually selected entity Home Status is monitoring.",
-        "data": {
-          "selected_entities": "Selected entities"
-        },
-        "data_description": {
-          "selected_entities": "Individual entities currently selected for Home Status monitoring."
-        }
-      },
       "monitoring": {
-        "title": "Monitoring",
-        "description": "Choose what Home Status watches. Use Individual entities when you want exact control over specific Home Assistant entities, or Whole devices when Home Status should interpret related sensors from the same physical device together.",
+        "title": "Items to Display",
+        "description": "Choose the devices, individual entities, people, weather, calendars, news, and other information you want Home Status to surface. Use Whole devices when several related entities describe one thing, Individual entities when you want one specific state watched, and Weather, calendars & other information for ongoing context such as forecasts, schedules, traffic, utilities, sports, or events.",
         "menu_options": {
-          "monitoring_entities": "Individual entities",
           "monitoring_devices": "Whole devices",
-          "back_to_init": "← Back to Reconfiguration"
+          "monitoring_entities": "Individual entities",
+          "household_presence": "Household presence",
+          "information_sources": "Weather, calendars & other information",
+          "news_sources": "News feeds (RSS/Atom)",
+          "back_to_init": "← Back to Configuration"
         }
       },
       "monitoring_entities": {
         "title": "Individual entities",
-        "description": "Select the exact entities Home Status should watch for activity, alerts, and recent events. Use this when you want precise control instead of monitoring a whole device.",
+        "description": "Add individual entities when you want Home Status to watch one specific state, such as a door, window, leak sensor, motion sensor, or appliance state. The list below shows the entities you have already added.",
         "data": {
           "selected_entities": "Entities"
         },
         "data_description": {
-          "selected_entities": "Search your full Home Assistant entity list. Use individual selection when you want Home Status to watch exactly this entity rather than an entire device."
+          "selected_entities": "To stop displaying an entity in Home Status, click the X next to it, then select Submit. If several related entities describe one appliance or device, use Whole devices instead."
         }
       },
       "monitoring_devices": {
         "title": "Whole devices",
-        "description": "Select whole devices when related entities should be interpreted together. This is useful for appliances and other devices that expose separate state, remaining-time, completion, fault, or measurement entities.",
+        "description": "Add a whole device when several related entities work together to describe one thing. This is usually best for appliances, locks, thermostats, and similar devices. For example, a washer may provide running state, remaining time, completion, and fault information. The list below shows the devices you have already added.",
         "data": {
           "selected_devices": "Devices"
         },
         "data_description": {
-          "selected_devices": "Choose devices whose related entities should be interpreted together by Home Status."
+          "selected_devices": "To stop displaying a device in Home Status, click the X next to it, then select Submit. If you only care about one specific state, use Individual entities instead."
         }
       },
       "presentation": {
-        "title": "Presentation & behavior",
-        "description": "Control the Home Status card without editing YAML or raw provider data. Adjust card and text sizing, choose where different kinds of information appear, set icon colors, change display names, and control timestamps and retention. The current Home Status look is used as the starting configuration.",
+        "title": "Customize Display & Behavior",
+        "description": "Customize shared Home Status display behavior such as Visual Center timing, custom display names, and recent activity. Settings that belong to one specific dashboard card—such as lane mode, ticker speed, section visibility, card theme, and detailed sizing—are changed in that card’s visual editor: edit the dashboard, then edit the Home Status card.",
         "menu_options": {
-          "layout_sizing": "Layout & sizing",
-          "routing_filters": "Routing & filters",
-          "navigation": "Tap destinations",
-          "appearance": "Appearance",
-          "visual_center": "Visual Center",
-          "names": "Names",
-          "timing": "Timing & history",
-          "back_to_init": "← Back to Reconfiguration"
+          "layout_sizing": "Layout & text sizing",
+          "appearance": "Colors & appearance",
+          "visual_center": "Visual Center behavior",
+          "names": "Custom display names",
+          "timing": "Recent activity & timestamps",
+          "back_to_init": "← Back to Configuration"
         }
       },
       "layout_sizing": {
         "title": "Layout & sizing",
-        "description": "Tune card dimensions, text, secondary text, icons, and emphasized values for readability on wall tablets, desktops, and other displays.",
+        "description": "Adjust the physical size of the card, side areas, ticker, text, icons, and emphasized values. The defaults are designed for Home Status; change these when you need better readability for your particular dashboard or wall tablet.",
         "sections": {
           "card_dimensions": {
             "name": "Card dimensions",
@@ -476,31 +487,69 @@
           "enable_navigation": {
             "name": "Enable page navigation",
             "description": "Turn this off to leave ordinary Home Status items on their normal Home Assistant details behavior.",
-            "data": {"navigation_enabled": "Open selected dashboard pages when items are tapped"},
-            "data_description": {"navigation_enabled": "When enabled, a configured destination opens for that kind of item. Items without a destination continue to open their usual Home Assistant details."}
+            "data": {
+              "navigation_enabled": "Open selected dashboard pages when items are tapped"
+            },
+            "data_description": {
+              "navigation_enabled": "When enabled, a configured destination opens for that kind of item. Items without a destination continue to open their usual Home Assistant details."
+            }
           },
           "contacts": {
             "name": "Doors & windows",
-            "data": {"navigation_doors_open": "Open doors", "navigation_doors_closed": "Recently closed doors", "navigation_windows_open": "Open windows", "navigation_windows_closed": "Recently closed windows"}
+            "data": {
+              "navigation_doors_open": "Open doors",
+              "navigation_doors_closed": "Recently closed doors",
+              "navigation_windows_open": "Open windows",
+              "navigation_windows_closed": "Recently closed windows"
+            }
           },
           "activity": {
             "name": "Appliances & security",
-            "data": {"navigation_appliances_running": "Running appliances", "navigation_appliances_complete": "Completed appliances", "navigation_security": "Security"}
+            "data": {
+              "navigation_appliances_running": "Running appliances",
+              "navigation_appliances_complete": "Completed appliances",
+              "navigation_security": "Security"
+            }
           },
           "information": {
             "name": "Information",
-            "data": {"navigation_weather": "Weather", "navigation_climate": "Climate & measurements", "navigation_waste": "Waste collection", "navigation_calendar": "Calendar", "navigation_news": "News", "navigation_irrigation": "Sprinklers & irrigation", "navigation_location": "Location", "navigation_other": "Other information"}
+            "data": {
+              "navigation_weather": "Weather",
+              "navigation_climate": "Climate & measurements",
+              "navigation_waste": "Waste collection",
+              "navigation_calendar": "Calendar",
+              "navigation_news": "News",
+              "navigation_irrigation": "Sprinklers & irrigation",
+              "navigation_location": "Location",
+              "navigation_other": "Other information"
+            }
           },
           "custom_paths": {
             "name": "Custom page paths",
             "description": "Only used for categories set to Use custom page path above. Enter a Home Assistant path beginning with /, for example /dashboard-tablet/security.",
-            "data": {"navigation_custom_doors_open": "Open doors custom path", "navigation_custom_doors_closed": "Closed doors custom path", "navigation_custom_windows_open": "Open windows custom path", "navigation_custom_windows_closed": "Closed windows custom path", "navigation_custom_appliances_running": "Running appliances custom path", "navigation_custom_appliances_complete": "Completed appliances custom path", "navigation_custom_security": "Security custom path", "navigation_custom_weather": "Weather custom path", "navigation_custom_climate": "Climate custom path", "navigation_custom_waste": "Waste collection custom path", "navigation_custom_calendar": "Calendar custom path", "navigation_custom_news": "News custom path", "navigation_custom_irrigation": "Irrigation custom path", "navigation_custom_location": "Location custom path", "navigation_custom_other": "Other information custom path"}
+            "data": {
+              "navigation_custom_doors_open": "Open doors custom path",
+              "navigation_custom_doors_closed": "Closed doors custom path",
+              "navigation_custom_windows_open": "Open windows custom path",
+              "navigation_custom_windows_closed": "Closed windows custom path",
+              "navigation_custom_appliances_running": "Running appliances custom path",
+              "navigation_custom_appliances_complete": "Completed appliances custom path",
+              "navigation_custom_security": "Security custom path",
+              "navigation_custom_weather": "Weather custom path",
+              "navigation_custom_climate": "Climate custom path",
+              "navigation_custom_waste": "Waste collection custom path",
+              "navigation_custom_calendar": "Calendar custom path",
+              "navigation_custom_news": "News custom path",
+              "navigation_custom_irrigation": "Irrigation custom path",
+              "navigation_custom_location": "Location custom path",
+              "navigation_custom_other": "Other information custom path"
+            }
           }
         }
       },
       "appearance": {
         "title": "Appearance",
-        "description": "Choose how Home Status uses icon colors to distinguish categories and important states at a glance. These settings affect icons, not text or card backgrounds.",
+        "description": "Choose how Home Status uses icon colors to make categories, warnings, and completed activity easier to recognize at a glance. These settings do not change your Home Assistant theme.",
         "sections": {
           "color_behavior": {
             "name": "Color behavior",
@@ -553,19 +602,19 @@
         }
       },
       "visual_center": {
-        "title": "Visual Center",
-        "description": "Control Visual Center availability and the actual on-screen duration of each shared source turn.",
+        "title": "Visual Center behavior",
+        "description": "Choose whether visual content may use the center of the card and how long each type stays on screen during its turn. Cameras, event artwork, news images, and live video can all share this space.",
         "data": {
-          "visual_center_enabled": "Show Visual Center when visual content is available",
-          "visual_event_duration": "Event artwork duration (seconds)",
-          "visual_news_duration": "News artwork duration (seconds)",
-          "visual_stream_duration": "Live stream duration (seconds)"
+          "visual_center_enabled": "Use Visual Center when visual content is available",
+          "visual_event_duration": "Event artwork time (seconds)",
+          "visual_news_duration": "News image time (seconds)",
+          "visual_stream_duration": "Live video time (seconds)"
         },
         "data_description": {
-          "visual_center_enabled": "When enabled, the highest-priority valid visual source can appear in the center. Turn this off to keep the card in its normal two-column layout.",
-          "visual_event_duration": "How long each event artwork card stays on screen during its turn. Default: 6 seconds.",
-          "visual_news_duration": "How long each RSS/news artwork card stays on screen during its turn. Default: 12 seconds.",
-          "visual_stream_duration": "How long each live HLS stream stays on screen during its turn. Default: 24 seconds."
+          "visual_center_enabled": "Turn this on to let available visual content appear in the center. Turn it off if you only want the left/right lanes and ticker.",
+          "visual_event_duration": "How long each event artwork card remains visible before the shared visual rotation moves on.",
+          "visual_news_duration": "How long each RSS/news image remains visible before the shared visual rotation moves on.",
+          "visual_stream_duration": "How long each live HLS stream remains visible during its turn before the shared visual rotation moves on."
         }
       },
       "back_to_init": {

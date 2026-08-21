@@ -57,7 +57,6 @@ def _item(
         "active": False,
         "state": state.state,
         "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
-        "ticker_eligible": True,
     }
 
 
@@ -526,7 +525,6 @@ def household_presence_item(hass: HomeAssistant, person_ids: list[str]) -> dict[
         "active": False,
         "state": "home" if len(home) == len(people) else "away" if not home else "mixed",
         "created_at": changed.isoformat() if changed else _now(),
-        "ticker_eligible": True,
         "person_ids": [state.entity_id for _name, _location, state in people],
     }
 
@@ -582,7 +580,6 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
         )
         item["device_class"] = device_class
         item["unit_of_measurement"] = str(attrs.get("unit_of_measurement") or "")
-        item["stream_preference"] = "footer"
         return [item]
 
     if source.domain == "weather":
@@ -626,8 +623,8 @@ def interpret_source(hass: HomeAssistant, source: HomeSource) -> list[dict[str, 
                 item["all_day"] = len(str(start).strip()) == 10
             else:
                 item["all_day"] = bool(explicit_all_day)
-            # Keep the exact timestamp above as the contract. This friendly
-            # summary is a compatibility fallback for older card resources.
+            # Keep the exact timestamp above as the contract while also
+            # providing a concise human-readable schedule summary.
             friendly = _friendly_schedule(start, item["all_day"])
             item["summary"] = f"{source.name} · {friendly}" if friendly else source.name
             item["detail"] = item["summary"]

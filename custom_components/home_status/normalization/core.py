@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .humanize import humanize_raw_value
@@ -22,23 +21,16 @@ _GENERIC_ALIASES: Mapping[str, str | Mapping[str, str]] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class NormalizationContext:
-    entity_id: str | None = None
-    domain: str | None = None
-    device_class: str | None = None
-    capability: str | None = None
-    provider: str | None = None
-    device_role: str | None = None
-
 
 def _key(value: Any) -> str:
     return re.sub(r"[-_]+", " ", str(value or "").strip()).casefold().strip()
 
 
-def _contextual(raw: str, context: NormalizationContext) -> str | Mapping[str, str] | None:
-    capability = (context.capability or "").casefold()
-    device_class = (context.device_class or "").casefold()
+def _contextual(
+    raw: str, *, device_class: str | None, capability: str | None
+) -> str | Mapping[str, str] | None:
+    capability = (capability or "").casefold()
+    device_class = (device_class or "").casefold()
     # Device-class/capability semantics always outrank generic aliases.  This
     # makes the boolean value "on" meaningful without pretending it means the
     # same thing for a leak detector, appliance, light, or clean indicator.
@@ -63,14 +55,13 @@ def _contextual(raw: str, context: NormalizationContext) -> str | Mapping[str, s
     return None
 
 
-def normalize_semantic_state(raw_value: Any, *, entity_id: str | None = None, domain: str | None = None, device_class: str | None = None, capability: str | None = None, provider: str | None = None, device_role: str | None = None, overrides: Mapping[str, str | Mapping[str, str]] | None = None, aliases: Mapping[str, str | Mapping[str, str]] | None = None) -> dict[str, Any]:
+def normalize_semantic_state(raw_value: Any, *, device_class: str | None = None, capability: str | None = None, overrides: Mapping[str, str | Mapping[str, str]] | None = None, aliases: Mapping[str, str | Mapping[str, str]] | None = None) -> dict[str, Any]:
     """Resolve raw data: explicit override, provider adapter, context, generic, fallback.
 
     ``overrides`` is intentionally a first-class input before provider aliases;
     configuration can supply it later without changing the semantic boundary.
     """
     raw_state = str(raw_value or "").strip()
-    context = NormalizationContext(entity_id, domain, device_class, capability, provider, device_role)
     key = _key(raw_state)
     mapped: str | Mapping[str, str] | None = None
     if overrides:
@@ -78,7 +69,7 @@ def normalize_semantic_state(raw_value: Any, *, entity_id: str | None = None, do
     if mapped is None and aliases:
         mapped = aliases.get(raw_state, aliases.get(key))
     if mapped is None:
-        mapped = _contextual(key, context)
+        mapped = _contextual(key, device_class=device_class, capability=capability)
     if mapped is None:
         mapped = _GENERIC_ALIASES.get(key)
     if isinstance(mapped, Mapping):
@@ -89,12 +80,20 @@ def normalize_semantic_state(raw_value: Any, *, entity_id: str | None = None, do
         display = _DISPLAY.get(semantic, humanize_raw_value(raw_state))
     semantic = semantic if semantic in CANONICAL_STATES else "unknown"
     return {
-        "source": {key: value for key, value in {"entity_id": entity_id, "domain": domain, "device_class": device_class, "provider": provider, "device_role": device_role}.items() if value},
-        "raw": {"state": raw_state},
-        "semantic": {"capability": capability, "state": semantic, "active": semantic not in {"idle", "off", "complete", "closed", "locked", "available", "clear", "unavailable", "unknown"}, "severity": "error" if semantic == "error" else "warning" if semantic == "warning" else "normal"},
+        "semantic": {
+            "capability": capability,
+            "state": semantic,
+            "active": semantic not in {
+                "idle", "off", "complete", "closed", "locked", "available",
+                "clear", "unavailable", "unknown",
+            },
+            "severity": (
+                "error" if semantic == "error"
+                else "warning" if semantic == "warning"
+                else "normal"
+            ),
+        },
         "presentation": {"state": display},
-        # Compatibility fields let existing providers migrate incrementally.
-        "raw_state": raw_state, "state": semantic, "display_state": display, **({"capability": capability} if capability else {}),
     }
 
 

@@ -41,7 +41,7 @@ PALETTE_OPTIONS = [
 ]
 
 DEFAULTS: dict[str, Any] = {
-    # Card dimensions and text/icon sizing. These are the current v0.3.24
+    # Card dimensions and text/icon sizing for the current v1 presentation.
     # values that were visually validated on the live tablet/desktop layout.
     "card_body_height": 380,
     "main_row_height": 150,
@@ -149,9 +149,5 @@ def presentation_preferences(options: dict[str, Any]) -> dict[str, Any]:
                 "attention": _color(options, "color_attention"),
                 "success": _color(options, "color_success"),
             },
-        },
-        "timestamps": {
-            "contacts": bool(option(options, "timestamp_contacts")),
-            "other": bool(option(options, "timestamp_other")),
         },
     }

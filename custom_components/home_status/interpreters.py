@@ -100,7 +100,7 @@ def _now() -> str:
 
 
 def _category_for(event_type: str, home_device: HomeDevice) -> str:
-    """Return a legacy category without making category part of architecture."""
+    """Return the presentation category for a device event."""
     appliance_label = _appliance_label(home_device).casefold()
     laundry = appliance_label in {"washer", "dryer"}
     return {
@@ -140,13 +140,11 @@ def _base(
         "detail": detail,
         "category": category,
         "source": "home_device",
-        "behavior": "contact" if event_type == "contact" else event_type,
         "priority": priority,
         "icon": icon or entity.icon or state.attributes.get("icon") or "mdi:information-outline",
         "active": active,
         "state": state.state,
         "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
-        "ticker_eligible": True,
     }
 
 
@@ -171,7 +169,6 @@ def _presentation_name(home_device: HomeDevice, entity: HomeDeviceEntity) -> str
 def _with_normalization(
     item: dict[str, Any],
     *,
-    home_device: HomeDevice,
     entity: HomeDeviceEntity,
     state: State,
     capability: str,
@@ -180,23 +177,14 @@ def _with_normalization(
     """Attach the core boundary while preserving the established item contract."""
     normalized = normalize_semantic_state(
         state.state,
-        entity_id=entity.entity_id,
-        domain=entity.domain,
         device_class=entity.device_class,
         capability=capability,
-        provider="home_device",
-        device_role=home_device.kind,
     )
     normalized["presentation"].update({"label": label, "message": item["message"]})
     item.update({
         "entity_name": label,
-        "raw_state": normalized["raw_state"],
-        "state": normalized["state"],
-        "display_state": normalized["display_state"],
+        "state": normalized["semantic"]["state"],
         "capability": capability,
-        "semantic": normalized["semantic"],
-        "presentation": normalized["presentation"],
-        "normalized": normalized,
     })
     return item
 
@@ -461,15 +449,11 @@ def _appliance_phase(
         if phase_state is not None:
             normalized = normalize_semantic_state(
                 phase_state.state,
-                entity_id=phase_entity.entity_id,
-                domain=phase_entity.domain,
                 device_class=phase_entity.device_class,
                 capability="cycle_stage",
-                provider="appliance",
-                device_role=_appliance_label(home_device).casefold(),
                 aliases=_APPLIANCE_ALIASES,
             )
-            if normalized["state"] not in {"unknown", "unavailable", "off", "idle"}:
+            if normalized["semantic"]["state"] not in {"unknown", "unavailable", "off", "idle"}:
                 return normalized
 
     # Some integrations publish the live phase directly as the primary state
@@ -477,15 +461,11 @@ def _appliance_phase(
     # is more informative than a generic Run/Running signal.
     normalized = normalize_semantic_state(
         state.state,
-        entity_id=state_entity.entity_id,
-        domain=state_entity.domain,
         device_class=state_entity.device_class,
         capability="cycle_stage",
-        provider="appliance",
-        device_role=_appliance_label(home_device).casefold(),
         aliases=_APPLIANCE_ALIASES,
     )
-    if normalized["state"] not in {"running", "on"}:
+    if normalized["semantic"]["state"] not in {"running", "on"}:
         return normalized
     return None
 
@@ -712,7 +692,7 @@ def interpret_entity(
                 icon=icon,
             )
             return [_with_normalization(
-                item, home_device=home_device, entity=entity, state=state,
+                item, entity=entity, state=state,
                 capability="fault", label=name,
             )]
 
@@ -731,7 +711,7 @@ def interpret_entity(
                 icon=entity.icon or "mdi:door-open",
             )
             return [_with_normalization(
-                item, home_device=home_device, entity=entity, state=state,
+                item, entity=entity, state=state,
                 capability="contact", label=name,
             )]
 
@@ -788,7 +768,7 @@ def interpret_entity(
                 icon="mdi:lock-open-variant",
             )
             return [_with_normalization(
-                item, home_device=home_device, entity=entity, state=state,
+                item, entity=entity, state=state,
                 capability="lock", label=name,
             )]
         return []
@@ -1055,7 +1035,6 @@ def awareness_entity(
         "active": False,
         "state": state.state,
         "created_at": state.last_changed.isoformat() if state.last_changed else _now(),
-        "ticker_eligible": True,
         **({
             "scheduled_at": scheduled_at,
             "all_day": bool(waste_kind is not None),
@@ -1099,17 +1078,13 @@ def interpret_appliance_home_device(
 
     normalized = normalize_semantic_state(
         state.state,
-        entity_id=state_entity.entity_id,
-        domain=state_entity.domain,
         device_class=state_entity.device_class,
         capability="appliance_cycle",
-        provider="appliance",
-        device_role=_appliance_label(home_device).casefold(),
         aliases=_APPLIANCE_ALIASES,
     )
-    if normalized["state"] in {"idle", "off", "complete", "unavailable", "unknown"}:
+    if normalized["semantic"]["state"] in {"idle", "off", "complete", "unavailable", "unknown"}:
         return []
-    if normalized["state"] not in {
+    if normalized["semantic"]["state"] not in {
         "on", "running", "starting", "washing", "rinsing", "drying",
         "paused", "heating", "cooling",
     }:
@@ -1139,29 +1114,10 @@ def interpret_appliance_home_device(
     item["id"] = f"home_status:{home_device.id}:appliance_cycle"
     item["appliance_name"] = label
     item.update({
-        "raw_state": normalized["raw_state"],
-        "state": normalized["state"],
-        "display_state": normalized["display_state"],
+        "state": normalized["semantic"]["state"],
+        "display_state": normalized["presentation"]["state"],
         "capability": "appliance_cycle",
-        "semantic": normalized["semantic"],
-        "presentation": normalized["presentation"],
-        "normalized": normalized,
-        "appliance": {
-            "device_type": label.casefold(),
-            "state": normalized["state"],
-            "stage": phase["state"] if phase else None,
-            "remaining": remaining,
-            "complete": False,
-            "fault": False,
-        },
-        **({
-            "raw_stage": phase["raw_state"],
-            "stage": phase["state"],
-            "display_stage": phase["display_state"],
-        } if phase else {}),
     })
-    if end_entity is not None:
-        item["completion_entity_id"] = end_entity.entity_id
     return [item]
 
 

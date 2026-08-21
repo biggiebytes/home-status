@@ -186,14 +186,3 @@ def manual_home_device_for_entity(
         entities=[item],
         metadata={"manual_entity": True, "parent_device_name": parent_device_name},
     )
-
-
-def selected_entity_ids(home_devices: list[HomeDevice], selected_home_device_ids: set[str]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            entity_id
-            for home_device in home_devices
-            if home_device.id in selected_home_device_ids
-            for entity_id in home_device.entity_ids
-        )
-    )

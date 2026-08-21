@@ -1,13 +1,15 @@
-"""Clean discovery-first Home Status coordinator.
-
-No category-driven routing or legacy source registry.
-"""
+"""Home Status v1 coordinator."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import ipaddress
 import logging
+import socket
+
+import aiohttp
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
@@ -16,7 +18,6 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -41,7 +42,45 @@ from .providers.live_news import LiveNewsProvider
 _LOGGER = logging.getLogger(__name__)
 
 _STORE_VERSION = 1
-_STORE_KEY = f"{DOMAIN}.history_v2"
+_STORE_KEY = f"{DOMAIN}.state"
+
+_MAX_RSS_BYTES = 2 * 1024 * 1024
+_MAX_RSS_REDIRECTS = 5
+_FORBIDDEN_RSS_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}
+
+
+class _PinnedResolver(aiohttp.abc.AbstractResolver):
+    """Resolve one hostname only to the IPs already security-validated."""
+
+    def __init__(self, hostname: str, addresses: tuple[str, ...]) -> None:
+        self._hostname = hostname.casefold()
+        self._addresses = addresses
+
+    async def resolve(
+        self, host: str, port: int = 0, family: int = socket.AF_UNSPEC
+    ) -> list[dict[str, Any]]:
+        if host.rstrip(".").casefold() != self._hostname:
+            raise OSError("Unexpected hostname in pinned RSS resolver")
+        results: list[dict[str, Any]] = []
+        for address in self._addresses:
+            ip = ipaddress.ip_address(address)
+            addr_family = socket.AF_INET6 if ip.version == 6 else socket.AF_INET
+            if family not in (socket.AF_UNSPEC, addr_family):
+                continue
+            results.append({
+                "hostname": host,
+                "host": address,
+                "port": port,
+                "family": addr_family,
+                "proto": 0,
+                "flags": 0,
+            })
+        if not results:
+            raise OSError("No validated RSS address matches the requested family")
+        return results
+
+    async def close(self) -> None:
+        return None
 
 
 class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -101,21 +140,10 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_visual_expiry()
             self._unsub_visual_expiry = None
 
-    @callback
-    def async_update_entities(self, _entity_ids: list[str] | None = None) -> None:
-        """Compatibility entry point used by existing Home Status setup code."""
-        self.options = {**self.entry.data, **self.entry.options}
-        self._reconfigure_subscription()
-        self._refresh_live_news()
-        self._publish()
-
     def _configure_timer(self) -> None:
         if self._unsub_timer:
             self._unsub_timer()
-        try:
-            seconds = max(15, int(self.options.get("refresh_interval", 60)))
-        except (TypeError, ValueError):
-            seconds = 60
+        seconds = 60
         self._unsub_timer = async_track_time_interval(
             self.hass, self._timer_tick, timedelta(seconds=seconds)
         )
@@ -144,6 +172,101 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._refresh_native_history()
         self._refresh_live_news()
         self._publish()
+
+
+    async def _async_fetch_rss(self, url: str) -> bytes:
+        """Fetch a bounded RSS document with each validated DNS result pinned."""
+        current_url = url
+        for _redirect in range(_MAX_RSS_REDIRECTS + 1):
+            hostname, port, addresses = await self._async_resolve_public_rss_url(current_url)
+            resolver = _PinnedResolver(hostname, addresses)
+            connector = aiohttp.TCPConnector(
+                resolver=resolver,
+                use_dns_cache=False,
+                force_close=True,
+            )
+            # Keep the original hostname in the URL. aiohttp therefore uses it
+            # for the HTTP Host header and TLS SNI/certificate validation, while
+            # the pinned resolver controls the actual destination IP.
+            async with aiohttp.ClientSession(connector=connector) as pinned_session:
+                async with pinned_session.get(
+                    current_url,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                    allow_redirects=False,
+                ) as response:
+                    if response.status in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ValueError("RSS redirect did not include a destination")
+                        current_url = urljoin(str(response.url), location)
+                        continue
+
+                    response.raise_for_status()
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        try:
+                            if int(content_length) > _MAX_RSS_BYTES:
+                                raise ValueError("RSS response is too large")
+                        except ValueError as err:
+                            if str(err) == "RSS response is too large":
+                                raise
+
+                    payload = bytearray()
+                    async for chunk in response.content.iter_chunked(64 * 1024):
+                        if len(payload) + len(chunk) > _MAX_RSS_BYTES:
+                            raise ValueError("RSS response is too large")
+                        payload.extend(chunk)
+                    return bytes(payload)
+
+        raise ValueError("RSS source redirected too many times")
+
+    async def _async_resolve_public_rss_url(
+        self, url: str
+    ) -> tuple[str, int, tuple[str, ...]]:
+        """Resolve an RSS URL once and return only a validated public address set."""
+        if not valid_url(url):
+            raise ValueError("RSS URL is not a valid HTTP(S) URL")
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").rstrip(".").casefold()
+        if (
+            not hostname
+            or hostname in _FORBIDDEN_RSS_HOSTS
+            or hostname.endswith(".localhost")
+        ):
+            raise ValueError("RSS URL resolves to a non-public address")
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            literal = ipaddress.ip_address(hostname.split("%", 1)[0])
+        except ValueError:
+            try:
+                resolved = await self.hass.async_add_executor_job(
+                    socket.getaddrinfo,
+                    hostname,
+                    port,
+                    0,
+                    socket.SOCK_STREAM,
+                )
+            except OSError as err:
+                raise ValueError("RSS hostname could not be resolved") from err
+            addresses = tuple(sorted({
+                item[4][0].split("%", 1)[0]
+                for item in resolved
+                if item[4]
+            }))
+            if not addresses:
+                raise ValueError("RSS hostname could not be resolved")
+            try:
+                parsed_addresses = tuple(ipaddress.ip_address(address) for address in addresses)
+            except ValueError as err:
+                raise ValueError("RSS hostname resolved to an invalid address") from err
+            if not all(address.is_global for address in parsed_addresses):
+                raise ValueError("RSS URL resolves to a non-public address")
+            return hostname, port, addresses
+
+        if not literal.is_global:
+            raise ValueError("RSS URL resolves to a non-public address")
+        return hostname, port, (str(literal),)
 
     def _store_data(self) -> dict[str, Any]:
         return {
@@ -176,17 +299,6 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _refresh_news(self, initial: bool = False) -> None:
         articles: list[dict[str, Any]] = []
-        # RSS remains a headline/thumbnail source. Remove any short-lived
-        # video visual left by the retired RSS-enclosure experiment.
-        self.news_visuals = {
-            article_id: visual for article_id, visual in self.news_visuals.items()
-            if (
-                isinstance(visual, dict)
-                and visual.get("type") == "image"
-                and visual.get("source_id")
-            )
-        }
-        session = async_get_clientsession(self.hass)
         for feed in self.options.get("news_sources", []):
             if not isinstance(feed, dict) or feed.get("enabled", True) is not True or not valid_url(feed.get("url")):
                 continue
@@ -194,9 +306,8 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not feed_id:
                 continue
             try:
-                async with session.get(str(feed["url"]), timeout=15) as response:
-                    response.raise_for_status()
-                    parsed = parse_feed(await response.read(), feed_id)
+                raw_feed = await self._async_fetch_rss(str(feed["url"]))
+                parsed = parse_feed(raw_feed, feed_id)
             except Exception:  # A source failure must not disrupt Home Status.
                 continue
             seen = set(self.news_seen.get(feed_id, []))
@@ -301,18 +412,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _refresh_native_history(self) -> None:
         """Read recent HA transitions; never persist or synthesize them."""
         try:
-            # Retain the established UI setting from Home Status's original
-            # ticker: a one-day history must still mean a one-day Recorder
-            # query after moving the card to the native contract.
-            if self.options.get("native_history_minutes") is not None:
-                minutes = int(self.options["native_history_minutes"])
-            elif self.options.get("history_retention_days") is not None:
-                minutes = int(float(self.options["history_retention_days"]) * 24 * 60)
-            elif self.options.get("footer_activity_history_hours") is not None:
-                minutes = int(float(self.options["footer_activity_history_hours"]) * 60)
-            else:
-                minutes = int(self.options.get("ticker_event_minutes", 10))
-            minutes = max(1, minutes)
+            minutes = max(1, int(self.options.get("ticker_event_minutes", 10)))
         except (TypeError, ValueError):
             minutes = 10
         transitions = await async_recent_transitions(
@@ -376,7 +476,6 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_set_updated_data({
             "snapshot_revision": self._snapshot_revision,
             "native": {
-                "contract_version": 3,
                 "current": native_current,
                 "recent": native_recent,
                 "awareness": awareness,

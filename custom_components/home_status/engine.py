@@ -240,9 +240,9 @@ class HomeStatusEngine:
                 if home_device.id == home_device_id:
                     return home_device.name
 
-        # Native facts carry an entity id, not the old interpreted item with a
-        # Home Device id. Recover the same selected Home Device identity here so
-        # current facts and Recorder transitions share one naming authority.
+        # Native facts carry an entity id. Resolve the selected Home Device
+        # identity here so current facts and Recorder transitions share one
+        # naming authority.
         for home_device in self.selected_home_devices(options):
             if any(entity.entity_id == entity_id for entity in home_device.entities):
                 return home_device.name

@@ -651,12 +651,8 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'right',
   'bottom',
   'phone_ticker',
-  'hero',
-  'sidebar',
-  'footer',
   'context_actions',
   'display',
-  'visibility',
   'home_status_visibility',
   'sizing',
   'animation',
@@ -665,9 +661,7 @@ const HOME_STATUS_KNOWN_TOP_LEVEL_KEYS = new Set([
   'recent_drawer_limit',
   'rotation_seconds',
   'lane_mode',
-  'theme_mode',
-  'footer_speed',
-  'phone_ticker_speed'
+  'theme_mode'
 ]);
 
 function homeStatusClone(value) {
@@ -977,7 +971,7 @@ class HomeStatusCard extends HTMLElement {
     this._laneCycleTimer = null;
     this._laneCycleEpoch = performance.now();
 
-    // Legacy single-item lanes remain a supported presentation mode. They
+    // Single-item lanes are a supported v1 presentation mode. They
     // have their own lightweight cursors/timers and do not instantiate the
     // three-slot allocator when selected.
     this._singleLaneTimers = { left: null, right: null };
@@ -989,6 +983,7 @@ class HomeStatusCard extends HTMLElement {
     // ignored on tablets.
     this._hassInputSignatureValue = '';
     this._lastVisualEntityId = '';
+    this._lastTransportData = null;
 
     // The weather header is also a controller surface. It owns current weather
     // plus temperature/humidity measurements so those facts can rotate here
@@ -1063,26 +1058,16 @@ class HomeStatusCard extends HTMLElement {
         : {};
 
     const leftConfig =
-      homeStatusObject(
-        config.left ?? config.sidebar
-      );
+      homeStatusObject(config.left);
 
     const rightConfig =
-      homeStatusObject(
-        config.right ?? config.hero
-      );
+      homeStatusObject(config.right);
 
     const bottomConfig =
-      homeStatusObject(
-        config.bottom ?? config.footer
-      );
+      homeStatusObject(config.bottom);
 
     const requestedBottomSpeed =
-      Number(
-        bottomConfig.speed ??
-        bottomConfig.marquee_speed ??
-        config.footer_speed
-      );
+      Number(bottomConfig.speed);
 
     const phoneTickerConfig =
       homeStatusObject(
@@ -1090,25 +1075,14 @@ class HomeStatusCard extends HTMLElement {
       );
 
     const requestedPhoneTickerSpeed =
-      Number(
-        phoneTickerConfig.speed ??
-        config.phone_ticker_speed
-      );
+      Number(phoneTickerConfig.speed);
 
     const namespacedVisibility =
       homeStatusObject(
         config.home_status_visibility
       );
 
-    const legacyVisibility =
-      homeStatusObject(
-        config.visibility
-      );
-
-    const visibility =
-      Object.keys(namespacedVisibility).length
-        ? namespacedVisibility
-        : legacyVisibility;
+    const visibility = namespacedVisibility;
 
     const sizing =
       homeStatusObject(
@@ -1131,9 +1105,7 @@ class HomeStatusCard extends HTMLElement {
         ? config.lane_mode
         : 'slots';
 
-    // Dark remains the compatibility default so upgrading an existing card
-    // never changes its appearance merely because Home Assistant is light.
-    // Users can explicitly choose Auto to follow HA's current appearance.
+    // Dark is the v1 default. Users can choose Auto to follow Home Assistant.
     const themeMode =
       ['auto', 'light', 'dark'].includes(config.theme_mode)
         ? config.theme_mode
@@ -1192,17 +1164,7 @@ class HomeStatusCard extends HTMLElement {
                 1,
                 requestedPhoneTickerSpeed
               )
-            // Existing cards used Bottom ticker speed for portrait as well.
-            // Keep that behavior until a user explicitly chooses its new
-            // independent portrait setting.
-            : Number.isFinite(
-                requestedBottomSpeed
-              )
-              ? Math.max(
-                  1,
-                  requestedBottomSpeed
-                )
-              : 35
+            : 35
       },
 
       display:
@@ -1227,22 +1189,13 @@ class HomeStatusCard extends HTMLElement {
 
       home_status_visibility: {
         left:
-          (
-            visibility.left ??
-            visibility.sidebar
-          ) !== false,
+          visibility.left !== false,
 
         right:
-          (
-            visibility.right ??
-            visibility.hero
-          ) !== false,
+          visibility.right !== false,
 
         bottom:
-          (
-            visibility.bottom ??
-            visibility.footer
-          ) !== false,
+          visibility.bottom !== false,
 
         phone_ticker:
           visibility.phone_ticker !== false,
@@ -1794,8 +1747,8 @@ class HomeStatusCard extends HTMLElement {
       })
     );
 
-    // Home Assistant updates each entity separately. Refuse a mixed snapshot
-    // and use the compatibility payload until every channel catches up.
+    // Home Assistant updates each entity separately. Refuse a mixed snapshot;
+    // the caller keeps the last complete v1 snapshot until every channel catches up.
     if (!required.every(channel => {
       const payload = channels[channel];
       return payload &&
@@ -1835,7 +1788,6 @@ class HomeStatusCard extends HTMLElement {
 
     return {
       side: resolveStream(streams.side),
-      side_stream_available: Array.isArray(streams.side),
       left: resolveStream(streams.left),
       right: resolveStream(streams.right),
       bottom: resolveStream(streams.bottom),
@@ -1860,31 +1812,18 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _data() {
-    const source =
-      this._state(
-        this._config.entity
-      );
-
-    const attrs =
-      source?.attributes || {};
-
+    const source = this._state(this._config.entity);
+    const attrs = source?.attributes || {};
     const display =
-      attrs.display &&
-      typeof attrs.display === 'object'
+      attrs.display && typeof attrs.display === 'object'
         ? attrs.display
         : {};
-
     const presentation =
-      attrs.presentation &&
-      typeof attrs.presentation === 'object'
+      attrs.presentation && typeof attrs.presentation === 'object'
         ? attrs.presentation
         : {};
-
-    const native =
-      attrs.native &&
-      typeof attrs.native === 'object'
-        ? attrs.native
-        : null;
+    const unavailable =
+      !source || ['unknown', 'unavailable'].includes(source.state);
 
     const split = this._splitTransportData(
       attrs,
@@ -1894,100 +1833,25 @@ class HomeStatusCard extends HTMLElement {
     );
 
     if (split) {
+      this._lastTransportData = split;
       return split;
     }
 
-    if (native) {
-      const active = Array.isArray(native.current) ? native.current : [];
-      const recent = Array.isArray(native.recent) ? native.recent : [];
-      const awareness = Array.isArray(native.awareness) ? native.awareness : [];
-      const streams = native.streams && typeof native.streams === 'object'
-        ? native.streams
-        : {};
-      const itemById = new Map(
-        [...active, ...recent, ...awareness]
-          .filter(item => item && item.id)
-          .map(item => [String(item.id), item])
-      );
-      const resolveStream = ids => (
-        Array.isArray(ids)
-          ? ids.map(id => itemById.get(String(id))).filter(Boolean)
-          : []
-      );
-      const phonePrimary =
-        itemById.get(String(streams.phone_primary_id || '')) ||
-        (
-          streams.phone_fallback &&
-          typeof streams.phone_fallback === 'object'
-            ? streams.phone_fallback
-            : null
-        );
-
+    // Channel entities update independently. Keep rendering the last complete
+    // snapshot until every required channel reaches the same revision.
+    if (this._lastTransportData) {
       return {
-        side:
-          resolveStream(streams.side),
-
-        side_stream_available:
-          Array.isArray(streams.side),
-
-        left:
-          resolveStream(streams.left),
-
-        right:
-          resolveStream(streams.right),
-
-        bottom:
-          resolveStream(streams.bottom),
-
-        phone_primary:
-          phonePrimary,
-
-        active,
-        recent,
-        awareness,
-
-        priority:
-          attrs.priority ||
-          attrs.health ||
-          'normal',
-
-        count:
-          Number(attrs.active_count) ||
-          active.length,
-
+        ...this._lastTransportData,
+        priority: attrs.priority || attrs.health || this._lastTransportData.priority || 'normal',
+        count: Number(attrs.active_count) || this._lastTransportData.count || 0,
         display,
         presentation,
-
-        visual:
-          attrs.visual &&
-          typeof attrs.visual === 'object'
-            ? attrs.visual
-            : null,
-
-        visual_queue:
-          Array.isArray(attrs.visual_queue)
-            ? attrs.visual_queue
-            : [],
-
-        visual_queue_active:
-          attrs.visual_queue_active === true,
-
-        weather_visual_effect:
-          attrs.weather_visual_effect ||
-          '',
-
-        unavailable:
-          !source ||
-          [
-            'unknown',
-            'unavailable'
-          ].includes(
-            source.state
-          )
+        unavailable
       };
     }
 
     return {
+      side: [],
       left: [],
       right: [],
       bottom: [],
@@ -1995,37 +1859,15 @@ class HomeStatusCard extends HTMLElement {
       recent: [],
       awareness: [],
       phone_primary: null,
-      priority: 'normal',
-      count: 0,
+      priority: attrs.priority || attrs.health || 'normal',
+      count: Number(attrs.active_count) || 0,
       display,
       presentation,
-
-      visual:
-        attrs.visual &&
-        typeof attrs.visual === 'object'
-          ? attrs.visual
-          : null,
-
-      visual_queue:
-        Array.isArray(attrs.visual_queue)
-          ? attrs.visual_queue
-          : [],
-
-      visual_queue_active:
-        attrs.visual_queue_active === true,
-
-      weather_visual_effect:
-        attrs.weather_visual_effect ||
-        '',
-
-      unavailable:
-        !source ||
-        [
-          'unknown',
-          'unavailable'
-        ].includes(
-          source.state
-        )
+      visual: null,
+      visual_queue: [],
+      visual_queue_active: false,
+      weather_visual_effect: '',
+      unavailable
     };
   }
 
@@ -2057,10 +1899,15 @@ class HomeStatusCard extends HTMLElement {
       return null;
     }
 
-    const url =
+    const rawUrl =
       typeof value.url === 'string'
         ? value.url.trim()
         : '';
+
+    const url =
+      type === 'image' || type === 'video'
+        ? this._safeMediaUrl(rawUrl)
+        : rawUrl;
 
     const entityId =
       typeof value.entity_id === 'string'
@@ -2120,9 +1967,7 @@ class HomeStatusCard extends HTMLElement {
       url,
 
       article_url:
-        typeof value.article_url === 'string'
-          ? value.article_url.trim()
-          : '',
+        this._safeExternalUrl(value.article_url),
 
       title:
         typeof value.title === 'string'
@@ -3421,6 +3266,34 @@ class HomeStatusCard extends HTMLElement {
       : {};
   }
 
+  _safeExternalUrl(value) {
+    if (typeof value !== 'string') return '';
+    const candidate = value.trim();
+    if (!candidate) return '';
+    try {
+      const parsed = new URL(candidate, window.location.href);
+      return ['http:', 'https:'].includes(parsed.protocol)
+        ? parsed.href
+        : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  _safeMediaUrl(value) {
+    if (typeof value !== 'string') return '';
+    const candidate = value.trim();
+    if (!candidate) return '';
+    try {
+      const parsed = new URL(candidate, window.location.href);
+      return ['http:', 'https:'].includes(parsed.protocol)
+        ? parsed.href
+        : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
   _escape(value) {
     const node =
       document.createElement(
@@ -3669,8 +3542,6 @@ class HomeStatusCard extends HTMLElement {
       timestamp_mode:
         item.timestamp_mode || '',
 
-      ticker_eligible:
-        item.ticker_eligible === true,
 
       utility_role:
         item.utility_role || '',
@@ -3977,13 +3848,9 @@ class HomeStatusCard extends HTMLElement {
     const claimedActiveIds = new Set(
       activeClaims.map(item => this._laneItemId(item)).filter(Boolean)
     );
-    const hasSideStream = data?.side_stream_available === true;
-    let normalCandidates = hasSideStream && Array.isArray(data.side)
+    let normalCandidates = Array.isArray(data?.side)
       ? data.side.filter(item => this._sideLaneEligible(item))
-      : [
-          ...(Array.isArray(data.left) ? data.left : []),
-          ...(Array.isArray(data.right) ? data.right : [])
-        ].filter(item => this._sideLaneEligible(item));
+      : [];
 
     const seen = new Set();
     normalCandidates = normalCandidates.filter(item => {
@@ -3998,8 +3865,8 @@ class HomeStatusCard extends HTMLElement {
     );
 
     if (freeSlots.length) {
-      // Preserve the old lane movement semantics without restoring the old
-      // one-carousel architecture. Normal candidates are still assigned across
+      // Keep coordinated lane movement while each physical row remains its own
+      // controller. Normal candidates are assigned across
       // the free physical slots in display order, but each contiguous run of
       // unclaimed rows becomes one coordinated sequence. Every slot in that run
       // receives the same sequence at a different starting offset, so a shared
@@ -5254,14 +5121,9 @@ class HomeStatusCard extends HTMLElement {
       const items = pools.flat().filter(Boolean);
       const config = this._config[zone] || {};
       const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
-      const legacyRightInterval = zone === 'right'
-        ? Number(data.display?.hero_rotation_seconds)
-        : NaN;
       const configuredInterval = Number.isFinite(backendInterval) && backendInterval > 0
         ? backendInterval
-        : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
-          ? legacyRightInterval
-          : Number(config.interval) || this._config.rotation_seconds;
+        : Number(config.interval) || this._config.rotation_seconds;
       const interval = Math.max(4, configuredInterval);
       const emptyLabel = 'No current information';
 
@@ -5299,25 +5161,9 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _singleLaneItems(data, zone) {
-    const legacy = Array.isArray(data?.[zone])
+    return Array.isArray(data?.[zone])
       ? data[zone].filter(item => this._sideLaneEligible(item))
       : [];
-
-    if (legacy.length || data?.side_stream_available !== true) {
-      return legacy;
-    }
-
-    // Compatibility fallback for a future backend that omits legacy lanes.
-    // Preserve the historic alternating left/right distribution.
-    const side = Array.isArray(data?.side)
-      ? data.side.filter(item => this._sideLaneEligible(item))
-      : [];
-    const showLeft = this._config.home_status_visibility.left;
-    const showRight = this._config.home_status_visibility.right;
-
-    if (showLeft && !showRight) return side;
-    if (showRight && !showLeft) return side;
-    return zone === 'left' ? side.filter((_, index) => index % 2 === 0) : side.filter((_, index) => index % 2 === 1);
   }
 
   _renderSingleLane(zone, item, emptyLabel) {
@@ -5333,7 +5179,7 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _startSingleZoneRotations(data) {
-    // The slot scheduler/controllers are completely idle in legacy mode.
+    // The slot scheduler/controllers are completely idle in single-item mode.
     if (this._laneCycleTimer) {
       clearTimeout(this._laneCycleTimer);
       this._laneCycleTimer = null;
@@ -5345,12 +5191,9 @@ class HomeStatusCard extends HTMLElement {
       const items = this._singleLaneItems(data, zone);
       const config = this._config[zone] || {};
       const backendInterval = Number(data.display?.[`${zone}_rotation_seconds`]);
-      const legacyRightInterval = zone === 'right' ? Number(data.display?.hero_rotation_seconds) : NaN;
       const configuredInterval = Number.isFinite(backendInterval) && backendInterval > 0
         ? backendInterval
-        : Number.isFinite(legacyRightInterval) && legacyRightInterval > 0
-          ? legacyRightInterval
-          : Number(config.interval) || this._config.rotation_seconds;
+        : Number(config.interval) || this._config.rotation_seconds;
       const interval = Math.max(4, configuredInterval);
       const signature = `${items.map(item => this._zoneItemSignature(item)).join('||')}::single:${config.rotate !== false}|${interval}`;
 
@@ -9100,40 +8943,6 @@ class HomeStatusCardEditor extends HTMLElement {
         )
       );
 
-    const legacyVisibility =
-      homeStatusObject(
-        this._config
-          .visibility
-      );
-
-    const namespacedVisibility =
-      homeStatusObject(
-        this._config
-          .home_status_visibility
-      );
-
-    if (
-      Object.keys(
-        legacyVisibility
-      ).length &&
-      !Object.keys(
-        namespacedVisibility
-      ).length
-    ) {
-      this._config
-        .home_status_visibility =
-        homeStatusClone(
-          legacyVisibility
-        );
-    }
-
-    if (
-      this._config.visibility ===
-      legacyVisibility
-    ) {
-      delete this._config.visibility;
-    }
-
     if (
       !this._config.type
     ) {
@@ -9176,82 +8985,17 @@ class HomeStatusCardEditor extends HTMLElement {
     path,
     fallback = ''
   ) {
-    const value =
-      homeStatusGetPath(
-        this._config,
-        path,
-        undefined
-      );
+    const value = homeStatusGetPath(
+      this._config,
+      path,
+      undefined
+    );
 
-    if (
-      value !== undefined
-    ) {
+    if (value !== undefined) {
       return value;
     }
 
-    const compatibilityPaths = {
-      left:
-        'sidebar',
-
-      right:
-        'hero',
-
-      bottom:
-        'footer',
-
-      'home_status_visibility.left':
-        'home_status_visibility.sidebar',
-
-      'home_status_visibility.right':
-        'home_status_visibility.hero',
-
-      'home_status_visibility.bottom':
-        'home_status_visibility.footer',
-
-      'left.rotate':
-        'sidebar.rotate',
-
-      'left.interval':
-        'sidebar.interval',
-
-      'right.rotate':
-        'hero.rotate',
-
-      'right.interval':
-        'hero.interval',
-
-      'bottom.rotate':
-        'footer.rotate',
-
-      'bottom.speed':
-        'footer.speed'
-    };
-
-    const legacyPath =
-      compatibilityPaths[
-        path
-      ];
-
-    if (legacyPath) {
-      const legacyValue =
-        homeStatusGetPath(
-          this._config,
-          legacyPath,
-          undefined
-        );
-
-      if (
-        legacyValue !==
-        undefined
-      ) {
-        return legacyValue;
-      }
-    }
-
-    if (
-      path ===
-      'right.interval'
-    ) {
+    if (path === 'right.interval') {
       return homeStatusGetPath(
         this._config,
         'rotation_seconds',
@@ -9261,7 +9005,6 @@ class HomeStatusCardEditor extends HTMLElement {
 
     return fallback;
   }
-
   _select(
     path,
     label,
@@ -9812,7 +9555,7 @@ class HomeStatusCardEditor extends HTMLElement {
       </div></details>
       <details data-section="ticker"${sectionOpen('ticker', true) ? ' open' : ''}${levelHidden('customize')}><summary>Motion & timing</summary><div class="section">
         ${this._number('bottom.speed', 'Bottom ticker speed', 35, 8, 120, 'Lower values move faster.')}
-        ${this._number('phone_ticker.speed', 'Portrait phone ticker speed', this._value('bottom.speed', 35), 8, 120, 'Seconds per loop in portrait. Lower values move faster. This does not affect the tablet or landscape ticker.')}
+        ${this._number('phone_ticker.speed', 'Portrait phone ticker speed', 35, 8, 120, 'Seconds per loop in portrait. Lower values move faster. This does not affect the tablet or landscape ticker.')}
         ${this._number('right.interval', 'Right rotation time', 4, 1, 120)}
         ${this._number('left.interval', 'Left rotation time', 7, 2, 120)}
         ${this._toggle('left.rotate', 'Rotate left items', true)}
@@ -10263,7 +10006,7 @@ const CSS = `
   container-type:inline-size;
 }
 
-/* Local appearance system. Dark is the compatibility baseline; light can be
+/* Local appearance system. Dark is the default baseline; light can be
    forced independently or selected automatically from Home Assistant. */
 :host([data-theme-mode="light"]) {
   --primary-text-color:#1f2933;

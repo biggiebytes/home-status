@@ -10,9 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import MATCH_ALL
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import HomeStatusCoordinator
-from .ha_native import compose_presentation_streams
 
 TRANSPORT_VERSION = 1
 TRANSPORT_CHANNELS = {
@@ -56,32 +54,20 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
     @property
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
-        # Keep the entity's Recorder payload focused on what the card renders.
-        # The coordinator retains the complete working snapshot in memory, but
-        # publishing every intermediate collection (and diagnostic duplicates)
-        # can exceed Recorder's 16 KiB attribute limit.
-        native = self._compact_native(data.get("native"))
-        attributes = {
+        # v1 publishes one manifest/control entity plus fixed split transport
+        # channels. Do not duplicate the channel payloads on this entity.
+        return {
             "health": data.get("health", "normal"),
             "priority": data.get("priority", "normal"),
-            "weather_visual_effect": data.get("weather_visual_effect"),
-            "visual": self._compact_visual(data.get("visual")),
-            "visual_queue": self._compact_visual_queue(data.get("visual_queue")),
-            "visual_queue_active": bool(data.get("visual_queue_active")),
             "active_count": int(data.get("active_count", 0) or 0),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
-            "native": native,
             "transport": self._transport_manifest(data, data.get("native")),
         }
-        # Recorder rejects attributes above 16 KiB. Keep a margin below that
-        # limit so normal changes in labels or URLs cannot make this entity
-        # noisy or create avoidable database work.
-        return attributes
 
     @staticmethod
     def _transport_manifest(data: dict[str, Any], native: Any) -> dict[str, Any]:
-        """Describe fixed transport channels without adding card configuration."""
+        """Describe the fixed v1 transport channels."""
         return {
             "version": TRANSPORT_VERSION,
             "kind": "manifest",
@@ -107,7 +93,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
     def _compact_presentation(value):
         if not isinstance(value, dict):
             return {}
-        allowed = {"layout", "emphasis", "appearance", "timestamps"}
+        allowed = {"layout", "emphasis", "appearance"}
         return {key: value[key] for key in allowed if key in value and isinstance(value[key], dict)}
 
     @staticmethod
@@ -130,123 +116,6 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             if (compact := HomeStatusSensor._compact_visual(item)) is not None
         ]
 
-    @staticmethod
-    def _compact_native(value):
-        if not isinstance(value, dict):
-            return {
-                "contract_version": 3,
-                "current": [],
-                "recent": [],
-                "awareness": [],
-                "streams": compose_presentation_streams([], [], []),
-            }
-
-        def compact(items, fields):
-            if not isinstance(items, list):
-                return []
-            return [
-                {key: item[key] for key in fields if key in item}
-                for item in items
-                if isinstance(item, dict)
-            ]
-
-        current = compact(
-            value.get("current"),
-            (
-                "id", "entity_id", "entity_name", "title", "message", "summary",
-                "icon", "category", "color_role", "priority", "active", "state",
-                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source",
-                "ticker_eligible", "rotate_with_awareness", "utility_role", "stream_preference",
-            ),
-        )
-        # The Recorder budget must not hide a live appliance or the two
-        # requested Micro-Air Current items behind otherwise idle household
-        # entities. Prioritize those complete current snapshots first, then
-        # actionable items, before retaining neutral context as space permits.
-        current.sort(
-            key=lambda item: (
-                item.get("capability") not in {
-                    "appliance_cycle", "easystart_current"
-                },
-                {"critical": 0, "attention": 1, "activity": 2, "normal": 3}.get(
-                    str(item.get("priority") or "normal"), 3
-                ),
-            )
-        )
-        recent = compact(
-            value.get("recent"),
-            (
-                "id", "entity_id", "entity_name", "title", "message", "summary",
-                "icon", "category", "color_role", "priority", "active", "state",
-                "created_at", "event_type", "timestamp_mode", "display_kind", "capability", "source", "group_labels", "utility_role", "stream_preference",
-            ),
-        )
-        awareness = HomeStatusSensor._compact_items(value.get("awareness"), None)
-        return {
-            "contract_version": 3,
-            "current": current,
-            "recent": recent,
-            "awareness": awareness,
-            "streams": compose_presentation_streams(current, recent, awareness),
-        }
-
-    @staticmethod
-    def _compact_items(value, limit):
-        if not isinstance(value, list):
-            return []
-        # These are the presentation fields the card consumes.  Excluding
-        # upstream/raw duplicates prevents calendars, news, and media feeds
-        # from repeatedly inflating the Recorder state payload.
-        fields = (
-            "id", "title", "message", "summary", "detail", "category",
-            "icon", "priority", "active", "source", "source_kind", "event_type",
-            "created_at", "updated_at",
-            "occurred_at", "expires_at", "scheduled_at", "event_start", "event_end", "all_day", "timestamp",
-            "entity_id", "image_url", "media_url", "media_type", "article_url",
-            "navigation", "subtitle", "body", "visual_effect", "action", "state",
-            "color_role", "timestamp_mode", "display_kind", "utility_role", "stream_preference", "visual_only", "visual", "zone_visual",
-        )
-        items = []
-        selected = value if limit is None else value[:limit]
-        # Keep the two durable awareness summaries that are generated outside
-        # a normal selected source list: household presence and the newest
-        # local-news item.  Household presence is appended after configured
-        # devices and sources, so a simple first-N limit can otherwise show it
-        # immediately during startup and then omit it from the sensor payload
-        # once the full awareness collection is published.
-        if limit is not None and len(value) > limit:
-            household = next(
-                (
-                    item for item in value
-                    if isinstance(item, dict)
-                    and item.get("id") == "home_status:household_presence:awareness"
-                ),
-                None,
-            )
-            news = next(
-                (
-                    item for item in value
-                    if isinstance(item, dict) and item.get("category") == "news"
-                ),
-                None,
-            )
-            protected = [item for item in (household, news) if item is not None][:limit]
-            protected_ids = {id(item) for item in protected}
-            ordinary = [item for item in value if id(item) not in protected_ids]
-            selected = [*ordinary[: max(0, limit - len(protected))], *protected]
-        for item in selected:
-            if not isinstance(item, dict):
-                continue
-            compact = {}
-            for key in fields:
-                current = item.get(key)
-                if current is None:
-                    continue
-                if isinstance(current, str):
-                    current = current[:160]
-                compact[key] = current
-            items.append(compact)
-        return items
 
 class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
     """One fixed, coordinator-backed payload boundary for the card."""
@@ -330,9 +199,9 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
             "icon", "category", "color_role", "priority", "active", "state", "source",
             "source_kind", "event_type", "created_at", "updated_at", "occurred_at",
             "expires_at", "scheduled_at", "event_start", "event_end", "all_day", "timestamp", "timestamp_mode",
-            "display_kind", "capability", "ticker_eligible", "rotate_with_awareness", "group_labels", "utility_role", "stream_preference",
+            "display_kind", "rotate_with_awareness", "group_labels", "utility_role",
             "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
-            "body", "visual_effect", "action", "visual_only", "visual", "zone_visual",
+            "body", "visual_effect", "action", "visual", "zone_visual",
         )
         items = []
         for item in value:

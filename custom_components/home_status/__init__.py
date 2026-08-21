@@ -1,4 +1,4 @@
-"""Home Status - discovery-first runtime."""
+"""Home Status v1 runtime."""
 
 from __future__ import annotations
 

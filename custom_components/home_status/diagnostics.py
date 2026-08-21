@@ -1,4 +1,4 @@
-"""Diagnostics for discovery-first Home Status."""
+"""Diagnostics for Home Status v1."""
 
 from __future__ import annotations
 

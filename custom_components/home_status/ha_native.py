@@ -195,9 +195,8 @@ def compose_presentation_streams(
     rotating_current = [
         item for item in active if item.get("rotate_with_awareness") is True
     ]
-    # Current household state belongs in the side lanes.  The footer is a
-    # historical surface, so a current item's old ticker_eligible hint must
-    # never route live state into recent activity.
+    # Current household state belongs in the side lanes. The footer is a
+    # historical surface and only receives Recorder-backed recent activity.
     shared_active = [
         item
         for item in active
@@ -218,8 +217,8 @@ def compose_presentation_streams(
 
     # The six-slot lane engine consumes one ordered side-candidate stream.
     # Placement is a frontend layout concern; the integration only ranks
-    # semantic candidates. Keep legacy left/right streams during migration so
-    # older cards remain compatible with the same backend.
+    # semantic candidates. Left/right streams remain part of the v1 contract
+    # for the supported single-item lane mode.
     side_candidates: list[dict[str, Any]] = []
     seen_side_ids: set[str] = set()
     for item in [*shared_active, *ranked_awareness]:
@@ -438,10 +437,14 @@ def _present_item(
             "moisture", "smoke", "gas", "carbon_monoxide", "safety",
         }
     ) and priority in {"critical", "attention"}
-    # Recorder-backed transitions always showed their age in the source card.
-    # Active safety/alarm conditions also need age context even though ordinary
-    # current states intentionally do not look stale.
-    timestamp_mode = "relative" if safety_alert or not current else "none"
+    contact_item = device_class in {"door", "window", "opening", "garage_door"}
+    if contact_item:
+        show_timestamp = _option_bool(options, "timestamp_contacts", True)
+    else:
+        show_timestamp = not current
+    # Active safety/alarm conditions always need age context. Contact timestamp
+    # visibility follows the user's v1 timestamp setting.
+    timestamp_mode = "relative" if safety_alert or show_timestamp else "none"
     return {
         "id": item_id,
         "entity_id": entity_id,
@@ -461,7 +464,6 @@ def _present_item(
         "display_kind": display_kind,
         "capability": item.get("capability"),
         "source": "home_assistant",
-        "ticker_eligible": bool((appliance or easystart) and current),
         "rotate_with_awareness": easystart_current,
         "utility_role": "security" if category == "security" else "",
         # Recent footer events should open the broadest useful native HA

@@ -4,14 +4,31 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
+import ipaddress
 from typing import Any
 from urllib.parse import urlparse
-from xml.etree import ElementTree as ET
+from defusedxml import ElementTree as ET
 
 
 def valid_url(value: Any) -> bool:
+    """Return True for credential-free HTTP(S) URLs with safe literal hosts."""
     parsed = urlparse(str(value or "").strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and not parsed.username and not parsed.password
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+    ):
+        return False
+
+    hostname = (parsed.hostname or "").rstrip(".").casefold()
+    if not hostname or hostname == "localhost" or hostname.endswith(".localhost"):
+        return False
+    try:
+        return ipaddress.ip_address(hostname.split("%", 1)[0]).is_global
+    except ValueError:
+        # Hostnames are resolved and rechecked immediately before each fetch.
+        return True
 
 
 def article_id(feed_id: str, guid: str, link: str, title: str, published: str) -> str:
