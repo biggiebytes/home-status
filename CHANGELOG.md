@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1
+
+- Adds the selectable Standard and Low impact (large installations) Performance modes.
+- Keeps the Home Status feature set and user interface unchanged while reducing
+  background cadence and staggering startup work in Low impact mode.
+
 ## v1.0.0
 
 - Established the supported Home Status v1 runtime and presentation model.

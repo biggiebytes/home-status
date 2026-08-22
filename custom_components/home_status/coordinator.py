@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import logging
@@ -12,8 +14,10 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_point_in_time,
     async_track_state_change_event,
     async_track_time_interval,
@@ -47,6 +51,28 @@ _STORE_KEY = f"{DOMAIN}.state"
 _MAX_RSS_BYTES = 2 * 1024 * 1024
 _MAX_RSS_REDIRECTS = 5
 _FORBIDDEN_RSS_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}
+
+# Home Status keeps one efficient runtime and exposes two scheduling profiles.
+# Caching, event coalescing, duplicate-publication suppression, lazy media, and
+# bounded transport apply to both modes. Only genuine responsiveness/resource
+# tradeoffs change with the selected performance mode.
+_PERFORMANCE_PROFILES: dict[str, dict[str, Any]] = {
+    "standard": {
+        "startup_warmup_delay": 2.0,
+        "reload_warmup_delay": 1.0,
+        "warmup_stagger_delay": 0.5,
+        "news_refresh_interval": timedelta(minutes=1),
+        "history_refresh_interval": timedelta(minutes=1),
+    },
+    "low_impact": {
+        "startup_warmup_delay": 30.0,
+        "reload_warmup_delay": 5.0,
+        "warmup_stagger_delay": 5.0,
+        "news_refresh_interval": timedelta(minutes=15),
+        "history_refresh_interval": timedelta(minutes=10),
+    },
+}
+_STATE_PUBLISH_DEBOUNCE = 0.25
 
 
 class _PinnedResolver(aiohttp.abc.AbstractResolver):
@@ -104,6 +130,10 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_state = None
         self._unsub_timer = None
         self._unsub_visual_expiry = None
+        self._unsub_warmup = None
+        self._unsub_started = None
+        self._unsub_publish = None
+        self._unsub_history_refresh = None
         self._observed: tuple[str, ...] = ()
         self._visual_source_lifetimes: dict[str, dict[str, datetime]] = {}
         self._visual_source_preemptions: dict[str, datetime] = {}
@@ -116,6 +146,28 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # sensors expose this revision so the card never combines channels
         # from different updates.
         self._snapshot_revision = 0
+        self._warmed_up = False
+        self._next_news_refresh: datetime | None = None
+        self._next_history_refresh: datetime | None = None
+        self._last_published_content: dict[str, Any] | None = None
+        self._visual_expiry_at: datetime | None = None
+
+    @property
+    def performance_mode(self) -> str:
+        """Return the configured runtime scheduling profile."""
+        mode = str(self.options.get("performance_mode", "standard")).strip().casefold()
+        return mode if mode in _PERFORMANCE_PROFILES else "standard"
+
+    def _profile_value(self, key: str):
+        return _PERFORMANCE_PROFILES[self.performance_mode][key]
+
+    @property
+    def _news_refresh_interval(self) -> timedelta:
+        return self._profile_value("news_refresh_interval")
+
+    @property
+    def _history_refresh_interval(self) -> timedelta:
+        return self._profile_value("history_refresh_interval")
 
     async def async_setup(self) -> None:
         stored = await self.store.async_load() or {}
@@ -123,13 +175,22 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.news_visuals = stored.get("news_visuals", {}) if isinstance(stored.get("news_visuals", {}), dict) else {}
         self.news_initialized = stored.get("news_initialized", {}) if isinstance(stored.get("news_initialized", {}), dict) else {}
         self.live_news = LiveNewsProvider(stored.get("live_news"))
-        await self._refresh_news(initial=True)
-        self._refresh_live_news()
-        self._reconfigure_subscription()
-        self._publish()
+
+        # Keep config-entry setup intentionally cheap. On a full HA boot, dozens
+        # of integrations compete for the event loop, DNS, Recorder, and local
+        # services at once. Home Status can populate shortly afterward without
+        # degrading the rest of the system.
+        self._set_bootstrap_data()
         self._configure_timer()
+        if self.hass.is_running:
+            self._schedule_warmup(self._profile_value("reload_warmup_delay"))
+        else:
+            self._unsub_started = self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, self._home_assistant_started
+            )
 
     def async_unload(self) -> None:
+        self._warmed_up = False
         if self._unsub_state:
             self._unsub_state()
             self._unsub_state = None
@@ -139,6 +200,89 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._unsub_visual_expiry:
             self._unsub_visual_expiry()
             self._unsub_visual_expiry = None
+        if self._unsub_warmup:
+            self._unsub_warmup()
+            self._unsub_warmup = None
+        if self._unsub_started:
+            self._unsub_started()
+            self._unsub_started = None
+        if self._unsub_publish:
+            self._unsub_publish()
+            self._unsub_publish = None
+        if self._unsub_history_refresh:
+            self._unsub_history_refresh()
+            self._unsub_history_refresh = None
+        self._native_history_refresh_pending = False
+
+    def _set_bootstrap_data(self) -> None:
+        """Expose valid empty transport while expensive work is deferred."""
+        self.async_set_updated_data({
+            "snapshot_revision": 0,
+            "native": {
+                "current": [],
+                "recent": [],
+                "awareness": [],
+                "streams": {},
+            },
+            "health": "normal",
+            "priority": "normal",
+            "active_count": 0,
+            "performance_mode": self.performance_mode,
+            "visual": None,
+            "visual_queue": [],
+            "visual_queue_active": False,
+            "weather_visual_effect": None,
+            "display": {
+                "rotation_seconds": self._int_option("rotation_seconds", 6, minimum=1),
+                "visual_event_duration": self._int_option("visual_event_duration", 6, minimum=1),
+                "visual_news_duration": self._int_option("visual_news_duration", 12, minimum=1),
+                "visual_stream_duration": self._int_option("visual_stream_duration", 24, minimum=1),
+                "media_enabled": bool(self.options.get("media_enabled", True)),
+                "visual_center_enabled": bool(self.options.get("visual_center_enabled", True)),
+            },
+            "presentation": presentation_preferences(self.options),
+            "last_updated": self._now(),
+        })
+
+    @callback
+    def _home_assistant_started(self, _event: Event) -> None:
+        self._unsub_started = None
+        self._schedule_warmup(self._profile_value("startup_warmup_delay"))
+
+    def _schedule_warmup(self, delay: float) -> None:
+        if self._unsub_warmup:
+            return
+        self._unsub_warmup = async_call_later(
+            self.hass, delay, self._run_warmup
+        )
+
+    @callback
+    def _run_warmup(self, _now) -> None:
+        self._unsub_warmup = None
+        self.hass.async_create_task(self._async_warmup())
+
+    async def _async_warmup(self) -> None:
+        """Populate Home Status gently after HA's startup burst has passed."""
+        self._reconfigure_subscription()
+        self._refresh_live_news()
+        self._warmed_up = True
+        self._publish()
+
+        # Recorder and RSS are intentionally staggered. Neither is required to
+        # establish current household truth, and both can be expensive on boot.
+        await asyncio.sleep(self._profile_value("warmup_stagger_delay"))
+        if not self._warmed_up:
+            return
+        await self._refresh_native_history()
+        self._next_history_refresh = datetime.now(timezone.utc) + self._history_refresh_interval
+        self._publish()
+
+        await asyncio.sleep(self._profile_value("warmup_stagger_delay"))
+        if not self._warmed_up:
+            return
+        await self._refresh_news(initial=True)
+        self._next_news_refresh = datetime.now(timezone.utc) + self._news_refresh_interval
+        self._publish()
 
     def _configure_timer(self) -> None:
         if self._unsub_timer:
@@ -165,12 +309,29 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
     async def _timer_tick(self, _now) -> None:
-        self.options = {**self.entry.data, **self.entry.options}
-        self._reconfigure_subscription()
-        await self._refresh_news()
-        if self.hass.is_running:
+        if not self._warmed_up:
+            return
+        now = datetime.now(timezone.utc)
+
+        if self._next_news_refresh is None or now >= self._next_news_refresh:
+            await self._refresh_news()
+            self._next_news_refresh = now + self._news_refresh_interval
+
+        if (
+            self.hass.is_running
+            and (self._next_history_refresh is None or now >= self._next_history_refresh)
+        ):
             await self._refresh_native_history()
-        self._refresh_live_news()
+            self._next_history_refresh = now + self._history_refresh_interval
+
+        # Live-news wakeups normally use the exact visual-expiry timer. This is
+        # only a low-frequency safety net if a wakeup was missed.
+        live_news_wakeup = self.live_news.next_wakeup()
+        if live_news_wakeup is not None and live_news_wakeup <= now:
+            self._refresh_live_news()
+
+        # Time-sensitive local awareness may legitimately change without an HA
+        # state event, so compose once per minute. No-op snapshots are suppressed.
         self._publish()
 
 
@@ -277,9 +438,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _save_state(self) -> None:
-        self.hass.async_create_task(self.store.async_save(self._store_data()))
+        # Collapse bursts of provider state changes into one storage write.
+        self.store.async_delay_save(self._store_data, 1.0)
 
     def _refresh_live_news(self) -> None:
+        previous_state = deepcopy(self.live_news.state)
         sample_interval = self._int_option("live_news_sample_interval", 1800, minimum=30)
         display_duration = self._int_option("visual_stream_duration", 24, minimum=1)
         muted = bool(self.options.get("live_news_mute", True))
@@ -295,9 +458,11 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.live_news_items = self.live_news.refresh(
             sources, datetime.now(timezone.utc)
         )
-        self._save_state()
+        if self.live_news.state != previous_state:
+            self._save_state()
 
     async def _refresh_news(self, initial: bool = False) -> None:
+        previous_store = deepcopy(self._store_data())
         articles: list[dict[str, Any]] = []
         for feed in self.options.get("news_sources", []):
             if not isinstance(feed, dict) or feed.get("enabled", True) is not True or not valid_url(feed.get("url")):
@@ -346,7 +511,8 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seen.add(article["id"])
             self.news_seen[feed_id] = list(seen)[-200:]
         self.news_articles = articles
-        self._save_state()
+        if self._store_data() != previous_store:
+            self._save_state()
 
     @staticmethod
     def _news_visual(
@@ -374,25 +540,41 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _state_changed(self, event: Event) -> None:
-        self._publish()
-        # Home Assistant emits a burst of state changes while restoring at
-        # startup. Recorder history is not needed to render current truth, and
-        # querying it for each restored entity delays the rest of startup.
+        if not self._warmed_up:
+            return
+        self._schedule_publish()
+        # Recorder history is not needed to render current truth. Coalesce the
+        # burst and wait for Recorder's commit before reading it back.
         if self.hass.is_running:
             self._schedule_native_history_refresh()
+
+    def _schedule_publish(self) -> None:
+        """Coalesce short HA state bursts into one snapshot composition."""
+        if self._unsub_publish:
+            return
+        self._unsub_publish = async_call_later(
+            self.hass, _STATE_PUBLISH_DEBOUNCE, self._run_scheduled_publish
+        )
+
+    @callback
+    def _run_scheduled_publish(self, _now) -> None:
+        self._unsub_publish = None
+        if self._warmed_up:
+            self._publish()
 
     def _schedule_native_history_refresh(self) -> None:
         """Coalesce live changes into one post-commit Recorder refresh."""
         if self._native_history_refresh_pending:
             return
         self._native_history_refresh_pending = True
-        async_track_point_in_time(
+        self._unsub_history_refresh = async_track_point_in_time(
             self.hass,
             self._run_scheduled_native_history_refresh,
             datetime.now(timezone.utc) + timedelta(seconds=2),
         )
 
     async def _run_scheduled_native_history_refresh(self, _now) -> None:
+        self._unsub_history_refresh = None
         self._native_history_refresh_pending = False
         await self._refresh_native_history_after_commit()
 
@@ -407,6 +589,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception:
                 pass
         await self._refresh_native_history()
+        self._next_history_refresh = datetime.now(timezone.utc) + self._history_refresh_interval
         self._publish()
 
     async def _refresh_native_history(self) -> None:
@@ -424,7 +607,8 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._native_recent = self.engine.native_recent_facts(self.options, transitions)
 
     def _publish(self) -> None:
-        self._snapshot_revision += 1
+        if not self._warmed_up:
+            return
         # Current interpreter output remains available to Visual Center only.
         # It is not retained, resolved, published as entity history, or routed.
         active = self.engine.build_active_items(self.options)
@@ -473,8 +657,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         priority = self._native_priority(native_current)
         weather_effect = self._weather_visual_effect(awareness)
 
-        self.async_set_updated_data({
-            "snapshot_revision": self._snapshot_revision,
+        content = {
             "native": {
                 "current": native_current,
                 "recent": native_recent,
@@ -484,6 +667,7 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "health": priority,
             "priority": priority,
             "active_count": len(native_current),
+            "performance_mode": self.performance_mode,
             "visual": visual,
             "visual_queue": visual_queue,
             "visual_queue_active": visual_queue_active,
@@ -497,9 +681,21 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "visual_center_enabled": visual_center_enabled,
             },
             "presentation": presentation_preferences(self.options),
+        }
+        self._schedule_visual_expiry()
+
+        # Most minute ticks and many attribute-only HA state changes do not alter
+        # the user-visible snapshot. Do not wake all eight transport sensors when
+        # the composed content is identical.
+        if self._last_published_content == content:
+            return
+        self._last_published_content = deepcopy(content)
+        self._snapshot_revision += 1
+        self.async_set_updated_data({
+            "snapshot_revision": self._snapshot_revision,
+            **content,
             "last_updated": self._now(),
         })
-        self._schedule_visual_expiry()
 
     def _native_name_for_entity(self, entity_id: str) -> str | None:
         """Apply existing Home Status naming choices at the native boundary."""
@@ -571,9 +767,6 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _schedule_visual_expiry(self) -> None:
         """Wake exactly when the next held visual reaches its expiration."""
-        if self._unsub_visual_expiry:
-            self._unsub_visual_expiry()
-            self._unsub_visual_expiry = None
         expirations = [
             lifetime["expires_at"]
             for lifetime in self._visual_source_lifetimes.values()
@@ -582,14 +775,25 @@ class HomeStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         live_news_wakeup = self.live_news.next_wakeup()
         if live_news_wakeup is not None:
             expirations.append(live_news_wakeup)
-        if expirations:
+        next_expiry = min(expirations) if expirations else None
+
+        # Do not cancel/recreate the same point-in-time listener on every minute
+        # tick or unrelated state change.
+        if next_expiry == self._visual_expiry_at and (next_expiry is None or self._unsub_visual_expiry):
+            return
+        if self._unsub_visual_expiry:
+            self._unsub_visual_expiry()
+            self._unsub_visual_expiry = None
+        self._visual_expiry_at = next_expiry
+        if next_expiry is not None:
             self._unsub_visual_expiry = async_track_point_in_time(
-                self.hass, self._visual_expired, min(expirations)
+                self.hass, self._visual_expired, next_expiry
             )
 
     @callback
     def _visual_expired(self, _now: datetime) -> None:
         self._unsub_visual_expiry = None
+        self._visual_expiry_at = None
         self._refresh_live_news()
         self._publish()
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Adds a user-selectable Performance mode with Standard and Low impact profiles.
+- Keeps caching, state-change coalescing, duplicate snapshot suppression, bounded transport, lazy media, and discovery caching enabled in both modes.
+- Standard favors fast initial population and one-minute RSS/Recorder reconciliation cadences.
+- Low impact defers and staggers startup work, polls RSS every 15 minutes, and reconciles Recorder history every 10 minutes while preserving event-driven live updates.
+- Exposes the active performance profile on the Home Status summary entity for diagnostics.
+
 ## 1.0.0
 
 - Established Home Status as the stable v1 notification and awareness platform for Home Assistant.

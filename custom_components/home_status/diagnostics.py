@@ -25,6 +25,7 @@ async def async_get_config_entry_diagnostics(
         "name_override_count": len(entry.options.get("name_overrides", {})),
         "entity_name_override_count": len(entry.options.get("entity_name_overrides", {})),
         "observed_entity_count": len(getattr(coordinator, "_observed", ())),
+        "performance_mode": getattr(coordinator, "performance_mode", "standard"),
         "native_current_count": len(native.get("current", [])),
         "native_recent_count": len(native.get("recent", [])),
         "native_awareness_count": len(native.get("awareness", [])),

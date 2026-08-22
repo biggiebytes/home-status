@@ -60,6 +60,7 @@ class HomeStatusSensor(CoordinatorEntity[HomeStatusCoordinator], SensorEntity):
             "health": data.get("health", "normal"),
             "priority": data.get("priority", "normal"),
             "active_count": int(data.get("active_count", 0) or 0),
+            "performance_mode": data.get("performance_mode", "standard"),
             "display": self._compact_display(data.get("display")),
             "presentation": self._compact_presentation(data.get("presentation")),
             "transport": self._transport_manifest(data, data.get("native")),

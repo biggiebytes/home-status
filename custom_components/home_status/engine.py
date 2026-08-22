@@ -36,24 +36,54 @@ class HomeStatusEngine:
         self.hass = hass
         self._home_devices: dict[str, HomeDevice] = {}
         self._sources: dict[str, HomeSource] = {}
+        self._home_devices_loaded = False
+        self._sources_loaded = False
+        # Runtime selection metadata is static for the life of a config-entry
+        # instance. Config changes reload the entry, so repeatedly rediscovering
+        # the entire HA entity/device registries on every state change is wasted
+        # work and can become expensive on large installations.
+        self._selection_options: dict[str, Any] | None = None
+        self._selected_entities_cache: list[HomeDevice] | None = None
+        self._selected_home_devices_cache: list[HomeDevice] | None = None
+        self._selected_sources_cache: list[HomeSource] | None = None
 
     def discover_home_devices(self) -> list[HomeDevice]:
         items = discover_home_devices(self.hass)
         self._home_devices = {item.id: item for item in items}
+        self._home_devices_loaded = True
+        self._clear_selection_cache()
         return items
 
     def discover_sources(self) -> list[HomeSource]:
         items = discover_sources(self.hass)
         self._sources = {item.id: item for item in items}
+        self._sources_loaded = True
+        self._clear_selection_cache()
         return items
 
     def home_devices(self) -> dict[str, HomeDevice]:
-        self.discover_home_devices()
+        if not self._home_devices_loaded:
+            self.discover_home_devices()
         return self._home_devices
 
     def sources(self) -> dict[str, HomeSource]:
-        self.discover_sources()
+        if not self._sources_loaded:
+            self.discover_sources()
         return self._sources
+
+    def _clear_selection_cache(self) -> None:
+        self._selection_options = None
+        self._selected_entities_cache = None
+        self._selected_home_devices_cache = None
+        self._selected_sources_cache = None
+
+    def _ensure_selection_cache(self, options: dict[str, Any]) -> None:
+        if self._selection_options is options:
+            return
+        self._selection_options = options
+        self._selected_entities_cache = None
+        self._selected_home_devices_cache = None
+        self._selected_sources_cache = None
 
     @staticmethod
     def _name_overrides(options: dict[str, Any]) -> dict[str, str]:
@@ -90,8 +120,12 @@ class HomeStatusEngine:
         """Return explicit entity selections as one-entity HomeDevices.
 
         This path is intentionally unrestricted. Discovery/classification does not
-        decide whether an entity is selectable.
+        decide whether an entity is selectable. The selection itself is cached;
+        interpreters still read live HA state on every composition.
         """
+        self._ensure_selection_cache(options)
+        if self._selected_entities_cache is not None:
+            return self._selected_entities_cache
         result: list[HomeDevice] = []
         for entity_id in self._selected_entity_ids(options):
             base = manual_home_device_for_entity(self.hass, entity_id)
@@ -102,15 +136,21 @@ class HomeStatusEngine:
             base.name = name
             base.metadata = {**(base.metadata or {}), "name_overridden": name != original_name, "manual_entity": True}
             result.append(base)
+        self._selected_entities_cache = result
+        self._selection_options = options
         return result
 
     def selected_home_devices(self, options: dict[str, Any]) -> list[HomeDevice]:
+        self._ensure_selection_cache(options)
+        if self._selected_home_devices_cache is not None:
+            return self._selected_home_devices_cache
         selected = options.get("selected_devices", [])
         if not isinstance(selected, list):
-            return []
+            self._selected_home_devices_cache = []
+            return self._selected_home_devices_cache
         selected_ids = {str(value) for value in selected}
         overrides = self._name_overrides(options)
-        return [
+        self._selected_home_devices_cache = [
             replace(
                 item,
                 name=overrides.get(item.id, item.name),
@@ -119,6 +159,8 @@ class HomeStatusEngine:
             for item_id, item in self.home_devices().items()
             if item_id in selected_ids
         ]
+        self._selection_options = options
+        return self._selected_home_devices_cache
 
 
     def _manual_appliance_context(self, selected: HomeDevice) -> HomeDevice:
@@ -211,12 +253,16 @@ class HomeStatusEngine:
         return self._manual_appliance_context(selected)
 
     def selected_sources(self, options: dict[str, Any]) -> list[HomeSource]:
+        self._ensure_selection_cache(options)
+        if self._selected_sources_cache is not None:
+            return self._selected_sources_cache
         selected = options.get("selected_sources", [])
         if not isinstance(selected, list):
-            return []
+            self._selected_sources_cache = []
+            return self._selected_sources_cache
         selected_ids = {str(value) for value in selected}
         overrides = self._name_overrides(options)
-        return [
+        self._selected_sources_cache = [
             replace(
                 item,
                 name=overrides.get(item.id, item.name),
@@ -225,6 +271,8 @@ class HomeStatusEngine:
             for item_id, item in self.sources().items()
             if item_id in selected_ids
         ]
+        self._selection_options = options
+        return self._selected_sources_cache
 
 
     def display_name_for_item(self, options: dict[str, Any], item: dict[str, Any]) -> str | None:

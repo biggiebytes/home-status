@@ -81,6 +81,7 @@ class HomeStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "selected_entities": list(user_input.get("selected_entities", [])),
                     "selected_devices": list(user_input.get("selected_devices", [])),
                     "selected_sources": list(user_input.get("selected_sources", [])),
+                    "performance_mode": "standard",
                 },
             )
         return self.async_show_form(
@@ -767,7 +768,33 @@ class HomeStatusOptionsFlow(config_entries.OptionsFlow):
         """Open the user-facing presentation and behavior settings."""
         return self.async_show_menu(
             step_id="presentation",
-            menu_options=["layout_sizing", "appearance", "visual_center", "names", "timing", "back_to_init"],
+            menu_options=["layout_sizing", "appearance", "visual_center", "names", "timing", "performance", "back_to_init"],
+        )
+
+    async def async_step_performance(self, user_input=None):
+        """Choose the Home Status scheduling profile."""
+        current = str(self.entry.options.get("performance_mode", "standard"))
+        if current not in {"standard", "low_impact"}:
+            current = "standard"
+        if user_input is not None:
+            options = self._options()
+            mode = str(user_input.get("performance_mode", "standard"))
+            options["performance_mode"] = mode if mode in {"standard", "low_impact"} else "standard"
+            return await self._save_options_and_return(options, "presentation")
+
+        return self.async_show_form(
+            step_id="performance",
+            data_schema=vol.Schema({
+                vol.Required("performance_mode", default=current): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": "standard", "label": "Standard"},
+                            {"value": "low_impact", "label": "Low impact (large installations)"},
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }),
         )
 
     def _option_value(self, key):

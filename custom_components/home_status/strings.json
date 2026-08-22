@@ -325,6 +325,7 @@
           "visual_center": "Visual Center behavior",
           "names": "Custom display names",
           "timing": "Recent activity & timestamps",
+          "performance": "Performance mode",
           "back_to_init": "← Back to Configuration"
         }
       },
@@ -628,6 +629,16 @@
       },
       "back_to_advanced": {
         "title": "Back to Advanced settings"
+      },
+      "performance": {
+        "title": "Performance mode",
+        "description": "Choose how aggressively Home Status performs background work. Standard favors faster initial population and more frequent background refreshes. Low impact delays and staggers expensive startup work and reduces periodic network/Recorder activity for large Home Assistant installations. Live entity changes remain event-driven in both modes.",
+        "data": {
+          "performance_mode": "Performance profile"
+        },
+        "data_description": {
+          "performance_mode": "Standard is recommended for most installations. Low impact is intended for large or busy Home Assistant systems where Home Status should minimize background resource use."
+        }
       }
     },
     "error": {
