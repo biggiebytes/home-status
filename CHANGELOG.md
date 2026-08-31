@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.2
+
+- Ships the tested Visual Mode phone portrait and landscape presentation behavior.
+- Applies phone-only text-size polish while preserving the finalized tablet layout.
+
 ## v1.0.1
 
 - Adds the selectable Standard and Low impact (large installations) Performance modes.

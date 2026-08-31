@@ -865,6 +865,108 @@ class HomeStatusLaneSlotController {
 }
 
 
+class HomeStatusVisualPresentationController {
+  constructor(card) {
+    this.card = card;
+    this.items = [];
+    this.cursor = 0;
+    this.currentId = null;
+    this.intervalSeconds = 7;
+    this.rotate = true;
+    this.signature = '';
+    this.nextAdvanceAt = null;
+  }
+
+  stop() {
+    this.nextAdvanceAt = null;
+  }
+
+  configure({ items, intervalSeconds, rotate, signature }) {
+    const nextItems = Array.isArray(items) ? items.filter(Boolean) : [];
+    const previousId = this.currentId;
+    this.stop();
+    this.items = nextItems;
+    this.intervalSeconds = intervalSeconds;
+    this.rotate = rotate !== false;
+    this.signature = signature || '';
+
+    if (!nextItems.length) {
+      this.cursor = 0;
+      this.currentId = null;
+      return;
+    }
+
+    const nextIds = nextItems.map(page => page.id);
+    const preservedIndex = previousId ? nextIds.indexOf(previousId) : -1;
+    this.cursor = preservedIndex >= 0 ? preservedIndex : Math.min(this.cursor, nextItems.length - 1);
+    this.currentId = nextItems[this.cursor].id;
+    this.card._visualPresentationPage = this.cursor;
+
+    if (!this.rotate || nextItems.length <= 1) return;
+    const intervalMs = Math.max(4, Number(this.intervalSeconds) || 7) * 1000;
+    this.nextAdvanceAt = this.card._alignedLaneCycleAt(intervalMs);
+  }
+
+  advance() {
+    if (this.card._rotationPaused || this.items.length <= 1) return;
+    const nextCursor = (this.cursor + 1) % this.items.length;
+    this.cursor = nextCursor;
+    this.currentId = this.items[nextCursor].id;
+    this.card._visualPresentationPage = nextCursor;
+    this.card._renderVisualPresentationPage();
+  }
+}
+
+class HomeStatusVisualWeatherController {
+  constructor(card) {
+    this.card = card;
+    this.items = [];
+    this.cursor = 0;
+    this.currentId = null;
+    this.intervalSeconds = 9;
+    this.rotate = true;
+    this.signature = '';
+    this.nextAdvanceAt = null;
+  }
+
+  stop() {
+    this.nextAdvanceAt = null;
+  }
+
+  configure({ items, intervalSeconds, rotate, signature }) {
+    const nextItems = Array.isArray(items) ? items.filter(Boolean) : [];
+    const previousId = this.currentId;
+    this.stop();
+    this.items = nextItems;
+    this.intervalSeconds = intervalSeconds;
+    this.rotate = rotate !== false;
+    this.signature = signature || '';
+
+    if (!nextItems.length) {
+      this.cursor = 0;
+      this.currentId = null;
+      return;
+    }
+
+    const ids = nextItems.map(item => item.id);
+    const preserved = previousId ? ids.indexOf(previousId) : -1;
+    this.cursor = preserved >= 0 ? preserved : Math.min(this.cursor, nextItems.length - 1);
+    this.currentId = nextItems[this.cursor].id;
+    this.card._renderVisualWeatherFace(nextItems[this.cursor]);
+
+    if (!this.rotate || nextItems.length <= 1) return;
+    const intervalMs = Math.max(4, Number(this.intervalSeconds) || 9) * 1000;
+    this.nextAdvanceAt = this.card._alignedLaneCycleAt(intervalMs);
+  }
+
+  advance() {
+    if (this.card._rotationPaused || this.items.length <= 1) return;
+    this.cursor = (this.cursor + 1) % this.items.length;
+    this.currentId = this.items[this.cursor].id;
+    this.card._renderVisualWeatherFace(this.items[this.cursor]);
+  }
+}
+
 class HomeStatusHeaderClimateController {
   constructor(card) {
     this.card = card;
@@ -964,6 +1066,11 @@ class HomeStatusCard extends HTMLElement {
     // Active Item Control (AIC) assigns active items to real physical slots.
     // The map is intentionally persistent across updates so surviving active
     // claims stay in place when another claim resolves or a new one arrives.
+    // Dashboard v2 reuses the proven v1 aligned slot scheduler instead of
+    // maintaining a second presentation timer.
+    this._visualPresentationController = new HomeStatusVisualPresentationController(this);
+    this._visualWeatherController = new HomeStatusVisualWeatherController(this);
+
     this._activeSlotClaims = new Map();
 
     // The six physical slots keep independent state, but share one scheduler.
@@ -1039,6 +1146,18 @@ class HomeStatusCard extends HTMLElement {
 
     this._domReady = false;
     this._clockTimer = null;
+
+    // Visual Mode v2: three fixed presentation slots. Only the content rotates.
+    this._visualPresentationPage = 0;
+    this._visualPresentationTimer = null;
+    this._visualPresentationSignature = '';
+    this._visualPresentationIntervalMs = 0;
+    this._onViewportChange = () => this._syncResponsiveVisualProfile();
+  }
+
+  connectedCallback() {
+    window.addEventListener('resize', this._onViewportChange, { passive: true });
+    this._syncResponsiveVisualProfile();
   }
 
   setConfig(config) {
@@ -1105,6 +1224,11 @@ class HomeStatusCard extends HTMLElement {
         ? config.lane_mode
         : 'slots';
 
+    const presentationMode =
+      ['classic', 'visual'].includes(config.presentation_mode)
+        ? config.presentation_mode
+        : 'classic';
+
     // Dark is the v1 default. Users can choose Auto to follow Home Assistant.
     const themeMode =
       ['auto', 'light', 'dark'].includes(config.theme_mode)
@@ -1132,6 +1256,9 @@ class HomeStatusCard extends HTMLElement {
 
       lane_mode:
         laneMode,
+
+      presentation_mode:
+        presentationMode,
 
       theme_mode:
         themeMode,
@@ -1260,14 +1387,17 @@ class HomeStatusCard extends HTMLElement {
           : 4
     };
 
-    this.setAttribute(
-      'data-profile',
-      profile
-    );
+    this._requestedProfile = profile;
+    this._syncResponsiveVisualProfile();
 
     this.setAttribute(
       'data-layout',
       this._config.layout
+    );
+
+    this.setAttribute(
+      'data-presentation-mode',
+      this._config.presentation_mode
     );
 
     this.setAttribute(
@@ -1367,6 +1497,18 @@ class HomeStatusCard extends HTMLElement {
     return parts.join('|');
   }
 
+  _syncResponsiveVisualProfile() {
+    const requested = this._requestedProfile || this._config?.profile || 'auto';
+    const phoneViewport = typeof window !== 'undefined' && window.matchMedia(
+      '(max-width: 600px), (max-width: 1000px) and (max-height: 600px)'
+    ).matches;
+    const effective = this._config?.presentation_mode === 'visual' && phoneViewport
+      ? 'phone'
+      : requested;
+
+    this.setAttribute('data-profile', effective);
+  }
+
   set hass(hass) {
     this._hass = hass;
     this._applyThemeMode(hass);
@@ -1406,6 +1548,7 @@ class HomeStatusCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('resize', this._onViewportChange);
     this._stopZoneRotations();
     this._stopVisualQueueRotation();
 
@@ -1795,6 +1938,10 @@ class HomeStatusCard extends HTMLElement {
       active,
       recent,
       awareness,
+      household: Array.isArray(channels.household.items) ? channels.household.items : [],
+      weather: Array.isArray(channels.weather.items) ? channels.weather.items : [],
+      calendar: Array.isArray(channels.calendar.items) ? channels.calendar.items : [],
+      news: Array.isArray(channels.news.items) ? channels.news.items : [],
       priority: attrs.priority || attrs.health || 'normal',
       count: Number(attrs.active_count) || active.length,
       display,
@@ -1858,6 +2005,10 @@ class HomeStatusCard extends HTMLElement {
       active: [],
       recent: [],
       awareness: [],
+      household: [],
+      weather: [],
+      calendar: [],
+      news: [],
       phone_primary: null,
       priority: attrs.priority || attrs.health || 'normal',
       count: Number(attrs.active_count) || 0,
@@ -2371,33 +2522,25 @@ class HomeStatusCard extends HTMLElement {
   }
 
   _syncVisualCenter(value) {
-    const zones =
-      this.shadowRoot.querySelector(
-        '.ticker-zones'
-      );
+    const zones = this.shadowRoot.querySelector('.ticker-zones');
+    const visualModeCenter = this.shadowRoot.querySelector('.visual-mode-center[data-visual-center]');
 
-    if (!zones) return;
+    if (!zones && !visualModeCenter) return;
 
-    const visual =
-      this._visualFromData(value);
+    const visual = this._visualFromData(value);
+    let center = visualModeCenter || zones?.querySelector('[data-visual-center]');
 
-    let center =
-      zones.querySelector(
-        '[data-visual-center]'
-      );
-
-    zones.classList.toggle(
-      'has-visual',
-      Boolean(visual)
-    );
+    zones?.classList.toggle('has-visual', Boolean(visual));
 
     if (!visual) {
-      this._destroyVisualHls(
-        center
-      );
-
-      center?.remove();
-
+      this._destroyVisualHls(center);
+      if (visualModeCenter) {
+        visualModeCenter.dataset.visualSignature = '';
+        visualModeCenter.dataset.visualMediaSignature = '';
+        visualModeCenter.innerHTML = '<span class="visual-center-fallback visual-mode-fallback"><ha-icon icon="mdi:image-outline"></ha-icon><span>Waiting for visual content</span></span>';
+      } else {
+        center?.remove();
+      }
       return;
     }
 
@@ -2493,6 +2636,7 @@ class HomeStatusCard extends HTMLElement {
     // visible main area to occupy; a ticker-only card must not grow a body just
     // because a visual source happens to be available.
     const hasMainArea =
+      this._config.presentation_mode === 'visual' ||
       this._config.home_status_visibility.left ||
       this._config.home_status_visibility.right;
 
@@ -4338,7 +4482,8 @@ class HomeStatusCard extends HTMLElement {
 
     if (
       signature ===
-      this._footerSignature
+      this._footerSignature &&
+      target.querySelector('.footer-marquee')
     ) {
       this._refreshFooterRelativeTimes();
       return;
@@ -5042,7 +5187,9 @@ class HomeStatusCard extends HTMLElement {
 
     const controllers = [
       ...Object.values(this._laneSlotControllers || {}).flat(),
-      this._headerClimateController
+      this._headerClimateController,
+      this._visualWeatherController,
+      this._visualPresentationController
     ].filter(controller =>
       controller?.rotate !== false &&
       controller?.items?.length > 1 &&
@@ -5065,7 +5212,9 @@ class HomeStatusCard extends HTMLElement {
     const toleranceMs = 40;
     const controllers = [
       ...Object.values(this._laneSlotControllers || {}).flat(),
-      this._headerClimateController
+      this._headerClimateController,
+      this._visualWeatherController,
+      this._visualPresentationController
     ];
 
     controllers.forEach(controller => {
@@ -7036,6 +7185,861 @@ class HomeStatusCard extends HTMLElement {
 
   }
 
+  _visualModeItems(data) {
+    const all = [
+      ...(Array.isArray(data?.active) ? data.active : []),
+      ...(Array.isArray(data?.awareness) ? data.awareness : []),
+      ...(Array.isArray(data?.recent) ? data.recent : [])
+    ];
+    const seen = new Set();
+    return all.filter(item => {
+      const id = this._laneItemId(item);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+
+  _visualModeCurrentItems(data) {
+    const all = [
+      ...(Array.isArray(data?.active) ? data.active : []),
+      ...(Array.isArray(data?.awareness) ? data.awareness : [])
+    ];
+    const seen = new Set();
+    return all.filter(item => {
+      const id = this._laneItemId(item);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+
+  _visualModeCategoryItems(data, categories, currentOnly = false) {
+    const wanted = new Set(categories.map(value => String(value).toLowerCase()));
+    const source = currentOnly ? this._visualModeCurrentItems(data) : this._visualModeItems(data);
+    return source.filter(item => {
+      const category = String(item?.category || '').toLowerCase();
+      const displayKind = String(item?.display_kind || '').toLowerCase();
+      return wanted.has(category) || wanted.has(displayKind);
+    });
+  }
+
+  _visualModeHay(item) {
+    return `${item?.category || ''} ${item?.display_kind || ''} ${item?.device_class || ''} ${item?.title || ''} ${item?.message || ''} ${item?.summary || ''} ${item?.secondary || ''} ${item?.entity_name || ''}`.toLowerCase();
+  }
+
+  _visualModeNavigationPath(role) {
+    const key = String(role || '').toLowerCase();
+    const aliases = {
+      household: ['location', 'household'],
+      appliances: ['appliances', 'energy'],
+      watering: ['sprinklers'],
+      waste: ['waste', 'calendar'],
+      weather: ['weather'],
+      traffic: ['traffic'],
+      calendar: ['calendar'],
+      music: ['music'],
+      security: ['security'],
+      cameras: ['cameras'],
+      sports: ['sports']
+    };
+    const keys = aliases[key] || [key];
+    for (const candidate of keys) {
+      const configured = homeStatusObject(this._config?.context_actions?.[candidate]);
+      if (String(configured?.path || '').trim()) return String(configured.path).trim();
+      const custom = (Array.isArray(this._config?.context_actions?.custom) ? this._config.context_actions.custom : [])
+        .find(action => String(action?.name || '').trim().toLowerCase() === candidate);
+      if (String(custom?.path || '').trim()) return String(custom.path).trim();
+    }
+    if (key === 'security') return String(this._config?.utility_header?.security_path || '').trim();
+    if (key === 'music') return String(this._config?.utility_header?.music_path || '').trim();
+    return '';
+  }
+
+  _visualModeSecurityState(data) {
+    const alarmId = this._config?.utility_header?.security_entity;
+    const alarm = alarmId ? this._state(alarmId) : null;
+    const rawState = String(alarm?.state || '').toLowerCase();
+    const alarmLabel = rawState
+      ? rawState.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+      : 'Home';
+    const activeSecurity = this._visualModeCategoryItems(
+      data,
+      ['security', 'door', 'window', 'lock', 'garage_door', 'moisture'],
+      true
+    ).filter(item => item?.active !== false && ['critical', 'attention'].includes(String(item?.priority || '').toLowerCase()));
+    const secure = activeSecurity.length === 0;
+    const triggered = /triggered/.test(rawState);
+    const pending = /arming|pending|entry|exit/.test(rawState);
+    const armedHome = /armed_home|armed_night|armed_custom_bypass/.test(rawState);
+    const armedAway = /armed_away|armed_vacation/.test(rawState);
+    const disarmed = rawState === 'disarmed';
+    const beacon = triggered ? 'triggered' : (pending ? 'pending' : (armedHome ? 'armed-home' : (armedAway ? 'armed-away' : (disarmed ? 'disarmed' : 'neutral'))));
+    const icon = triggered ? 'mdi:alarm-light' : (armedHome ? 'mdi:shield-home' : (armedAway ? 'mdi:shield-lock' : (pending ? 'mdi:shield-sync' : (secure ? 'mdi:shield-check' : 'mdi:shield-alert'))));
+    const detail = triggered
+      ? 'ALARM TRIGGERED'
+      : (armedHome ? 'Alarm is armed while you are home'
+      : (pending ? 'Alarm state is changing'
+      : (armedAway ? 'Away protection is active'
+      : (secure ? '' : `${activeSecurity.length} condition${activeSecurity.length === 1 ? '' : 's'} need attention`))));
+    return { secure, count: activeSecurity.length, label: rawState ? alarmLabel : (secure ? 'All Clear' : `${activeSecurity.length} Active`), icon, beacon, detail, armedHome, triggered, pending };
+  }
+
+  _visualModeWeatherState(data) {
+    const candidates = this._headerClimateItems(data);
+    const score = item => {
+      const displayKind = String(item?.display_kind || '').toLowerCase();
+      const deviceClass = String(item?.device_class || '').toLowerCase();
+      const category = String(item?.category || '').toLowerCase();
+      if (displayKind === 'current_weather') return 100;
+      if (deviceClass === 'temperature' || displayKind === 'temperature') return 70;
+      if (category === 'weather') return 60;
+      if (deviceClass === 'humidity' || /%/.test(String(item?.title || item?.message || ''))) return 10;
+      return 30;
+    };
+    const item = [...candidates].sort((a, b) => score(b) - score(a))[0] ||
+      this._visualModeCategoryItems(data, ['weather', 'climate', 'temperature'], true)[0] || null;
+    const state = this._headerClimateState(item);
+    const humidityItem = this._visualModeCurrentItems(data).find(candidate => {
+      const deviceClass = String(candidate?.device_class || '').toLowerCase();
+      const hay = this._visualModeHay(candidate);
+      return deviceClass === 'humidity' || (/humidity/.test(hay) && /%/.test(hay));
+    });
+    const humidityText = humidityItem
+      ? (humidityItem?.title || humidityItem?.message || humidityItem?.state || humidityItem?.summary || '')
+      : (state.humidity || '');
+    const humidityMatch = String(humidityText).match(/(\d{1,3})\s*%/);
+    return {
+      ...state,
+      icon: item?.icon || 'mdi:weather-partly-cloudy',
+      humidity: humidityMatch ? `${Math.min(100, Number(humidityMatch[1]))}%` : (state.humidity || ''),
+      humidityValue: humidityMatch ? Math.min(100, Number(humidityMatch[1])) : null
+    };
+  }
+
+  _visualWeatherEntity(data) {
+    const item = this._headerClimateItems(data).find(candidate => String(candidate?.display_kind || '').toLowerCase() === 'current_weather') || this._visualModeCategoryItems(data, ['weather'], true).find(candidate => String(candidate?.entity_id || '').startsWith('weather.'));
+    return item?.entity_id || '';
+  }
+
+  _ensureVisualWeatherForecast(data) {
+    const entityId = this._visualWeatherEntity(data);
+    if (!entityId || !this._hass?.connection?.subscribeMessage || (this._visualForecastEntity === entityId && this._visualForecastUnsub)) return;
+    this._visualForecastEntity = entityId;
+    try {
+      this._visualForecastUnsub = this._hass.connection.subscribeMessage(event => {
+        this._visualDailyForecast = (Array.isArray(event?.forecast) ? event.forecast : []).slice(0, 5);
+        const host = this.shadowRoot?.querySelector('[data-visual-forecast]');
+        if (host) host.innerHTML = this._visualForecastMarkup();
+      }, { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: entityId });
+    } catch (_) { this._visualDailyForecast = []; }
+  }
+
+  _visualForecastMarkup() {
+    let days = Array.isArray(this._visualDailyForecast) ? this._visualDailyForecast.slice(0, 5) : [];
+    if (!days.length && this._visualForecastEntity) {
+      const weatherState = this._state(this._visualForecastEntity);
+      const fallback = weatherState?.attributes?.forecast;
+      if (Array.isArray(fallback)) days = fallback.slice(0, 5);
+    }
+    if (!days.length) return '<span class="visual-forecast-waiting">Forecast unavailable</span>';
+    const icon = value => { value = String(value || '').toLowerCase(); if (/rain|pour/.test(value)) return 'mdi:weather-rainy'; if (/lightning|storm/.test(value)) return 'mdi:weather-lightning'; if (/partly/.test(value)) return 'mdi:weather-partly-cloudy'; if (/cloud/.test(value)) return 'mdi:weather-cloudy'; if (/snow/.test(value)) return 'mdi:weather-snowy'; if (/fog/.test(value)) return 'mdi:weather-fog'; return 'mdi:weather-sunny'; };
+    return days.map((day, index) => {
+      const date = day?.datetime ? new Date(day.datetime) : null;
+      const label = index === 0 ? 'Today' : (date && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date) : `Day ${index + 1}`);
+      const high = Number.isFinite(Number(day?.temperature)) ? `${Math.round(Number(day.temperature))}°` : '--';
+      const low = Number.isFinite(Number(day?.templow)) ? `${Math.round(Number(day.templow))}°` : '';
+      return `<span class="visual-forecast-day"><small>${this._escape(label)}</small><ha-icon icon="${icon(day?.condition)}"></ha-icon><strong>${high}</strong>${low ? `<em>${low}</em>` : ''}</span>`;
+    }).join('');
+  }
+
+  _visualOutsideWeatherState(data) {
+    // Prefer Home Status items, but outdoor climate sensors may not be promoted
+    // into the current lanes. Fall back to the live HA state registry so a
+    // selected exterior humidity sensor can still populate Outside Home.
+    const items = this._visualModeItems(data);
+    const outsidePattern = /outside|outdoor|exterior|patio|porch|back yard|backyard|front yard|frontyard/i;
+    const outside = items.filter(item => outsidePattern.test(this._visualModeHay(item)));
+    const pickItem = kind => outside.find(item => {
+      const hay = this._visualModeHay(item);
+      const deviceClass = String(item?.device_class || '').toLowerCase();
+      return kind === 'temperature'
+        ? deviceClass === 'temperature' || /temperature|temp\b/.test(hay)
+        : deviceClass === 'humidity' || /humidity/.test(hay);
+    });
+    const extractItem = (item, unit) => {
+      if (!item) return null;
+      const entity = item?.entity_id ? this._state(item.entity_id) : null;
+      const raw = String(entity?.state ?? item?.state ?? item?.message ?? item?.title ?? item?.summary ?? '');
+      const match = raw.match(/-?\d+(?:\.\d+)?/);
+      if (!match) return null;
+      const number = Number(match[0]);
+      if (!Number.isFinite(number)) return null;
+      return `${Math.round(number)}${unit}`;
+    };
+    const pickState = kind => {
+      const states = Object.entries(this._hass?.states || {});
+      const matches = states.filter(([entityId, state]) => {
+        const attrs = state?.attributes || {};
+        const deviceClass = String(attrs.device_class || '').toLowerCase();
+        if (deviceClass !== kind) return false;
+        const name = `${entityId} ${attrs.friendly_name || ''}`;
+        return outsidePattern.test(name);
+      });
+      if (!matches.length) return null;
+      // Prefer explicit outside/outdoor names over looser patio/yard matches.
+      matches.sort((a, b) => {
+        const score = ([entityId, state]) => /outside|outdoor|exterior/i.test(`${entityId} ${state?.attributes?.friendly_name || ''}`) ? 1 : 0;
+        return score(b) - score(a);
+      });
+      const raw = String(matches[0][1]?.state ?? '');
+      const number = Number(raw);
+      return Number.isFinite(number) ? number : null;
+    };
+
+    const temperature = extractItem(pickItem('temperature'), '°') || (() => {
+      const value = pickState('temperature');
+      return value == null ? null : `${Math.round(value)}°`;
+    })();
+    const humidity = extractItem(pickItem('humidity'), '%') || (() => {
+      const value = pickState('humidity');
+      return value == null ? null : `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+    })();
+    if (!temperature && !humidity) return null;
+    return { temperature: temperature || '--', humidity: humidity || '--' };
+  }
+
+  _visualWeatherFaces(data) {
+    const weather = this._visualModeWeatherState(data);
+    const faces = [{ id: 'forecast', type: 'forecast', weather }];
+    const outside = this._visualOutsideWeatherState(data);
+    if (outside) faces.push({ id: 'outside', type: 'outside', outside });
+    return faces;
+  }
+
+  _visualWeatherFaceMarkup(face, data = this._getRuntimeData()) {
+    if (face?.type === 'outside') {
+      const outside = face.outside || this._visualOutsideWeatherState(data) || {};
+      return `<div class="visual-weather-outside"><div class="visual-weather-outside-title"><ha-icon icon="mdi:home-export-outline"></ha-icon><span><strong>Outside Home</strong><small>Outdoor conditions</small></span></div><div class="visual-weather-outside-metrics"><span><ha-icon icon="mdi:thermometer"></ha-icon><b>${this._escape(outside.temperature || '--')}</b><small>Temperature</small></span><span><ha-icon icon="mdi:water-percent"></ha-icon><b>${this._escape(outside.humidity || '--')}</b><small>Humidity</small></span></div></div>`;
+    }
+    const weather = face?.weather || this._visualModeWeatherState(data);
+    return `<div class="visual-clean-weather-primary"><ha-icon class="visual-weather-icon" data-visual-weather-icon icon="${this._escape(weather.icon)}"></ha-icon><span class="visual-weather-temp" data-visual-weather-temp>${this._escape(weather.temperature || '--')}</span><span class="visual-clean-weather-copy"><strong data-visual-weather-condition>${this._escape(weather.condition || 'Weather')}</strong><small>Current conditions</small></span></div><div class="visual-clean-weather-metric"><ha-icon icon="mdi:water-percent"></ha-icon><span><b data-visual-weather-humidity>${this._escape(weather.humidity || '--')}</b><small>Humidity</small></span></div><div class="visual-clean-weather-forecast" data-visual-forecast>${this._visualForecastMarkup()}</div>`;
+  }
+
+  _renderVisualWeatherFace(face) {
+    const host = this.shadowRoot?.querySelector('[data-visual-weather-face]');
+    if (!host || !face) return;
+    host.dataset.weatherFace = face.id;
+    host.innerHTML = this._visualWeatherFaceMarkup(face);
+  }
+
+  _syncVisualWeatherRotation(data) {
+    const faces = this._visualWeatherFaces(data);
+    const backendInterval = Number(data?.display?.header_weather_rotation_seconds);
+    const interval = Math.max(5, Number.isFinite(backendInterval) && backendInterval > 0 ? backendInterval : 9);
+    const outside = faces.find(face => face.type === 'outside')?.outside;
+    const signature = `${faces.map(face => face.id).join('|')}::${outside?.temperature || ''}:${outside?.humidity || ''}::${interval}`;
+    const controller = this._visualWeatherController;
+    if (controller.signature === signature) return;
+    controller.configure({ items: faces, intervalSeconds: interval, rotate: true, signature });
+    this._scheduleLaneCycle();
+  }
+
+  _visualModeApplianceItems(data) {
+    // Dashboard v2 only promotes appliances that are useful now. Quiet/off
+    // appliances do not reserve presentation space; completion belongs in RECENT.
+    return this._visualModeCategoryItems(data, ['appliance', 'laundry'], true)
+      .filter(item => item?.active !== false)
+      .filter(item => !/\b(?:off|idle|standby|clear)\b/i.test(`${item?.state || ''} ${item?.message || ''} ${item?.title || ''}`))
+      .slice(0, 4);
+  }
+
+  _visualModeModuleItemMarkup(item) {
+    const primary = item?.message || item?.title || item?.entity_name || 'Status';
+    const secondary = item?.secondary || item?.summary || item?.subtitle || item?.state || '';
+    const icon = item?.icon || this._icon(item?.priority);
+    const semantic = this._iconSemanticClass(item);
+    const entity = item?.entity_id || '';
+    const appliancePath = this._visualModeNavigationPath('appliances');
+    const percentMatch = `${primary} ${secondary}`.match(/(?:^|\s)(\d{1,3})%/);
+    const percent = percentMatch ? Math.max(0, Math.min(100, Number(percentMatch[1]))) : null;
+    const progress = percent === null ? '' : `<span class="visual-mini-progress"><i style="width:${percent}%"></i></span>`;
+    return `<button class="visual-mini-item" type="button"${appliancePath ? ` data-visual-path="${this._escape(appliancePath)}"` : (entity ? ` data-visual-entity="${this._escape(entity)}"` : ' disabled')}><span class="visual-mini-icon ${this._escape(semantic)}"><ha-icon icon="${this._escape(icon)}"></ha-icon></span><span class="visual-mini-copy"><strong>${this._escape(primary)}</strong>${secondary ? `<small>${this._escape(this._visualModeFriendlyWhen(secondary))}</small>` : ''}${progress}</span>${entity ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}</button>`;
+  }
+
+  _visualModeFriendlyWhen(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const compactDate = raw.match(/^([A-Za-z]{3}),?\s*(\d{1,2})[.](\d{1,2})$/);
+    if (compactDate) {
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${compactDate[1]}, ${monthNames[Number(compactDate[3]) - 1] || compactDate[3]} ${Number(compactDate[2])}`;
+    }
+    const date = new Date(raw);
+    if (!Number.isNaN(date.getTime()) && /\d{4}-\d{2}-\d{2}/.test(raw)) {
+      return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(date);
+    }
+    return raw.replace(/^(on\s+)?/i, '').replace(/\b20\d{2}\b/g, '').replace(/[,.]\s*$/, '').trim();
+  }
+
+  _visualModeValue(item) {
+    return String(item?.state || item?.message || item?.title || item?.summary || '').trim();
+  }
+
+  _visualModeDetail(item) {
+    return String(item?.secondary || item?.summary || item?.subtitle || '').trim();
+  }
+
+  _visualModeNamedTile(name, item, fallbackValue, icon, tone = '') {
+    if (!item) return { name, value: fallbackValue, detail: '', icon, tone, entity: '', alert: false };
+    let value = this._visualModeValue(item) || fallbackValue;
+    let detail = this._visualModeDetail(item);
+    if (name === 'Rain Delay') {
+      const raw = `${item?.state || ''} ${item?.message || ''} ${item?.title || ''}`.toLowerCase();
+      value = /on|active|enabled|delay/.test(raw) && !/off|disabled|inactive/.test(raw) ? 'ON' : (item?.state || 'Active');
+    }
+    if (/watering|garbage|recycling|waste|calendar/i.test(name)) {
+      value = this._visualModeFriendlyWhen(value);
+      detail = this._visualModeFriendlyWhen(detail);
+      const usDate = text => String(text || '').replace(/\b(\d{1,2})[.](\d{1,2})\b/g, (_, day, month) => {
+        const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return `${names[Number(month) - 1] || month} ${Number(day)}`;
+      });
+      value = usDate(value);
+      detail = usDate(detail);
+    }
+    return {
+      name,
+      value: value || fallbackValue,
+      detail,
+      icon: item?.icon || icon,
+      tone,
+      entity: item?.entity_id || '',
+      alert: ['critical', 'attention'].includes(String(item?.priority || '').toLowerCase())
+    };
+  }
+
+  _visualModeDashboardModel(data) {
+    const items = this._visualModeCurrentItems(data);
+    const by = terms => items.filter(item => {
+      const hay = this._visualModeHay(item);
+      return terms.some(term => hay.includes(term));
+    });
+    const first = terms => by(terms)[0] || null;
+    const contacts = by(['door', 'window', 'garage door']).filter(item => !/rain|watering/.test(this._visualModeHay(item)));
+    const openContacts = contacts.filter(item => item?.active !== false && ['critical', 'attention'].includes(String(item?.priority || '').toLowerCase()));
+    const locks = Object.values(this._hass?.states || {}).filter(state => String(state?.entity_id || '').startsWith('lock.')).map(state => ({ entity_id: state.entity_id, state: state.state }));
+    const lockAlerts = locks.filter(item => String(item.state || '').toLowerCase() === 'unlocked');
+    const moisture = by(['leak', 'moisture', 'water leak']);
+    const moistureAlerts = moisture.filter(item => item?.active !== false && ['critical', 'attention'].includes(String(item?.priority || '').toLowerCase()));
+    const cameraAction = homeStatusObject(this._config?.context_actions?.cameras);
+    const cameraPath = String(cameraAction?.path || '').trim();
+    const cameraHealth = (data?.active || []).find(item => item?.category === 'cameras' || item?.event_type === 'camera_offline');
+    const presence = first(['everyone home', 'everyone away', 'household presence', 'household']);
+    const envCandidates = by(['air quality', 'humidity', 'indoor temperature', 'environment']).filter(item => {
+      const hay = this._visualModeHay(item);
+      return !/outside|weather|forecast/.test(hay);
+    });
+    const environment = envCandidates[0] || null;
+    const envText = environment ? `${environment?.title || ''} ${environment?.message || ''} ${environment?.state || ''}` : '';
+    const envNumber = (envText.match(/(-?\d+(?:\.\d+)?)\s*(?:%|°|aqi)?/i) || [])[1];
+    const envMetric = (terms, unitPattern) => {
+      const candidate = envCandidates.find(item => terms.some(term => this._visualModeHay(item).includes(term)));
+      if (!candidate) return null;
+      const raw = `${candidate?.title || ''} ${candidate?.message || ''} ${candidate?.state || ''} ${candidate?.summary || ''}`;
+      const match = raw.match(new RegExp(`(-?\\d+(?:\\.\\d+)?)\\s*(${unitPattern})?`, 'i'));
+      if (!match) return null;
+      return { value: match[1], unit: match[2] || '', entity: candidate.entity_id || '' };
+    };
+    const indoorTemp = envMetric(['indoor temperature', 'inside temperature'], '[°º]?[fFcC]?');
+    const indoorHumidity = envMetric(['humidity'], '%');
+    const airQuality = envMetric(['air quality', 'aqi'], 'aqi');
+    const rainDelay = first(['rain delay']);
+    const nextWatering = first(['next watering']);
+    const recycling = first(['recycling']);
+    const garbage = first(['garbage']);
+    const traffic = first(['traffic', 'commute']);
+    const calendar = first(['calendar']);
+
+    const securityTiles = [];
+    if (contacts.length) {
+      securityTiles.push({ name: 'Doors / Windows', value: openContacts.length ? `${openContacts.length} Open` : 'Closed', icon: openContacts.length ? 'mdi:door-open' : 'mdi:door-closed', entity: contacts[0]?.entity_id || '', alert: openContacts.length > 0 });
+    }
+    if (locks.length) {
+      securityTiles.push({ name: 'Locks', value: lockAlerts.length ? `${lockAlerts.length} Unlocked` : 'Locked', icon: lockAlerts.length ? 'mdi:lock-open-alert' : 'mdi:lock', entity: locks[0]?.entity_id || '', alert: lockAlerts.length > 0 });
+    }
+    if (moisture.length) {
+      securityTiles.push({ name: 'Leaks', value: moistureAlerts.length ? `${moistureAlerts.length} Alert` : 'Dry', icon: moistureAlerts.length ? 'mdi:water-alert' : 'mdi:water-check-outline', entity: moisture[0]?.entity_id || '', alert: moistureAlerts.length > 0 });
+    }
+    if (securityTiles.length < 3 && cameraPath) {
+      securityTiles.push({ name: 'Cameras', value: cameraHealth ? 'Needs Attention' : 'View Cameras', icon: cameraHealth ? 'mdi:cctv-off' : 'mdi:cctv', entity: '', path: cameraPath, alert: Boolean(cameraHealth) });
+    }
+    const securityAlertCount = openContacts.length + lockAlerts.length + moistureAlerts.length;
+    if (securityTiles.length < 3 || securityAlertCount) {
+      securityTiles.push({ name: 'Alerts', value: securityAlertCount ? String(securityAlertCount) : 'None', icon: securityAlertCount ? 'mdi:alert-circle-outline' : 'mdi:check-circle-outline', entity: '', alert: securityAlertCount > 0 });
+    }
+    while (securityTiles.length < 3) {
+      securityTiles.push({ name: 'Status', value: 'Clear', icon: 'mdi:shield-check-outline', entity: '', alert: false });
+    }
+
+    const glance = [];
+    if (rainDelay) glance.push(this._visualModeNamedTile('Rain Delay', rainDelay, 'OFF', 'mdi:weather-rainy', 'water'));
+    if (nextWatering) glance.push(this._visualModeNamedTile('Next Watering', nextWatering, 'Ready', 'mdi:sprinkler-variant', 'water'));
+    if (recycling) glance.push(this._visualModeNamedTile('Recycling', recycling, 'Clear', 'mdi:recycle', 'waste'));
+    if (garbage) glance.push(this._visualModeNamedTile('Garbage', garbage, 'Clear', 'mdi:trash-can-outline', 'waste'));
+    if (traffic && glance.length < 4) glance.push(this._visualModeNamedTile('Traffic', traffic, 'Clear', 'mdi:car', 'traffic'));
+    if (calendar && glance.length < 4) glance.push(this._visualModeNamedTile('Calendar', calendar, 'Today', 'mdi:calendar-month', 'calendar'));
+    while (glance.length < 4) {
+      const fallback = [
+        { name: 'Household', value: presence ? (presence?.title || presence?.message || 'Home') : 'Home', detail: presence ? this._visualModeDetail(presence) : '', icon: 'mdi:home-account', tone: 'presence', entity: presence?.entity_id || '', alert: false },
+        { name: 'Environment', value: environment ? (environment?.title || environment?.message || environment?.state || 'Good') : 'Good', detail: environment ? this._visualModeDetail(environment) : '', icon: environment?.icon || 'mdi:leaf', tone: 'environment', entity: environment?.entity_id || '', alert: false }
+      ][glance.length % 2];
+      if (!glance.some(tile => tile.name === fallback.name)) glance.push(fallback); else break;
+    }
+
+    return {
+      securityTiles,
+      presence: {
+        name: 'Household',
+        value: presence ? (presence?.title || presence?.message || presence?.state || 'Home') : 'Home',
+        detail: presence ? this._visualModeFriendlyWhen(this._visualModeDetail(presence)) : 'Current presence',
+        icon: presence?.icon || 'mdi:account-group',
+        entity: presence?.entity_id || ''
+      },
+      environment: {
+        name: 'Environment',
+        value: environment ? (environment?.title || environment?.message || environment?.state || 'Good') : 'Good',
+        detail: environment ? this._visualModeFriendlyWhen(this._visualModeDetail(environment)) : 'Comfort',
+        icon: environment?.icon || 'mdi:leaf',
+        entity: environment?.entity_id || '',
+        number: envNumber ? Number(envNumber) : null,
+        metrics: { indoorTemp, indoorHumidity, airQuality }
+      },
+      glance
+    };
+  }
+
+  _visualModeSecurityTileMarkup(tile) {
+    const tap = tile.path ? ` data-visual-path="${this._escape(tile.path)}"` : (tile.entity ? ` data-visual-entity="${this._escape(tile.entity)}"` : ' disabled');
+    return `<button class="visual-security-tile ${tile.alert ? 'has-alert' : ''}" type="button"${tap}><span class="visual-security-tile-icon"><ha-icon icon="${this._escape(tile.icon)}"></ha-icon></span><strong>${this._escape(tile.name)}</strong><small>${this._escape(tile.value)}</small>${tile.path || tile.entity ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}</button>`;
+  }
+
+  _visualModeGlanceTileMarkup(tile) {
+    const role = /watering|rain delay/i.test(tile.name) ? 'watering' : (/recycling|garbage/i.test(tile.name) ? 'waste' : (/traffic/i.test(tile.name) ? 'traffic' : (/calendar/i.test(tile.name) ? 'calendar' : '')));
+    const path = role ? this._visualModeNavigationPath(role) : '';
+    const tap = path ? ` data-visual-path="${this._escape(path)}"` : (tile.entity ? ` data-visual-entity="${this._escape(tile.entity)}"` : ' disabled');
+    return `<button class="visual-glance-tile ${this._escape(tile.tone || '')} ${tile.alert ? 'has-alert' : ''}" type="button"${tap}><span class="visual-glance-tile-icon"><ha-icon icon="${this._escape(tile.icon)}"></ha-icon></span><span class="visual-glance-tile-copy"><small>${this._escape(tile.name)}</small><strong>${this._escape(tile.value)}</strong>${tile.detail ? `<em>${this._escape(tile.detail)}</em>` : ''}</span>${path || tile.entity ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}</button>`;
+  }
+
+  _visualModeSpotlightItems(data) {
+    const current = this._visualModeCurrentItems(data);
+    const score = item => {
+      const priority = String(item?.priority || '').toLowerCase();
+      const hay = this._visualModeHay(item);
+      let value = priority === 'critical' ? 100 : (priority === 'attention' ? 70 : 20);
+      if (/repair|authentication|expired|unavailable|offline|fault|error|leak|alarm|open/.test(hay)) value += 25;
+      if (/garbage|recycling|next watering|household|weather/.test(hay)) value -= 20;
+      return value;
+    };
+    return current.filter(item => item?.active !== false).sort((a, b) => score(b) - score(a)).filter(item => score(item) >= 70).slice(0, 3);
+  }
+
+  _visualModeSpotlightMarkup(data) {
+    const items = this._visualModeSpotlightItems(data);
+    if (!items.length) return '';
+    const top = items[0];
+    const critical = String(top?.priority || '').toLowerCase() === 'critical';
+    const title = top?.title || top?.name || 'Needs attention';
+    const detail = this._visualModeDetail(top) || top?.message || top?.state || '';
+    const entity = top?.entity_id || '';
+    return `<div class="visual-priority-spotlight ${critical ? 'is-critical' : 'is-attention'}"${entity ? ` data-visual-entity="${this._escape(entity)}"` : ''}>
+      <span class="visual-priority-pulse"><ha-icon icon="${this._escape(top?.icon || (critical ? 'mdi:alert-octagon' : 'mdi:alert-circle'))}"></ha-icon></span>
+      <span class="visual-priority-copy"><small>${critical ? 'NEEDS ATTENTION NOW' : 'HOME STATUS • ATTENTION'}</small><strong>${this._escape(title)}</strong>${detail ? `<em>${this._escape(detail)}</em>` : ''}</span>
+      ${items.length > 1 ? `<b class="visual-priority-count">+${items.length - 1}</b>` : ''}
+    </div>`;
+  }
+
+  _visualModeAdaptiveZone(data, appliances = this._visualModeApplianceItems(data)) {
+    const attention = this._visualModeSpotlightItems(data).filter(item => !/(?:door|window|garage door)/i.test(this._visualModeHay(item)));
+    if (attention.length) {
+      return {
+        mode: 'attention',
+        title: attention.some(item => String(item?.priority || '').toLowerCase() === 'critical') ? 'NEEDS ATTENTION' : 'HOME STATUS',
+        icon: attention.some(item => String(item?.priority || '').toLowerCase() === 'critical') ? 'mdi:alert-octagon' : 'mdi:alert-circle-outline',
+        items: attention
+      };
+    }
+    if (appliances.length) {
+      return { mode: 'appliances', title: 'APPLIANCES', icon: 'mdi:washing-machine', items: appliances };
+    }
+    return { mode: 'quiet', title: 'ALL QUIET', icon: 'mdi:check-circle-outline', items: [] };
+  }
+
+  _visualModeAdaptiveZoneMarkup(data, appliances = this._visualModeApplianceItems(data)) {
+    const zone = this._visualModeAdaptiveZone(data, appliances);
+    const appliancePath = this._visualModeNavigationPath('appliances');
+    let body = '';
+    if (zone.mode === 'attention') {
+      body = zone.items.map((item, index) => {
+        const critical = String(item?.priority || '').toLowerCase() === 'critical';
+        const entity = item?.entity_id || '';
+        const title = item?.title || item?.name || item?.message || 'Needs attention';
+        const detail = this._visualModeDetail(item) || item?.message || item?.state || '';
+        return `<button class="visual-adaptive-alert ${critical ? 'is-critical' : 'is-attention'}" type="button"${entity ? ` data-visual-entity="${this._escape(entity)}"` : ' disabled'}>
+          <span class="visual-adaptive-alert-icon"><ha-icon icon="${this._escape(item?.icon || (critical ? 'mdi:alert-octagon' : 'mdi:alert-circle'))}"></ha-icon></span>
+          <span class="visual-adaptive-alert-copy"><small>${index === 0 ? (critical ? 'ACTION NEEDED' : 'NEEDS ATTENTION') : 'ALSO ACTIVE'}</small><strong>${this._escape(title)}</strong>${detail ? `<em>${this._escape(detail)}</em>` : ''}</span>
+          ${entity ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}
+        </button>`;
+      }).join('');
+    } else if (zone.mode === 'appliances') {
+      body = zone.items.map(item => this._visualModeModuleItemMarkup(item)).join('');
+    } else {
+      body = `<div class="visual-adaptive-quiet"><span class="visual-quiet-orb"><ha-icon icon="mdi:check"></ha-icon></span><span><strong>Nothing needs attention</strong><small>Home Status is watching the house.</small></span></div>`;
+    }
+    return {
+      ...zone,
+      markup: `<div class="visual-panel-heading visual-adaptive-heading"><span><ha-icon icon="${this._escape(zone.icon)}"></ha-icon><b>${this._escape(zone.title)}</b></span>${zone.mode === 'appliances' && appliancePath ? '<ha-icon icon="mdi:chevron-right"></ha-icon>' : ''}</div><div class="visual-adaptive-body">${body}</div>`,
+      path: zone.mode === 'appliances' ? appliancePath : ''
+    };
+  }
+
+  _visualModeHouseholdMarkup(model) {
+    const tile = model.presence;
+    const path = this._visualModeNavigationPath('household');
+    const names = String(tile.detail || '').split(/[,•]/).map(value => value.trim()).filter(value => value && !/current presence/i.test(value)).slice(0, 5);
+    const people = names.length
+      ? names.map(name => `<span class="visual-household-person"><span class="visual-household-person-orb"><ha-icon icon="mdi:account"></ha-icon></span><b>${this._escape(name)}</b></span>`).join('')
+      : `<span class="visual-household-person"><span class="visual-household-person-orb"><ha-icon icon="mdi:home-account"></ha-icon></span><b>Home</b></span>`;
+    return `<div class="visual-household-shell"${path ? ` data-visual-path="${this._escape(path)}"` : ''}>
+      <div class="visual-household-heading"><span class="visual-household-orb"><ha-icon icon="${this._escape(tile.icon)}"></ha-icon></span><span><small>HOUSEHOLD</small><strong>${this._escape(tile.value)}</strong><em>${names.length ? names.join(', ') : 'Current presence'}</em></span>${path ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}</div>
+      <div class="visual-household-people-grid">${people}</div>
+    </div>`;
+  }
+
+  _visualModeEnvironmentMarkup(model) {
+    const tile = model.environment;
+    const tap = tile.entity ? ` data-visual-entity="${this._escape(tile.entity)}"` : ' disabled';
+    const numeric = Number.isFinite(tile.number) ? Math.max(0, Math.min(100, tile.number)) : null;
+    const ringStyle = numeric === null ? '' : ` style="--visual-ring:${numeric * 3.6}deg"`;
+    const metrics = tile.metrics || {};
+    const metricMarkup = [
+      metrics.indoorTemp ? ['mdi:thermometer', metrics.indoorTemp, 'Temp'] : null,
+      metrics.indoorHumidity ? ['mdi:water-percent', metrics.indoorHumidity, 'Humidity'] : null,
+      metrics.airQuality ? ['mdi:leaf', metrics.airQuality, 'AQI'] : null
+    ].filter(Boolean).map(([icon, metric, label]) => `<span class="visual-env-metric"${metric.entity ? ` data-visual-entity="${this._escape(metric.entity)}"` : ''}><ha-icon icon="${icon}"></ha-icon><b>${this._escape(metric.value)}${this._escape(metric.unit || '')}</b><small>${label}</small></span>`).join('');
+    return `<button class="visual-environment-primary" type="button"${tap}><span class="visual-environment-ring"${ringStyle}><ha-icon icon="${this._escape(tile.icon)}"></ha-icon></span><span><small>ENVIRONMENT</small><strong>${this._escape(tile.value)}</strong><em>${this._escape(tile.detail)}</em></span>${tile.entity ? '<ha-icon class="visual-tap-chevron" icon="mdi:chevron-right"></ha-icon>' : ''}</button>${metricMarkup ? `<div class="visual-env-metrics">${metricMarkup}</div>` : ''}`;
+  }
+
+  _visualModeMusicMarkup() {
+    const music = this._utilityMusicState();
+    const idle = music.available && !music.playing && music.value !== 'paused';
+    const musicPath = this._visualModeNavigationPath('music');
+    const entityTap = musicPath ? ` data-visual-path="${this._escape(musicPath)}"` : (music.entity ? ` data-visual-entity="${this._escape(music.entity)}"` : '');
+    const playCommand = music.playing ? 'media_pause' : 'media_play';
+    const playIcon = music.playing ? 'mdi:pause' : 'mdi:play';
+    const sourceOptions = music.sources.map(source => `<button type="button" data-visual-music-source="${this._escape(source)}" class="${source === music.source ? 'is-selected' : ''}"><ha-icon icon="${source === music.source ? 'mdi:check' : 'mdi:speaker'}"></ha-icon><span>${this._escape(source)}</span></button>`).join('');
+    const sourceSelector = music.sources.length ? `<div class="visual-music-source-wrap"><button class="visual-music-source-trigger" type="button" data-visual-source-toggle><ha-icon icon="mdi:speaker-multiple"></ha-icon><span>${this._escape(music.source || 'Choose source')}</span><ha-icon icon="mdi:chevron-down"></ha-icon></button><div class="visual-music-source-menu" data-visual-source-menu hidden>${sourceOptions}</div></div>` : '';
+
+    if (idle) {
+      return `<div class="visual-music-shell visual-music-idle"${entityTap}><span class="visual-music-idle-icon"><ha-icon icon="mdi:music-note"></ha-icon></span>${sourceSelector || '<span class="visual-music-idle-source">Music</span>'}<button class="visual-music-play visual-music-idle-play" type="button" data-music-command="media_play" aria-label="Play"><ha-icon icon="mdi:play"></ha-icon></button></div>`;
+    }
+
+    const artwork = music.artwork ? `<img class="visual-music-artwork" src="${this._escape(music.artwork)}" alt="" loading="lazy">` : `<span class="visual-music-artwork visual-music-artwork-fallback"><ha-icon icon="${this._escape(music.icon)}"></ha-icon></span>`;
+    const volume = Math.round((music.volume || 0) * 100);
+    return `<div class="visual-music-shell visual-music-active"${entityTap}>
+      ${artwork}
+      <div class="visual-music-copy"><strong>${this._escape(music.title)}</strong><em>${this._escape(music.secondary)}</em></div>
+      <div class="visual-music-controls"><button type="button" data-music-command="media_previous_track" aria-label="Previous"><ha-icon icon="mdi:skip-previous"></ha-icon></button><button class="visual-music-play" type="button" data-music-command="${playCommand}" aria-label="${music.playing ? 'Pause' : 'Play'}"><ha-icon icon="${playIcon}"></ha-icon></button><button type="button" data-music-command="media_next_track" aria-label="Next"><ha-icon icon="mdi:skip-next"></ha-icon></button></div>
+      ${sourceSelector}
+      <div class="visual-music-volume"><ha-icon data-visual-music-volume-icon icon="${volume === 0 ? 'mdi:volume-off' : volume < 50 ? 'mdi:volume-medium' : 'mdi:volume-high'}"></ha-icon><input type="range" min="0" max="1" step="0.01" value="${music.volume || 0}" data-visual-music-volume aria-label="Music volume" aria-valuetext="${volume} percent"><b data-visual-music-volume-label>${volume}%</b></div>
+    </div>`;
+  }
+
+  _visualModeFlowCard(title, icon, body, size = 'medium', path = '', extra = '') {
+    return `<section class="visual-flow-card visual-panel size-${size} ${extra}"${path ? ` data-visual-path="${this._escape(path)}"` : ''}><div class="visual-panel-heading"><span><ha-icon icon="${this._escape(icon)}"></ha-icon><b>${this._escape(title)}</b></span>${path ? '<ha-icon icon="mdi:chevron-right"></ha-icon>' : ''}</div>${body}</section>`;
+  }
+
+  _visualModePresentationCandidates(data, appliances, model) {
+    const current = this._visualModeCurrentItems(data);
+    const hay = item => this._visualModeHay(item);
+    const candidates = [];
+    const add = (key, kind, markup, target = {}) => candidates.push({ key, kind, markup, ...target });
+
+    // Active appliances are useful NOW. Quiet/all-clear appliances do not get a slot.
+    for (const item of appliances.slice(0, 4)) {
+      const title = item?.title || item?.message || 'Appliance';
+      const detail = this._visualModeDetail(item) || item?.state || '';
+      add(`appliance:${item?.entity_id || title}`, 'appliance', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="${this._escape(item?.icon || 'mdi:washing-machine')}"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(title)}</strong><b>${this._escape(detail)}</b></div></div>`, item?.entity_id ? { entity: item.entity_id } : { path: this._visualModeNavigationPath('appliances') });
+    }
+
+    // Household is a single summary, never a repeated person list.
+    const household = model?.presence || {};
+    const householdTitle = household.value || household.label || household.title || 'Home';
+    const householdDetail = household.detail || household.summary || 'Current presence';
+    add('household:summary', 'household', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="mdi:home-account"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(householdTitle)}</strong><b>${this._escape(householdDetail)}</b></div></div>`, { path: this._visualModeNavigationPath('household') });
+
+    // Each route is its own glanceable presentation.
+    const trafficItems = current.filter(item => /traffic|commute/.test(hay(item))).slice(0, 6);
+    for (const item of trafficItems) {
+      const raw = String(item?.title || item?.message || 'Traffic').trim();
+      const match = raw.match(/^(.+?):\s*(\d+)\s*min/i);
+      const place = match ? match[1] : raw;
+      const value = match ? `${match[2]} MIN` : (this._visualModeDetail(item) || item?.state || '');
+      add(`traffic:${item?.entity_id || raw}`, 'traffic', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="${this._escape(item?.icon || 'mdi:car-clock')}"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(place)}</strong><span class="visual-presentation-value">${this._escape(value)}</span><b>${this._escape(match ? (this._visualModeDetail(item) || 'Travel time') : 'Travel time')}</b></div></div>`, item?.entity_id ? { entity: item.entity_id } : { path: this._visualModeNavigationPath('traffic') });
+    }
+
+    // Calendar events rotate individually so titles can stay large and readable.
+    const calendarItems = (Array.isArray(data?.calendar) ? data.calendar : [])
+      .filter(item => !/garbage|recycling|waste/.test(hay(item)))
+      // Visit Jacksonville is a Visual Center source. Keep those event cards out of
+      // the three-slot Calendar rotation so the same event is never presented twice.
+      .filter(item => {
+        const source = `${item?.source || ''} ${item?.source_name || ''} ${item?.source_id || ''} ${item?.provider || ''} ${item?.provider_name || ''} ${item?.feed || ''} ${item?.feed_name || ''} ${item?.calendar || ''} ${item?.calendar_name || ''} ${item?.entity_id || ''}`.toLowerCase();
+        return !/(?:visit[ _-]?jacksonville|visit[ _-]?jax|visitjax)/i.test(source);
+      })
+      .slice(0, 6);
+    for (const item of calendarItems) {
+      const title = item?.title || item?.message || 'Upcoming event';
+      const when = this._visualModeFriendlyWhen(item?.scheduled_at || item?.event_start || this._visualModeDetail(item) || item?.state || '');
+      add(`calendar:${item?.entity_id || title}`, 'calendar', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="${this._escape(item?.icon || 'mdi:calendar-star')}"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(title)}</strong><span class="visual-presentation-value visual-presentation-value-small">${this._escape(when)}</span></div></div>`, item?.entity_id ? { entity: item.entity_id } : { path: this._visualModeNavigationPath('calendar') });
+    }
+
+    // Sports keeps a scoreboard treatment inside the same fixed slot geometry.
+    const sportsItems = current.filter(item => /football|nfl|college football|scoreboard|sports|game/.test(hay(item)) && !/video game|game room/.test(hay(item))).slice(0, 4);
+    for (const item of sportsItems) {
+      const message = String(item?.message || item?.title || 'Game').trim();
+      let away = '', home = '', awayScore = '', homeScore = '';
+      let match = message.match(/^(.+?)\s+(\d+)\s*[·•]\s*(.+?)\s+(\d+)$/);
+      if (match) [, away, awayScore, home, homeScore] = match;
+      else { match = message.match(/^(.+?)\s+@\s+(.+)$/); if (match) [, away, home] = match; }
+      const state = String(item?.sports_state || item?.state || '').toLowerCase();
+      const when = this._visualModeFriendlyWhen(item?.scheduled_at || item?.detail || item?.summary || '');
+      const score = away && home ? `${awayScore || away} ${awayScore ? '–' : '@'} ${homeScore || home}` : message;
+      const sub = state === 'final' ? 'Final' : state === 'live' ? 'Live' : (when || 'Upcoming');
+      add(`sports:${item?.entity_id || message}`, 'sports', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="${this._escape(item?.icon || 'mdi:football')}"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(away && home && awayScore ? `${away} vs ${home}` : (away && home ? `${away} @ ${home}` : 'Sports'))}</strong><span class="visual-presentation-value">${this._escape(score)}</span><b>${this._escape(sub)}</b></div></div>`, item?.entity_id ? { entity: item.entity_id } : { path: this._visualModeNavigationPath('sports') });
+    }
+
+    // Watering / waste are compact facts, promoted one at a time to a large readable slot.
+    for (const tile of (model?.glance || []).filter(tile => /rain delay|watering|recycling|garbage/i.test(tile?.name || '')).slice(0, 6)) {
+      const title = tile?.name || 'Home';
+      const value = tile?.value || tile?.state || tile?.detail || '';
+      const detail = tile?.detail || tile?.secondary || '';
+      const role = /rain delay|watering/i.test(title) ? 'watering' : 'waste';
+      add(`glance:${title}`, 'glance', `<div class="visual-presentation-inner"><ha-icon class="visual-presentation-icon" icon="${this._escape(tile?.icon || 'mdi:home-outline')}"></ha-icon><div class="visual-presentation-copy"><strong>${this._escape(title)}</strong><span class="visual-presentation-value visual-presentation-value-small">${this._escape(value)}</span>${detail && detail !== value ? `<b>${this._escape(detail)}</b>` : ''}</div></div>`, tile?.entity ? { entity: tile.entity } : { path: this._visualModeNavigationPath(role) });
+    }
+
+    return candidates;
+  }
+
+  _visualModeDynamicFlow(data, appliances, model) {
+    const candidates = this._visualModePresentationCandidates(data, appliances, model);
+    if (!candidates.length) return '';
+    const pageCount = Math.max(1, Math.ceil(candidates.length / 3));
+    const page = ((this._visualPresentationPage || 0) % pageCount + pageCount) % pageCount;
+    const selected = candidates.slice(page * 3, page * 3 + 3);
+    if (selected.length < 3 && candidates.length > selected.length) {
+      for (const candidate of candidates) {
+        if (selected.length >= 3) break;
+        if (!selected.some(item => item.key === candidate.key)) selected.push(candidate);
+      }
+    }
+    return selected.map(item => {
+      const target = item.entity ? ` data-visual-entity="${this._escape(item.entity)}"` : (item.path ? ` data-visual-path="${this._escape(item.path)}"` : '');
+      const interactive = target ? ' is-tappable' : '';
+      return `<section class="visual-presentation-slot type-${this._escape(item.kind)}${interactive}" data-presentation-key="${this._escape(item.key)}"${target}>${item.markup}</section>`;
+    }).join('');
+  }
+
+  _ensureVisualPresentationRotation(data, appliances, model) {
+    const candidates = this._visualModePresentationCandidates(data, appliances, model);
+    const pages = [];
+    for (let index = 0; index < candidates.length; index += 3) {
+      const pageItems = candidates.slice(index, index + 3);
+      if (pageItems.length < 3 && candidates.length > pageItems.length) {
+        for (const candidate of candidates) {
+          if (pageItems.length >= 3) break;
+          if (!pageItems.some(item => item.key === candidate.key)) pageItems.push(candidate);
+        }
+      }
+      pages.push({ id: pageItems.map(item => item.key).join('|'), items: pageItems });
+    }
+
+    const seconds = Math.max(4, Number(data?.display?.rotation_seconds) || Number(this._config?.rotation_seconds) || 7);
+    const signature = pages.map(page => page.id).join('||');
+    const controller = this._visualPresentationController;
+    if (!controller) return;
+
+    // This is the same v1 controller/scheduler contract used by the original
+    // physical lane slots: preserve the current item, align to the shared
+    // cycle epoch, and let _scheduleLaneCycle/_runLaneCycle own advancement.
+    if (controller.signature !== signature || controller.intervalSeconds !== seconds) {
+      controller.configure({ items: pages, intervalSeconds: seconds, rotate: true, signature });
+      this._scheduleLaneCycle();
+    }
+  }
+
+  _renderVisualPresentationPage() {
+    const flow = this.shadowRoot?.querySelector('[data-visual-dynamic-flow]');
+    if (!flow) return;
+    const runtime = this._getRuntimeData();
+    const appliances = this._visualModeApplianceItems(runtime);
+    const model = this._visualModeDashboardModel(runtime);
+    flow.innerHTML = this._visualModeDynamicFlow(runtime, appliances, model);
+    this._bind();
+  }
+
+  _renderVisualDashboard(data) {
+    this._ensureVisibilityObserver();
+    this.dataset.laneMode = this._config?.lane_mode || 'slots';
+    if (data.unavailable) {
+      this.shadowRoot.innerHTML = `${this._styles()}<ha-card class="home-status-unavailable"><div><strong>Home Status is unavailable</strong><span>Choose a valid Home Status sensor in the card editor, or finish setting up the integration.</span><code>${this._escape(this._config.entity)}</code></div></ha-card>`;
+      return;
+    }
+
+    const configuredMedia = this._config.display?.media_enabled;
+    const globalVisualCenterEnabled = data.display?.visual_center_enabled !== false;
+    this._mediaEnabled = globalVisualCenterEnabled && (configuredMedia === undefined ? data.display?.media_enabled !== false : configuredMedia !== false);
+
+    const security = this._visualModeSecurityState(data);
+    const securityEntity = this._config?.utility_header?.security_entity || this._visualModeCurrentItems(data).find(item => String(item?.entity_id || '').startsWith('alarm_control_panel.'))?.entity_id || '';
+    const weather = this._visualModeWeatherState(data);
+    const weatherEntity = this._visualModeCurrentItems(data).find(item => String(item?.entity_id || '').startsWith('weather.'))?.entity_id || '';
+    const securityPath = this._visualModeNavigationPath('security');
+    const weatherPath = this._visualModeNavigationPath('radar') || this._visualModeNavigationPath('weather');
+    const appliances = this._visualModeApplianceItems(data);
+    const model = this._visualModeDashboardModel(data);
+    const recentItems = this._buildFooterStream(data);
+    const musicMarkup = this._visualModeMusicMarkup();
+    const flowMarkup = this._visualModeDynamicFlow(data, appliances, model);
+    this._ensureVisualPresentationRotation(data, appliances, model);
+    this._ensureVisualWeatherForecast(data);
+
+    this._destroyVisualHls(this.shadowRoot.querySelector('[data-visual-center]'));
+    this.shadowRoot.innerHTML = `${this._styles()}
+      <ha-card class="visual-dashboard-card visual-clean-dashboard">
+        <div class="visual-clean-shell">
+          <div class="visual-clean-top">
+            <section class="visual-clean-security ${security.secure ? 'is-clear' : 'has-alert'} beacon-${this._escape(security.beacon)}" data-visual-security${securityPath ? ` data-visual-path="${this._escape(securityPath)}"` : (securityEntity ? ` data-visual-entity="${this._escape(securityEntity)}"` : '')}>
+              <div class="visual-security-hero"><div class="visual-security-ring"><span class="visual-security-beacon-core"><ha-icon data-visual-security-icon icon="${security.icon}"></ha-icon></span></div><div class="visual-security-state-copy"><strong data-visual-security-label>${this._escape(security.label)}</strong><small data-visual-security-detail>${this._escape(security.detail)}</small></div></div>
+              <div class="visual-security-tile-row" data-visual-security-stats>${model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('')}</div>
+            </section>
+
+            <section class="visual-clean-center">
+              <div class="visual-center visual-mode-center" data-visual-center></div>
+            </section>
+
+            <section class="visual-clean-music" data-visual-music>${musicMarkup}</section>
+          </div>
+
+          <section class="visual-clean-weather is-tappable" aria-label="Weather — tap for radar"${weatherPath ? ` data-visual-path="${this._escape(weatherPath)}"` : (weatherEntity ? ` data-visual-entity="${this._escape(weatherEntity)}"` : '')}>
+            <div class="visual-weather-face" data-visual-weather-face data-weather-face="forecast">${this._visualWeatherFaceMarkup({ id: 'forecast', type: 'forecast', weather }, data)}</div>
+          </section>
+
+          <section class="visual-clean-content">
+            <div class="visual-v20-flow" data-visual-dynamic-flow>${flowMarkup}</div>
+          </section>
+        </div>
+
+        <button class="ticker visual-mode-ticker priority-${this._escape(data.priority)}${recentItems.length ? '' : ' ticker-empty'}" type="button" aria-expanded="${this._drawerOpen}"><span class="visual-rail-label"><ha-icon icon="mdi:home-assistant"></ha-icon><span><strong>RECENT</strong><small>Live updates • Last 6 hours</small></span></span><span class="ticker-footer"><span class="bottom-stream" data-zone="bottom"></span></span></button>
+        <div class="drawer-host"></div>
+      </ha-card>`;
+
+    this._weatherRenderer.mount(this.shadowRoot.querySelector('.visual-dashboard-card'));
+    this._weatherRenderer.setEffect(this._weatherVisualEffect(data));
+    this._weatherRenderer.setVisible(this._ambientVisible);
+    this._baseVisual = data.visual;
+    this._syncVisualQueue(data);
+    this._syncDisplayedVisual();
+    this._renderFooterStream(recentItems);
+    this._syncVisualWeatherRotation(data);
+    this._updateDrawer(data);
+    this._bind();
+  }
+
+  _updateVisualDashboard(data) {
+    this._ensureVisualWeatherForecast(data);
+    const card = this.shadowRoot.querySelector('.visual-dashboard-card');
+    if (!card) { this._renderVisualDashboard(data); return; }
+    const security = this._visualModeSecurityState(data);
+    const weather = this._visualModeWeatherState(data);
+    const model = this._visualModeDashboardModel(data);
+    const adaptiveMode = this._visualModeAdaptiveZone(data).mode;
+    const grid = card.querySelector('.visual-v5-grid');
+    if (grid) {
+      grid.classList.toggle('has-priority-zone', adaptiveMode === 'attention');
+      grid.classList.toggle('has-no-appliances', adaptiveMode === 'quiet');
+      grid.classList.toggle('has-light-appliances', adaptiveMode === 'appliances' && this._visualModeApplianceItems(data).length === 1);
+      grid.classList.toggle('has-busy-appliances', adaptiveMode === 'appliances' && this._visualModeApplianceItems(data).length > 1);
+    }
+    const securityModule = card.querySelector('[data-visual-security]');
+    securityModule?.classList.toggle('is-clear', security.secure); securityModule?.classList.toggle('has-alert', !security.secure);
+    card.querySelector('[data-visual-security-icon]')?.setAttribute('icon', security.icon);
+    const sl = card.querySelector('[data-visual-security-label]'); if (sl) sl.textContent = security.label;
+    const sd = card.querySelector('[data-visual-security-detail]'); if (sd) sd.textContent = security.secure ? '' : `${security.count} condition${security.count === 1 ? '' : 's'} need attention`;
+    const ss = card.querySelector('[data-visual-security-stats]'); if (ss) ss.innerHTML = model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('');
+    this._syncVisualWeatherRotation(data);
+    const weatherFace = card.querySelector('[data-visual-weather-face]');
+    if (weatherFace?.dataset.weatherFace === 'forecast') {
+      card.querySelector('[data-visual-weather-icon]')?.setAttribute('icon', weather.icon);
+      const wt = card.querySelector('[data-visual-weather-temp]'); if (wt) wt.textContent = weather.temperature || '--';
+      const wc = card.querySelector('[data-visual-weather-condition]'); if (wc) wc.textContent = weather.condition || 'Weather';
+      const wh = card.querySelector('[data-visual-weather-humidity]'); if (wh) wh.textContent = weather.humidity || '--';
+    }
+    const household = card.querySelector('[data-visual-household]'); if (household) household.innerHTML = this._visualModeHouseholdMarkup(model);
+    const music = card.querySelector('[data-visual-music]'); if (music) music.innerHTML = this._visualModeMusicMarkup();
+    const glance = card.querySelector('[data-visual-glance]'); if (glance) glance.innerHTML = model.glance.slice(0, 4).map(tile => this._visualModeGlanceTileMarkup(tile)).join('');
+    const appliances = this._visualModeApplianceItems(data);
+    this._ensureVisualPresentationRotation(data, appliances, model);
+    const flow = card.querySelector('[data-visual-dynamic-flow]');
+    if (flow) {
+      const markup = this._visualModeDynamicFlow(data, appliances, model);
+      const template = document.createElement('template');
+      template.innerHTML = markup;
+      const nextSlots = [...template.content.querySelectorAll('[data-presentation-key]')];
+      const liveSlots = [...flow.querySelectorAll('[data-presentation-key]')];
+      const nextKeys = nextSlots.map(slot => slot.dataset.presentationKey || '').join('|');
+      const liveKeys = liveSlots.map(slot => slot.dataset.presentationKey || '').join('|');
+
+      if (nextKeys !== liveKeys) {
+        // A real membership/page change may replace the slots. Ordinary HA state
+        // updates never replace the three live slot nodes, which prevents the
+        // random blink that looked like an unscheduled rotation.
+        flow.innerHTML = markup;
+        this._bind();
+      } else {
+        // Refresh changing values in place. Preserve each slot element so text,
+        // scores, times and states can update without flashing the presentation.
+        liveSlots.forEach((live, index) => {
+          const next = nextSlots[index];
+          if (!next) return;
+          const liveIcon = live.querySelector('.visual-presentation-icon');
+          const nextIcon = next.querySelector('.visual-presentation-icon');
+          if (liveIcon && nextIcon) {
+            const icon = nextIcon.getAttribute('icon');
+            if (icon && liveIcon.getAttribute('icon') !== icon) liveIcon.setAttribute('icon', icon);
+          }
+          const selectors = ['strong', '.visual-presentation-value', 'b'];
+          selectors.forEach(selector => {
+            const liveNodes = [...live.querySelectorAll(selector)];
+            const nextNodes = [...next.querySelectorAll(selector)];
+            liveNodes.forEach((node, nodeIndex) => {
+              const nextNode = nextNodes[nodeIndex];
+              if (nextNode && node.textContent !== nextNode.textContent) node.textContent = nextNode.textContent;
+            });
+          });
+          for (const attr of ['data-visual-entity', 'data-visual-path']) {
+            const value = next.getAttribute(attr);
+            if (value === null) live.removeAttribute(attr);
+            else if (live.getAttribute(attr) !== value) live.setAttribute(attr, value);
+          }
+          live.classList.toggle('is-tappable', next.classList.contains('is-tappable'));
+        });
+      }
+    }
+    const configuredMedia = this._config.display?.media_enabled, globalVisualCenterEnabled = data.display?.visual_center_enabled !== false; this._mediaEnabled = globalVisualCenterEnabled && (configuredMedia === undefined ? data.display?.media_enabled !== false : configuredMedia !== false);
+    this._weatherRenderer.mount(card); this._weatherRenderer.setEffect(this._weatherVisualEffect(data)); this._weatherRenderer.setVisible(this._ambientVisible); this._baseVisual = data.visual; this._syncVisualQueue(data); this._syncDisplayedVisual(); this._renderFooterStream(this._buildFooterStream(data)); this._updateDrawer(data); this._bind();
+  }
+
   _renderCategoryLayout(data) {
     this._ensureVisibilityObserver();
     this.dataset.laneMode = this._config?.lane_mode || 'slots';
@@ -7309,6 +8313,54 @@ class HomeStatusCard extends HTMLElement {
       this.shadowRoot.querySelector(
         '.drawer-host'
       );
+
+    this.shadowRoot.querySelectorAll('[data-visual-entity]').forEach(target => {
+      if (target.dataset.visualBound) return;
+      target.dataset.visualBound = 'true';
+      target.setAttribute('role', target.getAttribute('role') || 'button');
+      if (!target.hasAttribute('tabindex') && target.tagName !== 'BUTTON') target.tabIndex = 0;
+      const open = event => {
+        if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
+        if (event.type === 'keydown') event.preventDefault();
+        event.stopPropagation();
+        const entityId = target.dataset.visualEntity;
+        if (!entityId) return;
+        this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId } }));
+      };
+      target.addEventListener('click', open);
+      if (target.tagName !== 'BUTTON') target.addEventListener('keydown', open);
+    });
+
+    this.shadowRoot.querySelectorAll('[data-visual-path]').forEach(button => {
+      if (button.dataset.visualPathBound) return; button.dataset.visualPathBound = 'true';
+      button.addEventListener('click', event => { event.stopPropagation(); this._navigateUtility(button.dataset.visualPath); });
+    });
+    this.shadowRoot.querySelectorAll('[data-visual-source-toggle]').forEach(button => {
+      if (button.dataset.visualSourceBound) return; button.dataset.visualSourceBound = 'true';
+      button.addEventListener('click', event => { event.stopPropagation(); const menu = button.parentElement?.querySelector('[data-visual-source-menu]'); if (menu) menu.hidden = !menu.hidden; });
+    });
+    this.shadowRoot.querySelectorAll('[data-visual-music-source]').forEach(button => {
+      if (button.dataset.visualSourceBound) return; button.dataset.visualSourceBound = 'true';
+      button.addEventListener('click', event => { event.stopPropagation(); const entityId = this._config?.utility_header?.music_entity; const source = button.dataset.visualMusicSource; if (entityId && source) this._hass?.callService('media_player', 'select_source', { entity_id: entityId, source }); const menu = button.closest('[data-visual-source-menu]'); if (menu) menu.hidden = true; });
+    });
+    this.shadowRoot.querySelectorAll('[data-visual-music-volume]').forEach(volume => {
+      if (volume.dataset.visualVolumeBound) return; volume.dataset.visualVolumeBound = 'true';
+      const updateLabel = event => {
+        event.stopPropagation();
+        const value = Math.max(0, Math.min(1, Number(volume.value) || 0));
+        const percent = Math.round(value * 100);
+        volume.closest('.visual-music-volume')?.querySelector('[data-visual-music-volume-label]')?.replaceChildren(`${percent}%`);
+        volume.closest('.visual-music-volume')?.querySelector('[data-visual-music-volume-icon]')?.setAttribute('icon', value === 0 ? 'mdi:volume-off' : value < .5 ? 'mdi:volume-medium' : 'mdi:volume-high');
+        volume.setAttribute('aria-valuetext', `${percent} percent`);
+      };
+      volume.addEventListener('input', updateLabel);
+      volume.addEventListener('change', event => {
+        updateLabel(event);
+        const entityId = this._config?.utility_header?.music_entity;
+        if (entityId) this._hass?.callService('media_player', 'volume_set', { entity_id: entityId, volume_level: Math.max(0, Math.min(1, Number(volume.value) || 0)) });
+      });
+      ['click', 'pointerdown', 'pointerup'].forEach(type => volume.addEventListener(type, event => event.stopPropagation()));
+    });
 
     const ticker =
       this.shadowRoot.querySelector(
@@ -7678,6 +8730,11 @@ class HomeStatusCard extends HTMLElement {
       data
     );
 
+    if (this._config.presentation_mode === 'visual') {
+      this._renderVisualDashboard(data);
+      return;
+    }
+
     this._renderCategoryLayout(
       data
     );
@@ -7692,6 +8749,11 @@ class HomeStatusCard extends HTMLElement {
     this._applyPresentationPreferences(
       data
     );
+
+    if (this._config.presentation_mode === 'visual') {
+      this._updateVisualDashboard(data);
+      return;
+    }
 
     if (
       !this.shadowRoot.querySelector(
@@ -8755,6 +9817,9 @@ class HomeStatusCard extends HTMLElement {
       layout:
         'responsive',
 
+      presentation_mode:
+        'classic',
+
       lane_mode:
         'slots',
 
@@ -9535,6 +10600,10 @@ class HomeStatusCardEditor extends HTMLElement {
           { value: 'tablet-default', label: 'Tablet default' },
           { value: 'desktop-wide', label: 'Desktop wide' }
         ], 'responsive')}
+        ${this._select('presentation_mode', 'Presentation mode', [
+          { value: 'classic', label: 'Classic Home Status' },
+          { value: 'visual', label: 'Visual (preview)' }
+        ], 'classic', 'Visual mode uses the same Home Status data but presents it as glanceable modules with less text.')}
         ${this._select('lane_mode', 'Side lane style', [
           { value: 'slots', label: 'Three independent slots' },
           { value: 'single', label: 'Single rotating item (original)' }
@@ -11999,6 +13068,950 @@ const CSS = `
 :host([data-theme-mode="light"]) .footer-sequence > .footer-marquee-item:not(:last-child)::after {
   border-color:rgba(36,49,61,.13) !important;
   background:rgba(36,49,61,.13) !important;
+}
+
+
+:host([data-presentation-mode="visual"]) { max-width:none !important; }
+.visual-dashboard-card.visual-v5{position:relative;overflow:hidden;padding:12px;border-radius:22px;background:linear-gradient(150deg,rgba(10,16,23,.98),rgba(4,9,14,.99));}
+.visual-v5-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.02fr 1.34fr .98fr;grid-template-rows:278px 248px;grid-template-areas:"security media weather" "appliances centerlow glance";gap:10px;min-height:536px}
+.visual-panel,.visual-center-lower{border:1px solid rgba(79,159,255,.24);border-radius:16px;background:linear-gradient(145deg,rgba(20,33,47,.9),rgba(9,19,29,.9));box-shadow:inset 0 1px 0 rgba(255,255,255,.035);overflow:hidden}
+.visual-security-panel{grid-area:security}.visual-appliance-panel{grid-area:appliances}.visual-media-card{grid-area:media}.visual-weather-card{grid-area:weather}.visual-glance-panel{grid-area:glance}.visual-center-lower{min-width:0}
+.visual-v5-grid::after{content:"";grid-area:centerlow;pointer-events:none}.visual-household-card{grid-column:2;grid-row:2;align-self:stretch;width:calc(50% - 5px);justify-self:start}.visual-music-card{grid-column:2;grid-row:2;align-self:stretch;width:calc(50% - 5px);justify-self:end}
+.visual-panel-heading{display:flex;align-items:center;justify-content:space-between;height:42px;padding:0 12px;border-bottom:1px solid rgba(90,160,225,.16);font-size:12px;font-weight:900;letter-spacing:.055em;color:rgba(238,247,255,.92)}.visual-panel-heading>span{display:flex;align-items:center;gap:8px}.visual-panel-heading ha-icon{--mdc-icon-size:20px;color:#54b8ff}.visual-panel-heading>ha-icon:last-child{--mdc-icon-size:17px;color:rgba(255,255,255,.42)}
+.visual-security-hero{display:grid;grid-template-columns:86px 1fr;align-items:center;gap:12px;padding:14px 14px 9px}.visual-security-hero>div:last-child{display:grid;gap:4px;min-width:0}.visual-security-hero strong{font-size:24px;line-height:1}.visual-security-hero small{font-size:11px;color:rgba(255,255,255,.58)}
+.visual-security-ring{display:grid;place-items:center;width:68px;height:68px;border:8px solid rgba(92,232,132,.2);border-top-color:#5ce884;border-right-color:#5ce884;border-radius:50%}.visual-security-panel.has-alert .visual-security-ring{border-color:rgba(239,83,80,.2);border-top-color:#ef5350;border-right-color:#ef5350}.visual-security-ring ha-icon{--mdc-icon-size:34px;color:#5ce884}.visual-security-panel.has-alert .visual-security-ring ha-icon{color:#ef5350}
+.visual-security-tile-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(76px,1fr));gap:7px;padding:6px 10px 10px}.visual-security-tile{position:relative;display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;align-items:center;column-gap:7px;min-width:0;min-height:65px;padding:8px;border:1px solid rgba(87,160,224,.15);border-radius:12px;background:rgba(54,91,125,.16);font:inherit;color:inherit;text-align:left}.visual-security-tile-icon{grid-row:1/3;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:rgba(70,220,117,.14);color:#62df82}.visual-security-tile.has-alert .visual-security-tile-icon{background:rgba(239,83,80,.14);color:#ef5350}.visual-security-tile-icon ha-icon{--mdc-icon-size:19px}.visual-security-tile strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}.visual-security-tile small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:rgba(255,255,255,.55)}
+.visual-mode-center{position:relative;height:calc(100% - 43px);min-height:234px;overflow:hidden;border-radius:0 0 15px 15px;background:rgba(0,0,0,.24)}.visual-mode-center .visual-center-media,.visual-mode-center .visual-center-camera{width:100%;height:100%;object-fit:cover}
+.visual-weather-body{padding:11px 14px 7px}.visual-weather-main{display:flex;align-items:center;gap:8px}.visual-weather-icon{--mdc-icon-size:50px;color:#ffd43b}.visual-weather-temp{font-size:54px;font-weight:850;line-height:.88;letter-spacing:-3px}.visual-weather-body>strong{display:block;margin-top:4px;font-size:17px}.visual-weather-body>small{display:block;font-size:9px;color:rgba(255,255,255,.42)}.visual-weather-metrics{display:grid;grid-template-columns:82px 1fr;gap:10px;align-items:center;padding:2px 13px 13px}.visual-humidity-ring{display:grid;place-items:center;width:70px;height:70px;border-radius:50%;background:conic-gradient(#31a8ff var(--visual-humidity,0deg),rgba(49,168,255,.13) 0);position:relative}.visual-humidity-ring::after{content:"";position:absolute;inset:7px;border-radius:50%;background:#102131}.visual-humidity-ring span{position:relative;z-index:1;display:grid;text-align:center}.visual-humidity-ring b{font-size:15px}.visual-humidity-ring small{font-size:8px;color:rgba(255,255,255,.5)}.visual-weather-pulse{display:flex;align-items:end;gap:4px;height:64px;position:relative;padding-bottom:16px}.visual-weather-pulse i{flex:1;border-radius:3px 3px 1px 1px;background:linear-gradient(to top,rgba(72,166,255,.18),rgba(72,166,255,.75))}.visual-weather-pulse i:nth-child(1){height:22%}.visual-weather-pulse i:nth-child(2){height:38%}.visual-weather-pulse i:nth-child(3){height:28%}.visual-weather-pulse i:nth-child(4){height:46%}.visual-weather-pulse i:nth-child(5){height:34%}.visual-weather-pulse span{position:absolute;left:0;bottom:0;font-size:8px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.05em}
+.visual-appliance-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px}.visual-mini-item{position:relative;display:grid;grid-template-columns:39px 1fr;align-items:center;gap:8px;min-width:0;min-height:78px;padding:8px;border:1px solid rgba(71,153,225,.16);border-radius:12px;background:rgba(38,76,111,.16);font:inherit;color:inherit;text-align:left}.visual-mini-icon{display:grid;place-items:center;width:37px;height:37px;border-radius:11px;background:rgba(65,169,255,.15);color:#5bb7ff}.visual-mini-icon ha-icon{--mdc-icon-size:23px}.visual-mini-copy{display:grid;gap:3px;min-width:0;padding-right:13px}.visual-mini-copy strong,.visual-mini-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.visual-mini-copy strong{font-size:11px}.visual-mini-copy small{font-size:9px;color:rgba(255,255,255,.56)}.visual-mini-progress{display:block;height:5px;margin-top:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.visual-mini-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#33a8ff,#65d4ff)}.visual-idle{grid-column:1/-1;display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto auto;align-items:center;column-gap:10px;padding:18px;color:rgba(255,255,255,.62)}.visual-idle ha-icon{grid-row:1/3;--mdc-icon-size:31px;color:#66bb6a}.visual-idle strong{font-size:14px;color:rgba(255,255,255,.9)}.visual-idle span{font-size:10px}
+.visual-household-primary,.visual-environment-primary{position:relative;display:grid;grid-template-columns:55px 1fr;align-items:center;gap:10px;width:100%;height:180px;padding:14px;border:0;background:none;font:inherit;color:inherit;text-align:left}.visual-household-primary>span:nth-child(2),.visual-environment-primary>span:nth-child(2){display:grid;gap:3px;min-width:0}.visual-household-primary small,.visual-environment-primary small{font-size:9px;font-weight:900;letter-spacing:.06em;color:rgba(255,255,255,.48)}.visual-household-primary strong,.visual-environment-primary strong{font-size:15px;line-height:1.15}.visual-household-primary em,.visual-environment-primary em{font-size:9px;font-style:normal;color:rgba(255,255,255,.5)}.visual-household-orb{display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:rgba(48,169,255,.16);color:#45b6ff}.visual-household-orb ha-icon{--mdc-icon-size:31px}.visual-household-dots{position:absolute;left:14px;right:14px;bottom:16px;display:flex;gap:6px}.visual-household-dots i{width:10px;height:10px;border-radius:50%;background:#56c7ff}.visual-household-dots i:nth-child(2){background:#58df92}.visual-household-dots i:nth-child(3){background:#ffd14a}.visual-household-dots i:nth-child(4),.visual-household-dots i:nth-child(5){background:rgba(255,255,255,.18)}.visual-environment-ring{--visual-ring:180deg;display:grid;place-items:center;width:54px;height:54px;border-radius:50%;background:conic-gradient(#58d97c var(--visual-ring),rgba(88,217,124,.12) 0);position:relative}.visual-environment-ring::after{content:"";position:absolute;inset:7px;border-radius:50%;background:#102131}.visual-environment-ring ha-icon{position:relative;z-index:1;--mdc-icon-size:23px;color:#62dd82}
+.visual-music-card{position:relative;background:linear-gradient(145deg,rgba(30,34,50,.94),rgba(10,20,30,.92))}.visual-music-shell{position:relative;display:grid;grid-template-columns:64px 1fr;grid-template-rows:auto 42px 31px 23px;gap:5px 10px;height:100%;padding:10px 12px;box-sizing:border-box;overflow:hidden}.visual-music-artwork{grid-row:1/3;width:64px;height:64px;border-radius:13px;object-fit:cover;background:rgba(89,105,255,.15)}.visual-music-artwork-fallback{display:grid;place-items:center;color:#8e9cff}.visual-music-artwork-fallback ha-icon{--mdc-icon-size:34px}.visual-music-copy{display:grid;align-content:center;gap:2px;min-width:0}.visual-music-copy small{font-size:8px;font-weight:900;letter-spacing:.08em;color:#9da7ff}.visual-music-copy strong,.visual-music-copy em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.visual-music-copy strong{font-size:13px}.visual-music-copy em{font-size:9px;font-style:normal;color:rgba(255,255,255,.52)}.visual-music-controls{grid-column:2;display:flex;align-items:center;justify-content:flex-start;gap:7px}.visual-music-controls button{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid rgba(145,155,255,.18);border-radius:50%;background:rgba(110,122,255,.09);color:#d9ddff}.visual-music-controls button:active{transform:scale(.92)}.visual-music-controls ha-icon{--mdc-icon-size:19px}.visual-music-controls .visual-music-play{width:42px;height:42px;background:#7886ff;color:white}.visual-music-play ha-icon{--mdc-icon-size:24px}.visual-music-source{grid-column:1/3;position:relative;display:grid;grid-template-columns:19px 1fr 16px;align-items:center;gap:5px;height:29px;padding:0 7px;border:1px solid rgba(145,155,255,.16);border-radius:9px;background:rgba(110,122,255,.07);overflow:hidden}.visual-music-source>ha-icon{--mdc-icon-size:15px;color:#9da7ff}.visual-music-source>ha-icon:last-child{pointer-events:none;color:rgba(255,255,255,.36)}.visual-music-source select{width:100%;min-width:0;border:0;outline:0;background:transparent;color:rgba(255,255,255,.78);font:inherit;font-size:9px;appearance:none}.visual-music-source option{color:#111;background:#fff}.visual-music-volume{grid-column:1/3;display:grid;grid-template-columns:20px 1fr 28px;align-items:center;gap:6px}.visual-music-volume>ha-icon{--mdc-icon-size:16px;color:rgba(255,255,255,.55)}.visual-music-volume>span{height:5px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden}.visual-music-volume>span i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7886ff,#52c7ff)}.visual-music-volume>b{font-size:8px;color:rgba(255,255,255,.5)}.visual-music-volume>input[type="range"]{width:100%;min-width:0;height:18px;margin:0;cursor:pointer;accent-color:#7886ff}.visual-music-volume>input[type="range"]::-webkit-slider-runnable-track{height:5px;border-radius:999px;background:rgba(255,255,255,.16)}.visual-music-volume>input[type="range"]::-webkit-slider-thumb{margin-top:-5px}
+.visual-glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px}.visual-glance-tile{position:relative;display:grid;grid-template-columns:40px 1fr;align-items:center;gap:8px;min-width:0;min-height:91px;padding:9px;border:1px solid rgba(72,154,223,.15);border-radius:13px;background:rgba(35,76,112,.17);font:inherit;color:inherit;text-align:left}.visual-glance-tile-icon{display:grid;place-items:center;width:39px;height:39px;border-radius:12px;background:rgba(48,168,255,.16);color:#45b7ff}.visual-glance-tile.water .visual-glance-tile-icon{color:#25c7d9;background:rgba(37,199,217,.14)}.visual-glance-tile.waste .visual-glance-tile-icon{color:#65dc76;background:rgba(101,220,118,.14)}.visual-glance-tile.traffic .visual-glance-tile-icon{color:#ffd04e;background:rgba(255,208,78,.14)}.visual-glance-tile.calendar .visual-glance-tile-icon{color:#75b9ff;background:rgba(117,185,255,.14)}.visual-glance-tile-icon ha-icon{--mdc-icon-size:24px}.visual-glance-tile-copy{display:grid;gap:2px;min-width:0;padding-right:13px}.visual-glance-tile-copy small{font-size:9px;font-weight:800;color:rgba(255,255,255,.65)}.visual-glance-tile-copy strong{font-size:12px;line-height:1.08;white-space:normal;overflow-wrap:anywhere}.visual-glance-tile-copy em{font-size:8px;font-style:normal;color:rgba(255,255,255,.48);white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.visual-tap-chevron{position:absolute;right:7px;top:50%;transform:translateY(-50%);--mdc-icon-size:14px;color:rgba(255,255,255,.3)}.visual-security-tile,.visual-mini-item,.visual-household-primary,.visual-environment-primary,.visual-glance-tile,[data-visual-entity]{cursor:pointer}.visual-security-tile:disabled,.visual-mini-item:disabled,.visual-household-primary:disabled,.visual-environment-primary:disabled,.visual-glance-tile:disabled{cursor:default;opacity:1}.visual-security-tile:not(:disabled):active,.visual-mini-item:not(:disabled):active,.visual-household-primary:not(:disabled):active,.visual-environment-primary:not(:disabled):active,.visual-glance-tile:not(:disabled):active,[data-visual-entity]:active{transform:scale(.985)}.visual-security-tile:focus-visible,.visual-mini-item:focus-visible,.visual-household-primary:focus-visible,.visual-environment-primary:focus-visible,.visual-glance-tile:focus-visible,[data-visual-entity]:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
+.visual-mode-fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:9px;color:rgba(255,255,255,.42)}.visual-mode-fallback ha-icon{--mdc-icon-size:42px}.visual-dashboard-card>.weather-renderer-layer{position:absolute!important;inset:0!important;width:auto!important;height:auto!important;z-index:0!important;border-radius:22px!important;pointer-events:none!important;overflow:hidden!important}.visual-dashboard-card>:not(.weather-renderer-layer){position:relative;z-index:1}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker{position:relative;z-index:2;display:grid!important;grid-template-columns:190px 1fr;align-items:center;height:94px!important;min-height:94px!important;max-height:94px!important;margin-top:10px;padding:0 8px!important;border:1px solid rgba(65,151,225,.22);border-radius:16px;background:linear-gradient(90deg,rgba(19,47,72,.92),rgba(9,21,31,.94));overflow:hidden}:host([data-presentation-mode="visual"]) .visual-rail-label{display:flex;align-items:center;gap:10px;padding:0 14px;border-right:1px solid rgba(255,255,255,.12)}:host([data-presentation-mode="visual"]) .visual-rail-label>ha-icon{--mdc-icon-size:32px;color:#48b7ff}:host([data-presentation-mode="visual"]) .visual-rail-label>span{display:grid;text-align:left}:host([data-presentation-mode="visual"]) .visual-rail-label strong{font-size:13px}:host([data-presentation-mode="visual"]) .visual-rail-label small{font-size:9px;color:rgba(255,255,255,.48)}:host([data-presentation-mode="visual"]) .visual-mode-ticker .ticker-footer{min-height:94px!important;height:94px!important;padding-top:0!important;overflow:hidden}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee{height:94px!important}
+
+/* Visual Mode Preview 6: denser mock-fidelity refinement. */
+.visual-v5-grid{grid-template-rows:250px 220px;min-height:480px}
+.visual-security-hero{grid-template-columns:74px 1fr;padding:10px 12px 6px}.visual-security-ring{width:58px;height:58px;border-width:7px}.visual-security-ring ha-icon{--mdc-icon-size:29px}.visual-security-hero strong{font-size:21px}.visual-security-tile-row{padding:4px 9px 9px}.visual-security-tile{min-height:57px;padding:7px}.visual-mode-center{min-height:206px}
+.visual-appliance-grid{height:calc(100% - 43px);align-content:start}.visual-idle{align-self:start;padding:13px}.visual-idle::after{content:"Ready for the next cycle";grid-column:2;font-size:9px;color:rgba(255,255,255,.38);margin-top:3px}.visual-mini-item{min-height:68px}
+.visual-household-primary,.visual-environment-primary{height:112px;padding:12px}.visual-household-people{display:flex;flex-wrap:wrap;gap:5px;padding:0 11px 11px}.visual-person-chip{display:flex;align-items:center;gap:4px;min-width:0;padding:5px 7px;border-radius:999px;background:rgba(61,166,255,.11);color:#6bc1ff}.visual-person-chip ha-icon{--mdc-icon-size:14px}.visual-person-chip b{max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:rgba(255,255,255,.75)}
+.visual-env-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:0 9px 9px}.visual-env-metric{display:grid;grid-template-columns:18px 1fr;grid-template-rows:auto auto;align-items:center;column-gap:4px;padding:6px;border-radius:9px;background:rgba(88,217,124,.07)}.visual-env-metric ha-icon{grid-row:1/3;--mdc-icon-size:16px;color:#62dd82}.visual-env-metric b{font-size:9px}.visual-env-metric small{font-size:7px;color:rgba(255,255,255,.42)}
+.visual-weather-body{padding:8px 12px 4px}.visual-weather-icon{--mdc-icon-size:44px}.visual-weather-temp{font-size:48px}.visual-weather-metrics{grid-template-columns:72px 1fr;padding:0 12px 10px}.visual-humidity-ring{width:62px;height:62px}.visual-weather-live{display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;align-items:center;column-gap:7px;padding:8px 10px;border-radius:12px;background:rgba(55,139,210,.11)}.visual-weather-live ha-icon{grid-row:1/3;--mdc-icon-size:27px;color:#55b8ff}.visual-weather-live strong{font-size:11px}.visual-weather-live small{font-size:8px;color:rgba(255,255,255,.45)}
+.visual-glance-grid{gap:6px;padding:8px}.visual-glance-tile{min-height:78px;padding:8px}.visual-glance-tile-copy strong{font-size:11px}.visual-glance-tile-copy em{font-size:7.5px}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker{grid-template-columns:175px 1fr;height:76px!important;min-height:76px!important;max-height:76px!important;margin-top:9px;padding:0 7px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee{height:76px!important;min-height:76px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-item{padding:0 20px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-item ha-icon{width:30px!important;height:30px!important;--mdc-icon-size:30px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy strong{font-size:19px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy small{margin-top:4px!important;font-size:14px!important}:host([data-presentation-mode="visual"]) .visual-rail-label{padding:0 11px}:host([data-presentation-mode="visual"]) .visual-rail-label>ha-icon{--mdc-icon-size:28px}:host([data-presentation-mode="visual"]) .visual-rail-label strong{font-size:12px}:host([data-presentation-mode="visual"]) .visual-rail-label small{font-size:7.5px}
+
+.visual-weather-forecast{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}.visual-forecast-day{display:grid;place-items:center;gap:2px;padding:5px 2px;border-radius:8px;background:rgba(55,139,210,.09)}.visual-forecast-day small{font-size:7px;color:rgba(255,255,255,.48)}.visual-forecast-day ha-icon{--mdc-icon-size:18px;color:#ffd43b}.visual-forecast-day strong{font-size:9px}.visual-forecast-day em{font-size:7px;font-style:normal;color:rgba(255,255,255,.42)}.visual-forecast-waiting{display:grid;place-items:center;grid-column:1/-1;font-size:8px;color:rgba(255,255,255,.4)}
+.visual-music-source-wrap{grid-column:1/3;position:relative;z-index:8}.visual-music-source-trigger{display:grid;grid-template-columns:19px 1fr 16px;align-items:center;gap:5px;width:100%;height:29px;padding:0 7px;border:1px solid rgba(145,155,255,.16);border-radius:9px;background:rgba(110,122,255,.07);color:rgba(255,255,255,.78);font:inherit;text-align:left}.visual-music-source-trigger ha-icon{--mdc-icon-size:15px;color:#9da7ff}.visual-music-source-trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.visual-music-source-menu{position:absolute;left:0;right:0;bottom:33px;max-height:150px;overflow-y:auto;overscroll-behavior:contain;padding:5px;border:1px solid rgba(145,155,255,.25);border-radius:10px;background:#111b2a;box-shadow:0 10px 28px rgba(0,0,0,.48)}.visual-music-source-menu[hidden]{display:none}.visual-music-source-menu button{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:6px;width:100%;min-height:31px;padding:5px 7px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.76);font:inherit;text-align:left}.visual-music-source-menu button.is-selected{background:rgba(120,134,255,.16);color:white}.visual-music-source-menu button ha-icon{--mdc-icon-size:14px;color:#9da7ff}.visual-music-source-menu button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
+.visual-v5-grid.has-light-appliances{grid-template-columns:.82fr 1.54fr .98fr}.visual-v5-grid.has-light-appliances .visual-appliance-grid{grid-template-columns:1fr}.visual-v5-grid.has-light-appliances .visual-mini-item{min-height:74px}
+.visual-household-summary{display:flex;align-items:center;gap:8px;padding:0 13px 12px;color:rgba(255,255,255,.48)}.visual-household-summary b{font-size:8px;font-weight:650}.visual-household-summary .visual-household-dots{position:static;display:flex;gap:5px}.visual-household-summary .visual-household-dots i{width:9px;height:9px;border-radius:50%;background:#56c7ff;box-shadow:0 0 0 3px rgba(86,199,255,.08)}
+
+/* Visual Mode Preview 11 — mock fidelity pass. */
+.visual-v11 .visual-v5-grid{
+  display:grid;
+  grid-template-columns:20fr 22fr 26fr 32fr !important;
+  grid-template-rows:278px 248px !important;
+  grid-template-areas:
+    "security media media weather"
+    "appliances household music glance" !important;
+  gap:10px;
+  min-height:536px;
+}
+.visual-v11 .visual-security-panel{grid-area:security}
+.visual-v11 .visual-media-card{grid-area:media}
+.visual-v11 .visual-weather-card{grid-area:weather}
+.visual-v11 .visual-appliance-panel{grid-area:appliances}
+.visual-v11 .visual-household-card{grid-area:household;grid-column:auto;grid-row:auto;width:auto;justify-self:stretch}
+.visual-v11 .visual-music-card{grid-area:music;grid-column:auto;grid-row:auto;width:auto;justify-self:stretch}
+.visual-v11 .visual-glance-panel{grid-area:glance}
+.visual-v11 .visual-v5-grid::after{display:none}
+.visual-v11 .visual-v5-grid.has-light-appliances{grid-template-columns:20fr 22fr 26fr 32fr !important}
+
+.visual-v11 .visual-security-hero{grid-template-columns:78px 1fr;padding:13px 13px 8px}
+.visual-v11 .visual-security-ring{width:62px;height:62px}
+.visual-v11 .visual-security-tile-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:6px 8px 10px}
+.visual-v11 .visual-security-tile{grid-template-columns:28px 1fr;min-height:72px;padding:7px;column-gap:6px}
+.visual-v11 .visual-security-tile-icon{width:27px;height:27px}
+.visual-v11 .visual-security-tile strong{white-space:normal;overflow:visible;text-overflow:clip;font-size:9px;line-height:1.05}
+.visual-v11 .visual-security-tile small{font-size:8px}
+
+.visual-v11 .visual-weather-body{display:grid;grid-template-rows:auto 1fr;height:calc(100% - 43px);padding:10px 12px 9px;box-sizing:border-box}
+.visual-v11 .visual-weather-top{display:grid;grid-template-columns:1fr 66px;align-items:start;gap:8px}
+.visual-v11 .visual-weather-current{min-width:0}
+.visual-v11 .visual-weather-main{gap:7px}
+.visual-v11 .visual-weather-icon{--mdc-icon-size:46px}
+.visual-v11 .visual-weather-temp{font-size:50px}
+.visual-v11 .visual-weather-current>strong{display:block;margin-top:4px;font-size:16px}
+.visual-v11 .visual-weather-current>small{display:block;font-size:8px;color:rgba(255,255,255,.42)}
+.visual-v11 .visual-humidity-ring{width:58px;height:58px;justify-self:end}
+.visual-v11 .visual-humidity-ring::after{inset:6px}
+.visual-v11 .visual-humidity-ring b{font-size:13px}
+.visual-v11 .visual-weather-forecast{align-self:end;display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:100%;margin-top:7px}
+.visual-v11 .visual-forecast-day{min-height:76px;padding:6px 3px;border-radius:9px;background:rgba(55,139,210,.11)}
+.visual-v11 .visual-forecast-day small{font-size:7.5px}
+.visual-v11 .visual-forecast-day ha-icon{--mdc-icon-size:22px}
+.visual-v11 .visual-forecast-day strong{font-size:10px}
+.visual-v11 .visual-forecast-day em{font-size:8px}
+
+.visual-v11 .visual-appliance-grid{grid-template-columns:1fr !important;align-content:start;height:calc(100% - 43px);padding:9px}
+.visual-v11 .visual-mini-item{min-height:78px}
+.visual-v11 .visual-appliance-panel .visual-idle{align-self:start}
+
+.visual-v11 .visual-household-card{position:relative}
+.visual-v11 .visual-household-shell{height:100%;padding:13px;box-sizing:border-box;cursor:pointer}
+.visual-v11 .visual-household-heading{position:relative;display:grid;grid-template-columns:55px 1fr;align-items:center;gap:10px}
+.visual-v11 .visual-household-heading>span:nth-child(2){display:grid;gap:2px;min-width:0}
+.visual-v11 .visual-household-heading small{font-size:8px;font-weight:900;letter-spacing:.06em;color:rgba(255,255,255,.48)}
+.visual-v11 .visual-household-heading strong{font-size:15px}
+.visual-v11 .visual-household-heading em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;font-style:normal;color:rgba(255,255,255,.46)}
+.visual-v11 .visual-household-people-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:20px}
+.visual-v11 .visual-household-person{display:grid;justify-items:center;gap:6px;min-width:0}
+.visual-v11 .visual-household-person-orb{display:grid;place-items:center;width:42px;height:42px;border:1px solid rgba(78,183,255,.18);border-radius:50%;background:rgba(48,169,255,.12);color:#60c6ff}
+.visual-v11 .visual-household-person-orb ha-icon{--mdc-icon-size:23px}
+.visual-v11 .visual-household-person b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;font-weight:650;color:rgba(255,255,255,.68)}
+.visual-v11 .visual-household-summary{display:none}
+
+.visual-v11 .visual-music-shell{grid-template-columns:78px 1fr;grid-template-rows:auto 45px 31px 23px;padding:11px 12px;gap:5px 11px}
+.visual-v11 .visual-music-artwork{width:78px;height:78px;border-radius:13px}
+.visual-v11 .visual-music-copy strong{font-size:14px}
+.visual-v11 .visual-music-copy em{font-size:9px}
+
+.visual-v11 .visual-glance-grid{gap:7px;padding:9px}
+.visual-v11 .visual-glance-tile{min-height:91px}
+
+@media(max-width:1000px){
+  .visual-v11 .visual-v5-grid{grid-template-columns:1fr 1.2fr 1.25fr 1.45fr !important}
+}
+
+/* Preview 12 — Security becomes a distance-readable alarm beacon. */
+.visual-v11 .visual-security-panel{position:relative;overflow:hidden;transition:border-color .2s ease,background .2s ease}
+.visual-v11 .visual-security-panel::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:linear-gradient(135deg,var(--security-beacon-bg,transparent),transparent 62%)}
+.visual-v11 .visual-security-hero{position:relative;z-index:1;grid-template-columns:92px 1fr;padding:12px 13px 8px}
+.visual-v11 .visual-security-ring{position:relative;width:76px;height:76px;border-width:8px;border-color:var(--security-beacon-dim,#214d3e);border-top-color:var(--security-beacon,#58e980);border-right-color:var(--security-beacon,#58e980);box-shadow:0 0 0 1px rgba(255,255,255,.02),0 0 var(--security-glow,0px) var(--security-beacon-glow,transparent)}
+.visual-v11 .visual-security-beacon-core{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;color:var(--security-beacon,#58e980)}
+.visual-v11 .visual-security-ring ha-icon{--mdc-icon-size:36px}
+.visual-v11 .visual-security-state-copy{display:grid;align-content:center;gap:3px;min-width:0}
+.visual-v11 .visual-security-state-copy strong{font-size:22px;line-height:1}
+.visual-v11 .visual-security-state-copy small{font-size:9px;line-height:1.25;color:rgba(255,255,255,.55)}
+.visual-v11 .visual-security-warning{margin-top:4px;font-size:8px;line-height:1.15;letter-spacing:.04em;color:var(--security-beacon)}
+.visual-v11 .visual-security-tile-row{position:relative;z-index:1;display:grid;grid-template-columns:1fr !important;gap:5px;padding:3px 9px 9px}
+.visual-v11 .visual-security-tile{display:grid;grid-template-columns:31px 1fr auto 13px;grid-template-rows:1fr;align-items:center;min-height:38px;padding:4px 7px;column-gap:7px;border-radius:10px}
+.visual-v11 .visual-security-tile-icon{grid-column:1;grid-row:1;width:29px;height:29px}
+.visual-v11 .visual-security-tile strong{grid-column:2;grid-row:1;white-space:nowrap;font-size:9px}
+.visual-v11 .visual-security-tile small{grid-column:3;grid-row:1;white-space:nowrap;font-size:8px;text-align:right}
+.visual-v11 .visual-security-tile .visual-tap-chevron{grid-column:4;grid-row:1}
+.visual-v11 .visual-security-panel.beacon-disarmed{--security-beacon:#59e982;--security-beacon-dim:#214d3e;--security-beacon-bg:rgba(50,210,112,.07);--security-beacon-glow:rgba(72,224,125,.18);--security-glow:10px;border-color:rgba(79,221,126,.24)}
+.visual-v11 .visual-security-panel.beacon-armed-home{--security-beacon:#ffb52e;--security-beacon-dim:#624619;--security-beacon-bg:rgba(255,166,24,.16);--security-beacon-glow:rgba(255,169,29,.45);--security-glow:22px;border-color:rgba(255,177,43,.62);box-shadow:inset 0 0 26px rgba(255,154,20,.08)}
+.visual-v11 .visual-security-panel.beacon-armed-away{--security-beacon:#5ba8ff;--security-beacon-dim:#25466a;--security-beacon-bg:rgba(65,139,230,.07);--security-beacon-glow:rgba(67,145,238,.16);--security-glow:8px}
+.visual-v11 .visual-security-panel.beacon-pending{--security-beacon:#ffb52e;--security-beacon-dim:#624619;--security-beacon-bg:rgba(255,166,24,.13);--security-beacon-glow:rgba(255,169,29,.38);--security-glow:18px;border-color:rgba(255,177,43,.48)}
+.visual-v11 .visual-security-panel.beacon-triggered{--security-beacon:#ff5252;--security-beacon-dim:#642525;--security-beacon-bg:rgba(255,49,49,.2);--security-beacon-glow:rgba(255,55,55,.55);--security-glow:26px;border-color:rgba(255,76,76,.72)}
+@media (prefers-reduced-motion:no-preference){
+  .visual-v11 .visual-security-panel.beacon-pending .visual-security-ring{animation:visual-security-pulse 1.5s ease-in-out infinite}
+  .visual-v11 .visual-security-panel.beacon-triggered .visual-security-ring{animation:visual-security-alert .8s ease-in-out infinite}
+}
+@keyframes visual-security-pulse{50%{filter:brightness(1.25);transform:scale(1.035)}}
+@keyframes visual-security-alert{50%{filter:brightness(1.45);transform:scale(1.055)}}
+
+/* Preview 13 — Home Status intelligence drives visual weight. */
+.visual-v11 .visual-security-warning{display:none!important}
+.visual-v11 .visual-security-panel.beacon-disarmed .visual-security-ring{box-shadow:none}
+.visual-v11 .visual-security-panel.beacon-disarmed::before{opacity:.22}
+.visual-v11 .visual-security-panel.beacon-armed-home::before{opacity:.78}
+.visual-v11 .visual-security-panel.beacon-armed-home .visual-security-state-copy strong{color:#ffbd3f}
+.visual-v11 .visual-security-panel.beacon-triggered .visual-security-state-copy strong{color:#ff6767}
+
+/* Appliances are subordinate when Home Status has little or nothing active. */
+.visual-v11 .visual-v5-grid.has-no-appliances,
+.visual-v11 .visual-v5-grid.has-light-appliances{
+  grid-template-columns:18fr 24fr 26fr 32fr !important;
+}
+.visual-v11 .visual-v5-grid.has-busy-appliances{
+  grid-template-columns:22fr 22fr 25fr 31fr !important;
+}
+.visual-v11 .visual-appliance-quiet{
+  display:grid;grid-template-columns:34px 1fr;align-items:center;align-content:center;
+  min-height:66px;margin:9px;padding:9px 11px;border:1px solid rgba(89,233,130,.10);
+  border-radius:11px;background:rgba(89,233,130,.035);text-align:left
+}
+.visual-v11 .visual-appliance-quiet ha-icon{--mdc-icon-size:25px;color:#59d98a}
+.visual-v11 .visual-appliance-quiet span{display:grid;gap:2px}
+.visual-v11 .visual-appliance-quiet strong{font-size:10px}
+.visual-v11 .visual-appliance-quiet small{font-size:8px;color:rgba(255,255,255,.42)}
+
+/* One active appliance gets one concise status row, not a giant pseudo-dashboard. */
+.visual-v11 .has-light-appliances .visual-appliance-grid{align-content:start}
+.visual-v11 .has-light-appliances .visual-mini-item{min-height:70px}
+
+/* Let At a Glance breathe when there are only one or two meaningful items. */
+.visual-v11 .has-light-glance .visual-glance-grid{grid-template-columns:1fr}
+.visual-v11 .has-light-glance .visual-glance-tile{min-height:74px}
+.visual-v11 .visual-glance-quiet{grid-column:1/-1;min-height:110px;margin:10px}
+
+/* Household remains awareness, not a roster dashboard. Keep people visual but secondary. */
+.visual-v11 .visual-household-heading strong{font-size:16px}
+.visual-v11 .visual-household-people-grid{margin-top:15px}
+.visual-v11 .visual-household-person-orb{width:38px;height:38px}
+.visual-v11 .visual-household-person-orb ha-icon{--mdc-icon-size:21px}
+.visual-v11 .visual-household-person b{font-size:7.5px}
+
+/* Home Status rail is context, not the dominant headline. */
+:host([data-presentation-mode="visual"]) .visual-mode-ticker{
+  min-height:76px!important;height:76px!important
+}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy strong{
+  font-size:17px!important;line-height:1.05!important
+}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy small{
+  font-size:11px!important
+}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy ha-icon{
+  --mdc-icon-size:24px!important
+}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-item{
+  padding-inline:16px!important
+}
+
+/* Preview 14 — Visual Home Status: movement follows attention. */
+.visual-dashboard-card{position:relative;overflow:hidden}
+.visual-priority-layer{position:absolute;left:50%;bottom:88px;z-index:20;width:min(560px,52%);transform:translateX(-50%);pointer-events:none}
+.visual-priority-spotlight{pointer-events:auto;display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:10px;min-height:58px;padding:8px 12px;border:1px solid rgba(255,178,48,.42);border-radius:14px;background:rgba(21,27,38,.94);box-shadow:0 12px 34px rgba(0,0,0,.35),inset 0 0 24px rgba(255,169,35,.06);backdrop-filter:blur(12px);animation:visual-priority-arrive .38s cubic-bezier(.2,.8,.2,1)}
+.visual-priority-spotlight.is-critical{border-color:rgba(255,82,82,.65);box-shadow:0 12px 34px rgba(0,0,0,.4),inset 0 0 28px rgba(255,55,55,.12)}
+.visual-priority-pulse{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:rgba(255,178,48,.14);color:#ffb83d}
+.visual-priority-spotlight.is-critical .visual-priority-pulse{background:rgba(255,72,72,.16);color:#ff6262}
+.visual-priority-pulse ha-icon{--mdc-icon-size:22px}
+.visual-priority-copy{display:grid;gap:2px;min-width:0}
+.visual-priority-copy small{font-size:7px;font-weight:900;letter-spacing:.08em;color:#ffb83d}
+.visual-priority-spotlight.is-critical .visual-priority-copy small{color:#ff6a6a}
+.visual-priority-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.visual-priority-copy em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;font-style:normal;color:rgba(255,255,255,.5)}
+.visual-priority-count{display:grid;place-items:center;min-width:26px;height:26px;border-radius:13px;background:rgba(255,255,255,.08);font-size:9px}
+@keyframes visual-priority-arrive{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .visual-priority-spotlight.is-attention .visual-priority-pulse{animation:visual-attention-breathe 2.8s ease-in-out infinite}
+  .visual-priority-spotlight.is-critical .visual-priority-pulse{animation:visual-critical-pulse 1s ease-in-out infinite}
+  .visual-v11 .visual-media-card .visual-center img,.visual-v11 .visual-media-card .visual-center video{animation:visual-media-settle .6s ease-out}
+  .visual-v11 .visual-music-artwork{transition:transform .45s ease,box-shadow .45s ease}
+  .visual-v11 .visual-music-card:hover .visual-music-artwork{transform:scale(1.025)}
+  .visual-v11 .visual-glance-tile.has-alert{animation:visual-tile-attention 3.2s ease-in-out infinite}
+}
+@keyframes visual-attention-breathe{50%{box-shadow:0 0 0 8px rgba(255,184,61,.05);filter:brightness(1.12)}}
+@keyframes visual-critical-pulse{50%{box-shadow:0 0 0 10px rgba(255,82,82,.07);filter:brightness(1.3)}}
+@keyframes visual-media-settle{from{opacity:.72;transform:scale(1.012)}to{opacity:1;transform:scale(1)}}
+@keyframes visual-tile-attention{50%{border-color:rgba(255,184,61,.38);box-shadow:inset 0 0 18px rgba(255,184,61,.04)}}
+
+/* Give state changes a short visual acknowledgment instead of leaving the page visually frozen. */
+.visual-v11 .visual-security-tile,.visual-v11 .visual-glance-tile,.visual-v11 .visual-mini-item{transition:transform .2s ease,border-color .25s ease,background .25s ease}
+.visual-v11 .visual-security-tile:active,.visual-v11 .visual-glance-tile:active,.visual-v11 .visual-mini-item:active{transform:scale(.975)}
+
+/* Preview 15 — the lower-left slot is now a real Home Status priority zone. */
+.visual-v11 .visual-adaptive-panel{position:relative;transition:border-color .28s ease,background .28s ease,box-shadow .28s ease}
+.visual-v11 .visual-adaptive-body{display:grid;gap:7px;padding:9px;align-content:start;height:calc(100% - 43px);box-sizing:border-box}
+.visual-v11 .visual-adaptive-panel.mode-attention{border-color:rgba(255,177,56,.46);background:linear-gradient(145deg,rgba(43,34,24,.94),rgba(16,24,34,.94));box-shadow:inset 0 0 28px rgba(255,167,40,.055)}
+.visual-v11 .visual-adaptive-panel.mode-attention .visual-adaptive-heading ha-icon{color:#ffb63e}
+.visual-v11 .visual-adaptive-panel.mode-attention .visual-adaptive-heading b{color:#ffd08a}
+.visual-v11 .visual-adaptive-alert{position:relative;display:grid;grid-template-columns:38px 1fr;align-items:center;gap:9px;min-width:0;min-height:68px;padding:8px;border:1px solid rgba(255,178,61,.18);border-radius:12px;background:rgba(255,167,42,.055);font:inherit;color:inherit;text-align:left}
+.visual-v11 .visual-adaptive-alert.is-critical{border-color:rgba(255,82,82,.32);background:rgba(255,70,70,.07)}
+.visual-v11 .visual-adaptive-alert-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:rgba(255,178,61,.13);color:#ffb63e}
+.visual-v11 .visual-adaptive-alert.is-critical .visual-adaptive-alert-icon{background:rgba(255,82,82,.14);color:#ff6262}
+.visual-v11 .visual-adaptive-alert-icon ha-icon{--mdc-icon-size:22px}
+.visual-v11 .visual-adaptive-alert-copy{display:grid;gap:2px;min-width:0;padding-right:14px}
+.visual-v11 .visual-adaptive-alert-copy small{font-size:7px;font-weight:900;letter-spacing:.06em;color:#ffb63e}
+.visual-v11 .visual-adaptive-alert.is-critical .visual-adaptive-alert-copy small{color:#ff6a6a}
+.visual-v11 .visual-adaptive-alert-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.visual-v11 .visual-adaptive-alert-copy em{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:8px;font-style:normal;line-height:1.25;color:rgba(255,255,255,.52)}
+.visual-v11 .visual-adaptive-panel.mode-quiet{opacity:.82}
+.visual-v11 .visual-adaptive-panel.mode-quiet .visual-adaptive-body{align-content:center}
+.visual-v11 .visual-adaptive-quiet{display:grid;grid-template-columns:46px 1fr;align-items:center;gap:10px;padding:10px}
+.visual-v11 .visual-quiet-orb{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:rgba(84,216,127,.10);color:#5adc84}
+.visual-v11 .visual-quiet-orb ha-icon{--mdc-icon-size:25px}
+.visual-v11 .visual-adaptive-quiet>span:last-child{display:grid;gap:3px}
+.visual-v11 .visual-adaptive-quiet strong{font-size:11px}
+.visual-v11 .visual-adaptive-quiet small{font-size:8px;color:rgba(255,255,255,.42)}
+
+/* Attention earns space. The adaptive zone grows while quieter awareness yields some width. */
+.visual-v11 .visual-v5-grid.has-priority-zone{grid-template-columns:25fr 21fr 24fr 30fr !important}
+.visual-v11 .visual-v5-grid.has-priority-zone .visual-adaptive-panel{box-shadow:inset 0 0 30px rgba(255,169,45,.07),0 0 0 1px rgba(255,177,56,.05)}
+
+@media (prefers-reduced-motion:no-preference){
+  .visual-v11 .visual-adaptive-panel.is-changing{animation:visual-zone-role-change .46s cubic-bezier(.2,.8,.2,1)}
+  .visual-v11 .visual-adaptive-panel.mode-attention .visual-adaptive-alert:first-child .visual-adaptive-alert-icon{animation:visual-attention-breathe 2.4s ease-in-out infinite}
+}
+@keyframes visual-zone-role-change{
+  0%{opacity:.35;transform:translateY(9px) scale(.985)}
+  100%{opacity:1;transform:none}
+}
+
+/* Preview 16 — stable anchors above, fluid Home Status modules below. */
+.visual-v16-top{position:relative;z-index:1;display:grid;grid-template-columns:minmax(260px,20fr) minmax(520px,48fr) minmax(360px,32fr);gap:10px;height:330px}
+.visual-v16-top>.visual-panel{min-width:0;height:100%}
+.visual-v16-top .visual-security-panel{min-width:260px}
+.visual-v16-top .visual-media-card{min-width:0}
+.visual-v16-top .visual-weather-card{min-width:360px}
+.visual-v16-top .visual-mode-center{height:calc(100% - 43px);min-height:0}
+
+.visual-v16-flow{position:relative;z-index:1;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-flow:row dense;grid-auto-rows:minmax(205px,auto);gap:10px;margin-top:10px;align-items:stretch}
+.visual-v16-flow.is-reflowing{animation:visual-flow-reflow .38s cubic-bezier(.2,.8,.2,1)}
+.visual-flow-card{min-width:0;min-height:205px;overflow:hidden}
+.visual-flow-card.size-small{grid-column:span 3}
+.visual-flow-card.size-medium{grid-column:span 4}
+.visual-flow-card.size-large{grid-column:span 5}
+.visual-flow-card.role-attention.size-large{grid-column:span 6}
+.visual-flow-card.role-awareness.size-large{grid-column:span 4}
+.visual-flow-card.role-music.size-large{grid-column:span 5}
+.visual-flow-card.role-household{grid-column:span 3}
+.visual-flow-card.role-traffic,.visual-flow-card.role-calendar,.visual-flow-card.role-sports{grid-column:span 3}
+
+.visual-flow-card .visual-panel-heading{height:39px}
+.visual-flow-household,.visual-flow-music{height:calc(100% - 39px)}
+.visual-flow-household .visual-household-shell{height:100%;padding:12px}
+.visual-flow-household .visual-household-heading small{display:none}
+.visual-flow-household .visual-household-people-grid{margin-top:12px}
+.visual-flow-music .visual-music-shell{height:100%;padding:10px 12px}
+.visual-flow-music .visual-music-copy small{display:none}
+.visual-flow-appliances{grid-template-columns:1fr!important;height:auto!important;align-content:start!important}
+
+.visual-flow-list,.visual-flow-sports,.visual-flow-attention{display:grid;gap:7px;padding:9px}
+.visual-flow-list-row,.visual-sports-row{display:grid;grid-template-columns:34px 1fr;align-items:center;gap:8px;min-height:52px;padding:7px;border:1px solid rgba(82,158,224,.12);border-radius:10px;background:rgba(40,78,112,.10)}
+.visual-flow-list-row>ha-icon,.visual-sports-ball{display:grid;place-items:center;width:31px;height:31px;border-radius:9px;background:rgba(63,166,255,.11);color:#61bdff;--mdc-icon-size:19px}
+.visual-flow-list-row>span,.visual-sports-row>span:last-child{display:grid;gap:2px;min-width:0}
+.visual-flow-list-row strong,.visual-sports-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.visual-flow-list-row small,.visual-sports-row small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:rgba(255,255,255,.48)}
+.visual-flow-card.role-traffic .visual-flow-list-row>ha-icon{color:#7ee06f;background:rgba(126,224,111,.10)}
+.visual-flow-card.role-calendar .visual-flow-list-row>ha-icon{color:#77baff;background:rgba(119,186,255,.10)}
+.visual-sports-ball{color:#f4b749;background:rgba(244,183,73,.11)}
+.visual-sports-ball ha-icon{--mdc-icon-size:19px}
+
+.visual-flow-attention-item{position:relative;display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;min-height:62px;padding:8px;border:1px solid rgba(255,183,61,.18);border-radius:11px;background:rgba(255,174,48,.05);font:inherit;color:inherit;text-align:left}
+.visual-flow-attention-item.is-critical{border-color:rgba(255,82,82,.32);background:rgba(255,70,70,.07)}
+.visual-flow-attention-item>span:first-child{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;background:rgba(255,183,61,.12);color:#ffb83d}
+.visual-flow-attention-item.is-critical>span:first-child{background:rgba(255,82,82,.14);color:#ff6262}
+.visual-flow-attention-item>span:first-child ha-icon{--mdc-icon-size:21px}
+.visual-flow-attention-item>span:nth-child(2){display:grid;gap:2px;min-width:0}
+.visual-flow-attention-item strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.visual-flow-attention-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:rgba(255,255,255,.48)}
+
+.visual-flow-awareness{grid-template-columns:1fr 1fr!important;padding:8px!important}
+.visual-flow-awareness .visual-glance-tile{min-height:72px!important}
+
+@media (prefers-reduced-motion:no-preference){
+  @keyframes visual-flow-reflow{0%{opacity:.45;transform:translateY(8px)}100%{opacity:1;transform:none}}
+  .visual-flow-card.role-attention{animation:visual-priority-arrive .38s cubic-bezier(.2,.8,.2,1)}
+  .visual-flow-card.role-sports .visual-sports-ball{animation:visual-attention-breathe 3.4s ease-in-out infinite}
+}
+@media(max-width:1200px){
+  .visual-v16-top{grid-template-columns:minmax(240px,22fr) minmax(420px,45fr) minmax(330px,33fr)}
+  .visual-flow-card.size-small,.visual-flow-card.role-household,.visual-flow-card.role-traffic,.visual-flow-card.role-calendar,.visual-flow-card.role-sports{grid-column:span 4}
+  .visual-flow-card.size-medium{grid-column:span 4}.visual-flow-card.size-large{grid-column:span 6}
+}
+@media(max-width:850px){
+  .visual-v16-top{grid-template-columns:1fr 1fr;height:auto}.visual-v16-top .visual-media-card{grid-column:1/-1;min-height:300px}.visual-v16-top .visual-weather-card{min-width:0}.visual-v16-top .visual-security-panel{min-width:0}
+  .visual-v16-flow{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:auto}.visual-flow-card,.visual-flow-card.size-small,.visual-flow-card.size-medium,.visual-flow-card.size-large,.visual-flow-card.role-household,.visual-flow-card.role-traffic,.visual-flow-card.role-calendar,.visual-flow-card.role-sports{grid-column:span 1}.visual-flow-card.role-attention.size-large,.visual-flow-card.role-awareness.size-large{grid-column:span 2}
+}
+
+/* Preview 17 — repair stable anchors + true fluid lower flow. */
+.visual-v16-top>.visual-security-panel,
+.visual-v16-top>.visual-media-card,
+.visual-v16-top>.visual-weather-card{
+  grid-area:auto !important;
+  grid-column:auto !important;
+  grid-row:auto !important;
+  width:auto !important;
+  justify-self:stretch !important;
+  align-self:stretch !important;
+  display:block !important;
+  visibility:visible !important;
+  opacity:1 !important;
+}
+.visual-v16-top{overflow:visible}
+
+/* Flex-wrap is a better fit for Home Status than rigid 12-column spans:
+   every visible module grows to consume available space, then wraps only
+   when there is not enough room. */
+.visual-v16-flow{
+  display:flex !important;
+  flex-wrap:wrap;
+  align-items:stretch;
+  gap:10px;
+  grid-template-columns:none !important;
+  grid-auto-rows:unset !important;
+}
+.visual-v16-flow>.visual-flow-card{
+  grid-column:auto !important;
+  min-width:260px;
+  min-height:205px;
+  flex:1 1 280px;
+}
+.visual-v16-flow>.visual-flow-card.size-small{flex:1 1 260px}
+.visual-v16-flow>.visual-flow-card.size-medium{flex:1.18 1 310px}
+.visual-v16-flow>.visual-flow-card.size-large{flex:1.45 1 380px}
+.visual-v16-flow>.visual-flow-card.role-attention{flex-grow:1.7}
+.visual-v16-flow>.visual-flow-card.role-music{flex-grow:1.35}
+.visual-v16-flow>.visual-flow-card.role-awareness{flex-grow:1.25}
+.visual-v16-flow>.visual-flow-card.role-household{flex-grow:1.05}
+.visual-v16-flow>.visual-flow-card.role-traffic,
+.visual-v16-flow>.visual-flow-card.role-calendar,
+.visual-v16-flow>.visual-flow-card.role-sports{flex-grow:1.05}
+
+/* Keep a sensible maximum so one lonely low-priority module does not become absurdly wide. */
+.visual-v16-flow>.visual-flow-card:only-child{max-width:560px}
+
+@media(max-width:850px){
+  .visual-v16-flow>.visual-flow-card{min-width:calc(50% - 5px);flex-basis:calc(50% - 5px)}
+}
+@media(max-width:560px){
+  .visual-v16-flow>.visual-flow-card{min-width:100%;flex-basis:100%}
+}
+
+/* Preview 18 — weather must never clip at the right edge. */
+.visual-v16-top{grid-template-columns:minmax(280px,21fr) minmax(0,45fr) minmax(410px,34fr)!important}
+.visual-v16-top>.visual-weather-card{min-width:410px!important;overflow:hidden!important}
+.visual-v16-top .visual-weather-body{min-width:0;overflow:hidden}
+.visual-v16-top .visual-weather-top{grid-template-columns:minmax(0,1fr) 62px!important;gap:8px}
+.visual-v16-top .visual-weather-current{min-width:0;overflow:hidden}
+.visual-v16-top .visual-weather-main{min-width:0}
+.visual-v16-top .visual-weather-temp{font-size:48px!important;letter-spacing:-2px!important;white-space:nowrap}
+.visual-v16-top .visual-humidity-ring{width:54px!important;height:54px!important}
+.visual-v16-top .visual-weather-forecast{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:4px!important;min-width:0;width:100%;overflow:hidden}
+.visual-v16-top .visual-forecast-day{min-width:0!important;padding:5px 2px!important}
+.visual-v16-top .visual-forecast-day small,.visual-v16-top .visual-forecast-day strong,.visual-v16-top .visual-forecast-day em{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+@media(max-width:1200px){
+ .visual-v16-top{grid-template-columns:minmax(250px,23fr) minmax(0,43fr) minmax(370px,34fr)!important}
+ .visual-v16-top>.visual-weather-card{min-width:370px!important}
+ .visual-v16-top .visual-weather-temp{font-size:44px!important}
+ .visual-v16-top .visual-humidity-ring{width:50px!important;height:50px!important}
+}
+
+/* Preview 19 — content controls both width and height; larger tablet text. */
+.visual-v16-flow{
+  display:grid!important;
+  grid-template-columns:repeat(12,minmax(0,1fr))!important;
+  grid-auto-flow:dense!important;
+  grid-auto-rows:68px!important;
+  gap:10px!important;
+  align-items:stretch!important;
+}
+.visual-v16-flow>.visual-flow-card{min-width:0!important;min-height:0!important;max-width:none!important;flex:none!important}
+.visual-v16-flow>.visual-flow-card.size-small{grid-column:span 3!important;grid-row:span 2!important}
+.visual-v16-flow>.visual-flow-card.size-medium{grid-column:span 4!important;grid-row:span 3!important}
+.visual-v16-flow>.visual-flow-card.size-large{grid-column:span 5!important;grid-row:span 4!important}
+.visual-v16-flow>.visual-flow-card.role-household{grid-column:span 3!important;grid-row:span 3!important}
+.visual-v16-flow>.visual-flow-card.role-music.size-medium{grid-column:span 4!important;grid-row:span 3!important}
+.visual-v16-flow>.visual-flow-card.role-music.size-large{grid-column:span 5!important;grid-row:span 4!important}
+.visual-v16-flow>.visual-flow-card.role-awareness.size-large{grid-column:span 4!important;grid-row:span 4!important}
+.visual-v16-flow>.visual-flow-card.role-traffic.size-large{grid-column:span 4!important;grid-row:span 4!important}
+.visual-v16-flow>.visual-flow-card.role-attention.size-large{grid-column:span 6!important;grid-row:span 4!important}
+
+/* Larger labels and values across Visual Mode. */
+.visual-dashboard-card .visual-panel-heading{font-size:14px!important;height:44px!important;padding:0 14px!important}
+.visual-dashboard-card .visual-panel-heading ha-icon{--mdc-icon-size:22px!important}
+.visual-v16-top .visual-security-state-copy strong{font-size:25px!important}
+.visual-v16-top .visual-security-state-copy small{font-size:11px!important}
+.visual-v16-top .visual-security-tile strong{font-size:10.5px!important}
+.visual-v16-top .visual-security-tile small{font-size:9.5px!important}
+.visual-v16-top .visual-weather-current>strong{font-size:18px!important}
+.visual-v16-top .visual-weather-current>small{font-size:10px!important}
+.visual-v16-top .visual-forecast-day small{font-size:9px!important}
+.visual-v16-top .visual-forecast-day strong{font-size:12px!important}
+.visual-v16-top .visual-forecast-day em{font-size:9px!important}
+
+.visual-v16-flow .visual-mini-copy strong{font-size:13px!important}
+.visual-v16-flow .visual-mini-copy small{font-size:10px!important}
+.visual-v16-flow .visual-household-heading strong{font-size:18px!important}
+.visual-v16-flow .visual-household-heading em{font-size:10px!important}
+.visual-v16-flow .visual-household-person b{font-size:9px!important}
+.visual-v16-flow .visual-music-copy strong{font-size:16px!important}
+.visual-v16-flow .visual-music-copy em{font-size:10px!important}
+.visual-v16-flow .visual-flow-list-row strong,.visual-v16-flow .visual-sports-row strong{font-size:12px!important}
+.visual-v16-flow .visual-flow-list-row small,.visual-v16-flow .visual-sports-row small{font-size:9.5px!important}
+.visual-v16-flow .visual-glance-tile-copy small{font-size:10px!important}
+.visual-v16-flow .visual-glance-tile-copy strong{font-size:13px!important}
+.visual-v16-flow .visual-glance-tile-copy em{font-size:9px!important}
+
+/* Rich sports matchup uses Home Status's normalized sports metadata. */
+.visual-sports-matchup{display:grid;gap:9px;padding:10px 11px;border:1px solid rgba(244,183,73,.18);border-radius:12px;background:linear-gradient(145deg,rgba(244,183,73,.07),rgba(35,47,62,.14))}
+.visual-sports-matchup.is-live{border-color:rgba(239,83,80,.45);background:linear-gradient(145deg,rgba(239,83,80,.11),rgba(35,47,62,.16))}
+.visual-sports-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:9px;font-weight:850;letter-spacing:.06em;color:rgba(255,255,255,.48)}
+.visual-sports-meta b{padding:3px 6px;border-radius:999px;background:rgba(244,183,73,.12);color:#f4bd57;font-size:8px}
+.visual-sports-matchup.is-live .visual-sports-meta b{background:rgba(239,83,80,.16);color:#ff6f6c}
+.visual-sports-teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}
+.visual-sports-teams>span{display:flex;align-items:baseline;justify-content:space-between;gap:7px;min-width:0;padding:8px;border-radius:9px;background:rgba(255,255,255,.035)}
+.visual-sports-teams strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px!important}
+.visual-sports-teams b{font-size:20px;color:#fff}
+.visual-sports-teams em{font-size:11px;font-style:normal;color:rgba(255,255,255,.35)}
+
+/* Compact modules should visually end when their content ends. */
+.visual-v16-flow>.size-small .visual-flow-list,
+.visual-v16-flow>.size-small .visual-flow-sports,
+.visual-v16-flow>.size-small .visual-flow-attention{padding:8px}
+.visual-v16-flow>.size-small .visual-flow-list-row,
+.visual-v16-flow>.size-small .visual-sports-row{min-height:50px}
+.visual-v16-flow>.role-appliances.size-small .visual-flow-appliances{padding:8px!important}
+.visual-v16-flow>.role-appliances.size-small .visual-mini-item{min-height:68px!important}
+
+@media(max-width:1200px){
+ .visual-v16-flow>.visual-flow-card.size-small{grid-column:span 4!important}
+ .visual-v16-flow>.visual-flow-card.size-medium{grid-column:span 6!important}
+ .visual-v16-flow>.visual-flow-card.size-large{grid-column:span 6!important}
+ .visual-v16-flow>.visual-flow-card.role-household{grid-column:span 4!important}
+}
+@media(max-width:760px){
+ .visual-v16-flow{grid-template-columns:1fr!important;grid-auto-rows:auto!important}
+ .visual-v16-flow>.visual-flow-card{grid-column:1!important;grid-row:auto!important;min-height:140px!important}
+}
+
+/* Preview 20 — only Security, Visual Center, Weather and Music own permanent real estate. */
+.visual-v20-shell{position:relative;z-index:1;display:grid;gap:10px}
+.visual-v20-top{
+  display:grid!important;
+  grid-template-columns:minmax(285px,21fr) minmax(0,46fr) minmax(400px,33fr)!important;
+  gap:10px;
+  height:330px;
+}
+.visual-v20-top>.visual-panel{
+  grid-area:auto!important;grid-column:auto!important;grid-row:auto!important;
+  width:auto!important;min-width:0!important;height:100%!important;
+  justify-self:stretch!important;align-self:stretch!important;
+}
+.visual-v20-top>.visual-security-panel{min-width:285px!important}
+.visual-v20-top>.visual-weather-card{min-width:400px!important}
+.visual-v20-top .visual-mode-center{height:calc(100% - 45px)!important;min-height:0!important}
+
+.visual-v20-lower{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(330px,31%);
+  gap:10px;
+  align-items:start;
+}
+.visual-dynamic-home-status{
+  min-width:0;
+  border:1px solid rgba(79,159,255,.18);
+  border-radius:16px;
+  background:linear-gradient(145deg,rgba(12,24,35,.68),rgba(7,15,23,.72));
+  overflow:hidden;
+}
+.visual-dynamic-heading{
+  display:flex;align-items:center;justify-content:space-between;
+  min-height:42px;padding:0 13px;border-bottom:1px solid rgba(90,160,225,.13)
+}
+.visual-dynamic-heading>span{display:flex;align-items:center;gap:8px}
+.visual-dynamic-heading ha-icon{--mdc-icon-size:21px;color:#54b8ff}
+.visual-dynamic-heading b{font-size:13px;letter-spacing:.055em}
+.visual-dynamic-heading small{font-size:9px;color:rgba(255,255,255,.4)}
+
+.visual-v20-flow{
+  display:grid!important;
+  grid-template-columns:repeat(12,minmax(0,1fr))!important;
+  grid-auto-flow:dense!important;
+  grid-auto-rows:62px!important;
+  gap:8px!important;
+  padding:9px;
+}
+.visual-v20-flow>.visual-flow-card{
+  grid-area:auto!important;
+  min-width:0!important;min-height:0!important;max-width:none!important;
+  flex:none!important;
+}
+.visual-v20-flow>.visual-flow-card.size-small{grid-column:span 4!important;grid-row:span 2!important}
+.visual-v20-flow>.visual-flow-card.size-medium{grid-column:span 6!important;grid-row:span 3!important}
+.visual-v20-flow>.visual-flow-card.size-large{grid-column:span 8!important;grid-row:span 4!important}
+.visual-v20-flow>.visual-flow-card.role-attention.size-large{grid-column:span 8!important}
+.visual-v20-flow>.visual-flow-card.role-traffic.size-large{grid-column:span 6!important}
+.visual-v20-flow>.visual-flow-card.role-calendar.size-large{grid-column:span 6!important}
+.visual-v20-flow>.visual-flow-card.role-awareness.size-large{grid-column:span 6!important}
+.visual-v20-flow>.visual-flow-card.role-household{grid-column:span 5!important;grid-row:span 3!important}
+.visual-v20-flow>.visual-flow-card.role-sports.size-small{grid-column:span 4!important;grid-row:span 2!important}
+.visual-v20-flow>.visual-flow-card.role-sports.size-medium{grid-column:span 5!important;grid-row:span 3!important}
+
+.visual-music-dedicated{
+  position:sticky;
+  top:8px;
+  min-width:330px;
+  min-height:260px;
+  overflow:visible!important;
+}
+.visual-music-dedicated .visual-music-shell{
+  min-height:260px;
+  padding:13px;
+  grid-template-columns:88px 1fr!important;
+  grid-template-rows:auto 48px 34px 26px!important;
+}
+.visual-music-dedicated .visual-music-artwork{width:88px!important;height:88px!important}
+.visual-music-dedicated .visual-music-copy strong{font-size:17px!important}
+.visual-music-dedicated .visual-music-copy em{font-size:11px!important}
+
+/* Dynamic cards should feel like OG Home Status content entering/leaving a shared lane,
+   not permanent dashboard departments. */
+.visual-v20-flow .visual-flow-card{animation:none}
+@media (prefers-reduced-motion:no-preference){
+  .visual-v20-flow.is-reflowing .visual-flow-card{animation:visual-v20-enter .36s cubic-bezier(.2,.8,.2,1) both}
+  .visual-v20-flow.is-reflowing .visual-flow-card:nth-child(2){animation-delay:.035s}
+  .visual-v20-flow.is-reflowing .visual-flow-card:nth-child(3){animation-delay:.07s}
+  .visual-v20-flow.is-reflowing .visual-flow-card:nth-child(4){animation-delay:.105s}
+  .visual-v20-flow.is-reflowing .visual-flow-card:nth-child(5){animation-delay:.14s}
+}
+@keyframes visual-v20-enter{from{opacity:.25;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+
+@media(max-width:1200px){
+  .visual-v20-top{grid-template-columns:minmax(260px,23fr) minmax(0,43fr) minmax(370px,34fr)!important}
+  .visual-v20-top>.visual-security-panel{min-width:260px!important}
+  .visual-v20-top>.visual-weather-card{min-width:370px!important}
+  .visual-v20-lower{grid-template-columns:minmax(0,1fr) minmax(300px,33%)}
+  .visual-v20-flow>.visual-flow-card.size-small{grid-column:span 6!important}
+  .visual-v20-flow>.visual-flow-card.size-medium{grid-column:span 6!important}
+  .visual-v20-flow>.visual-flow-card.size-large{grid-column:span 12!important}
+}
+@media(max-width:850px){
+  .visual-v20-top{grid-template-columns:1fr 1fr!important;height:auto}
+  .visual-v20-top>.visual-media-card{grid-column:1/-1!important;min-height:300px}
+  .visual-v20-top>.visual-security-panel,.visual-v20-top>.visual-weather-card{min-width:0!important}
+  .visual-v20-lower{grid-template-columns:1fr}
+  .visual-music-dedicated{position:relative;top:auto;min-width:0}
+}
+
+/* Preview 21 — tablet-distance typography pass. */
+.visual-dashboard-card{font-size:16px!important}
+.visual-dashboard-card .visual-panel-heading{
+  font-size:16px!important;
+  height:48px!important;
+  padding:0 16px!important;
+}
+.visual-dashboard-card .visual-panel-heading b{
+  font-size:16px!important;
+}
+.visual-dashboard-card .visual-panel-heading ha-icon{
+  --mdc-icon-size:24px!important;
+}
+
+/* Security */
+.visual-v20-top .visual-security-state-copy strong{font-size:30px!important}
+.visual-v20-top .visual-security-state-copy small{font-size:13px!important}
+.visual-v20-top .visual-security-tile strong{font-size:13px!important}
+.visual-v20-top .visual-security-tile small{font-size:11px!important}
+.visual-v20-top .visual-security-tile-icon ha-icon{--mdc-icon-size:21px!important}
+
+/* Weather */
+.visual-v20-top .visual-weather-temp{font-size:58px!important}
+.visual-v20-top .visual-weather-current>strong{font-size:21px!important}
+.visual-v20-top .visual-weather-current>small{font-size:12px!important}
+.visual-v20-top .visual-humidity-ring b{font-size:15px!important}
+.visual-v20-top .visual-humidity-ring small{font-size:9px!important}
+.visual-v20-top .visual-forecast-day small{font-size:10px!important}
+.visual-v20-top .visual-forecast-day strong{font-size:14px!important}
+.visual-v20-top .visual-forecast-day em{font-size:10px!important}
+
+/* Dynamic Home Status region */
+.visual-dynamic-heading b{font-size:16px!important}
+.visual-dynamic-heading small{font-size:11px!important}
+.visual-v20-flow .visual-mini-copy strong{font-size:15px!important}
+.visual-v20-flow .visual-mini-copy small{font-size:12px!important}
+.visual-v20-flow .visual-household-heading strong{font-size:20px!important}
+.visual-v20-flow .visual-household-heading em{font-size:12px!important}
+.visual-v20-flow .visual-household-person b{font-size:10px!important}
+.visual-v20-flow .visual-flow-list-row strong,
+.visual-v20-flow .visual-sports-row strong{font-size:14px!important}
+.visual-v20-flow .visual-flow-list-row small,
+.visual-v20-flow .visual-sports-row small{font-size:11px!important}
+.visual-v20-flow .visual-glance-tile-copy small{font-size:12px!important}
+.visual-v20-flow .visual-glance-tile-copy strong{font-size:15px!important}
+.visual-v20-flow .visual-glance-tile-copy em{font-size:11px!important}
+.visual-v20-flow .visual-sports-meta{font-size:11px!important}
+.visual-v20-flow .visual-sports-meta b{font-size:10px!important}
+.visual-v20-flow .visual-sports-teams strong{font-size:17px!important}
+.visual-v20-flow .visual-sports-teams b{font-size:22px!important}
+
+/* Dedicated Music */
+.visual-music-dedicated .visual-music-copy small{font-size:10px!important}
+.visual-music-dedicated .visual-music-copy strong{font-size:20px!important}
+.visual-music-dedicated .visual-music-copy em{font-size:13px!important}
+.visual-music-dedicated .visual-music-source-trigger span{font-size:12px!important}
+.visual-music-dedicated .visual-music-volume b{font-size:10px!important}
+
+/* Recent rail */
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .visual-rail-label strong{font-size:14px!important}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .visual-rail-label small{font-size:10px!important}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy strong{font-size:20px!important}
+:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy small{font-size:13px!important}
+@media(max-width:1000px){.visual-v5-grid{grid-template-columns:1fr 1.35fr 1fr}.visual-security-tile-row{grid-template-columns:1fr 1fr}.visual-security-tile:nth-child(3){display:none}.visual-v5-grid{grid-template-rows:270px 240px}}@media(max-width:760px){.visual-v5-grid{grid-template-columns:1fr 1fr;grid-template-rows:auto;grid-template-areas:"security weather" "media media" "appliances glance"}.visual-household-card,.visual-music-card{display:none}.visual-mode-center{min-height:310px;height:310px}:host([data-presentation-mode="visual"]) .visual-mode-ticker{grid-template-columns:1fr}:host([data-presentation-mode="visual"]) .visual-rail-label{display:none}}@media(max-width:560px){.visual-v5-grid{grid-template-columns:1fr;grid-template-areas:"security" "weather" "media" "appliances" "glance"}.visual-mode-center{min-height:260px;height:260px}}
+
+
+/* Preview 41 — fixed-region polish: weather fit, RECENT restore, security cleanup. */
+.visual-clean-dashboard{position:relative;overflow:hidden;border-radius:22px!important;background:linear-gradient(145deg,rgba(5,13,20,.96),rgba(3,10,16,.97))!important}
+.visual-clean-shell{position:relative;z-index:1;display:grid;grid-template-rows:320px 104px minmax(320px,1fr);gap:10px;padding:12px 12px 0}
+.visual-clean-top{display:grid;grid-template-columns:minmax(285px,22fr) minmax(420px,46fr) minmax(360px,32fr);gap:10px;min-height:0}
+.visual-clean-security,.visual-clean-center,.visual-clean-music,.visual-clean-weather,.visual-clean-content{min-width:0;border:1px solid rgba(78,155,225,.22);border-radius:16px;background:linear-gradient(145deg,rgba(14,29,42,.90),rgba(7,17,26,.92));overflow:hidden}
+.visual-clean-security{display:flex;flex-direction:column;justify-content:flex-start}
+.visual-clean-security .visual-security-hero{grid-template-columns:86px 1fr!important;padding:16px 15px 8px!important}
+.visual-clean-security .visual-security-ring{width:72px!important;height:72px!important;border-width:8px!important}
+.visual-clean-security .visual-security-ring ha-icon{--mdc-icon-size:34px!important}
+.visual-clean-security .visual-security-state-copy strong{font-size:30px!important;line-height:1.05!important}
+.visual-clean-security .visual-security-state-copy small{font-size:14px!important;margin-top:5px!important}
+.visual-clean-security .visual-security-tile-row{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))!important;padding:7px 10px 10px!important;gap:8px!important}
+.visual-clean-security .visual-security-tile{min-height:58px!important;padding:9px 10px!important;min-width:0!important}
+.visual-clean-center{position:relative;background:rgba(0,0,0,.34)}
+.visual-clean-center .visual-mode-center{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;border-radius:15px!important;background:rgba(0,0,0,.28)!important}
+.visual-clean-music{padding:0!important;overflow:visible!important}
+.visual-clean-music>.visual-music-shell{height:100%!important;min-height:0!important;border:0!important;background:transparent!important}
+.visual-clean-music .visual-music-shell.visual-music-idle{display:grid!important;grid-template-columns:52px minmax(0,1fr) 58px!important;align-items:center!important;gap:12px!important;padding:18px!important;height:auto!important;min-height:92px!important}
+.visual-clean-music .visual-music-idle-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:14px;background:rgba(124,91,230,.20);color:#a88bff}
+.visual-clean-music .visual-music-idle-icon ha-icon{--mdc-icon-size:30px}
+.visual-clean-music .visual-music-idle-play{width:58px!important;height:58px!important;border-radius:14px!important}
+.visual-clean-music .visual-music-source-trigger{height:48px!important;font-size:15px!important}
+.visual-clean-music .visual-music-active{display:grid!important;grid-template-columns:102px minmax(0,1fr)!important;grid-template-rows:auto 54px 42px 28px!important;gap:8px 14px!important;padding:14px!important}
+.visual-clean-music .visual-music-artwork{width:102px!important;height:102px!important;border-radius:18px!important}
+.visual-clean-music .visual-music-copy{min-width:0!important;align-content:start!important;overflow:hidden!important}
+.visual-clean-music .visual-music-copy strong{font-size:25px!important;line-height:1.08!important;white-space:normal!important;overflow:hidden!important;text-overflow:ellipsis!important;overflow-wrap:break-word!important;display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:3!important;max-height:3.24em!important}
+.visual-clean-music .visual-music-copy em{font-size:14px!important;line-height:1.2!important;white-space:normal!important;overflow:hidden!important;text-overflow:ellipsis!important;display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:1!important;max-height:1.2em!important}
+.visual-clean-music .visual-music-controls button{width:44px!important;height:44px!important}
+.visual-clean-weather{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.34fr);align-items:center;column-gap:24px;padding:8px 22px;box-sizing:border-box;background:linear-gradient(90deg,rgba(10,39,63,.96),rgba(5,25,42,.96))}
+.visual-clean-weather-primary{display:flex;align-items:center;gap:14px;min-width:0;overflow:hidden}
+.visual-clean-weather-primary>.visual-weather-icon{--mdc-icon-size:48px!important;color:#53b8ff;flex:0 0 auto}
+.visual-clean-weather .visual-weather-temp{font-size:58px!important;line-height:.9!important;font-weight:800!important;color:#fff;flex:0 0 auto}
+.visual-clean-weather-copy{display:grid;gap:3px;min-width:0}
+.visual-clean-weather-copy strong{font-size:21px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.visual-clean-weather-copy small,.visual-clean-weather-metric small{font-size:11px;line-height:1.1;color:rgba(255,255,255,.55)}
+.visual-clean-weather-metric{display:flex;align-items:center;justify-content:flex-start;gap:10px;min-width:0;padding-left:22px;border-left:1px solid rgba(255,255,255,.13)}
+.visual-clean-weather-metric>ha-icon{--mdc-icon-size:28px;color:#42b7ff;flex:0 0 auto}
+.visual-clean-weather-metric>span{display:grid}
+.visual-clean-weather-metric b{font-size:25px;line-height:1}
+.visual-clean-weather .visual-humidity-ring{display:none!important}
+.visual-clean-content{padding:9px;overflow:hidden;background:linear-gradient(145deg,rgba(8,21,31,.86),rgba(6,15,23,.90))}
+.visual-clean-content .visual-v20-flow{height:100%;padding:0!important;gap:8px!important;grid-auto-rows:58px!important;align-content:start}
+.visual-clean-content .visual-flow-card{border-color:rgba(79,159,255,.16)!important;background:rgba(12,28,41,.72)!important}
+.visual-clean-content .visual-flow-card>.visual-panel-heading{display:none!important}
+.visual-clean-content .visual-flow-card.size-small{grid-row:span 2!important}
+.visual-clean-content .visual-flow-card.size-medium{grid-row:span 3!important}
+.visual-clean-content .visual-flow-card.size-large{grid-row:span 4!important}
+.visual-clean-content .visual-mini-copy strong,.visual-clean-content .visual-flow-list-row strong,.visual-clean-content .visual-sports-row strong{font-size:17px!important}
+.visual-clean-content .visual-mini-copy small,.visual-clean-content .visual-flow-list-row small,.visual-clean-content .visual-sports-row small{font-size:13px!important}
+.visual-clean-content .visual-household-heading strong{font-size:24px!important}
+.visual-clean-content .visual-household-heading em{font-size:14px!important}
+.visual-clean-content .visual-glance-tile-copy strong{font-size:17px!important}
+.visual-clean-content .visual-glance-tile-copy small{font-size:13px!important}
+.visual-clean-dashboard>.weather-renderer-layer{position:absolute!important;inset:0!important;z-index:0!important;pointer-events:none!important}
+.visual-clean-dashboard>:not(.weather-renderer-layer){position:relative;z-index:1}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker{margin:10px 12px 12px!important;width:calc(100% - 24px)!important;height:82px!important;min-height:82px!important;max-height:82px!important;grid-template-columns:180px 1fr!important}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker .footer-marquee{height:82px!important;min-height:82px!important}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-rail-label strong{font-size:14px!important}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-rail-label small{font-size:10px!important}
+@media(max-width:1100px){.visual-clean-shell{grid-template-rows:300px 96px minmax(300px,1fr)}.visual-clean-top{grid-template-columns:minmax(250px,22fr) minmax(360px,45fr) minmax(320px,33fr)}.visual-clean-music .visual-music-active{grid-template-columns:90px minmax(0,1fr)!important}.visual-clean-music .visual-music-artwork{width:90px!important;height:90px!important}.visual-clean-music .visual-music-copy strong{font-size:21px!important}}
+@media(max-width:800px){.visual-clean-shell{grid-template-rows:auto auto auto}.visual-clean-top{grid-template-columns:1fr 1fr}.visual-clean-center{grid-column:1/-1;min-height:280px}.visual-clean-music{min-height:220px}.visual-clean-weather{grid-template-columns:1fr}.visual-clean-weather-metric{border-left:0;padding-left:0}.visual-clean-content{min-height:360px}}
+
+/* Preview 42: approved mock is the layout specification. */
+.visual-clean-shell{grid-template-rows:320px 112px 323px!important;gap:10px!important;padding:12px 12px 0!important}
+.visual-clean-top{grid-template-columns:minmax(270px,26fr) minmax(430px,43fr) minmax(330px,31fr)!important;gap:10px!important}
+.visual-clean-security,.visual-clean-center,.visual-clean-music,.visual-clean-weather,.visual-clean-content{border-color:rgba(78,155,225,.24)!important;background:linear-gradient(145deg,rgba(12,27,40,.94),rgba(6,16,25,.96))!important}
+.visual-clean-security .visual-security-tile-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+.visual-clean-security .visual-security-tile{min-width:0!important;min-height:64px!important}
+.visual-clean-center{background:#02070b!important}
+.visual-clean-music{overflow:hidden!important}
+.visual-clean-weather{grid-template-columns:minmax(360px,32fr) minmax(130px,12fr) minmax(0,56fr)!important;gap:0!important;padding:8px 20px!important;background:linear-gradient(90deg,rgba(8,41,67,.98),rgba(5,26,44,.98))!important}
+.visual-clean-weather-primary{padding-right:22px!important}
+.visual-clean-weather-metric{height:68px!important;padding:0 22px!important;border-left:1px solid rgba(255,255,255,.13)!important;border-right:1px solid rgba(255,255,255,.13)!important}
+.visual-clean-weather-forecast{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;align-items:center!important;height:100%!important;min-width:0!important;padding-left:12px!important}
+.visual-clean-weather-forecast .visual-forecast-day{display:grid!important;grid-template-columns:1fr!important;justify-items:center!important;gap:1px!important;min-width:0!important;padding:0 8px!important;border-left:1px solid rgba(255,255,255,.08)!important}
+.visual-clean-weather-forecast .visual-forecast-day:first-child{border-left:0!important}
+.visual-clean-weather-forecast .visual-forecast-day small{font-size:10px!important;text-transform:uppercase!important;color:rgba(255,255,255,.72)!important}
+.visual-clean-weather-forecast .visual-forecast-day ha-icon{--mdc-icon-size:25px!important;color:#ffd45a!important}
+.visual-clean-weather-forecast .visual-forecast-day strong{font-size:15px!important;line-height:1!important}
+.visual-clean-weather-forecast .visual-forecast-day em{font-size:10px!important;line-height:1!important;color:rgba(255,255,255,.55)!important;font-style:normal!important}
+.visual-clean-weather-forecast .visual-forecast-waiting{display:grid!important;place-items:center!important;height:100%!important;font-size:12px!important;color:rgba(255,255,255,.46)!important}
+
+.visual-clean-content{padding:0!important;overflow:hidden!important;background:rgba(4,12,18,.88)!important}
+.visual-clean-content .visual-v20-flow{display:grid!important;grid-template-columns:20fr 20fr 20fr 12fr 12fr 16fr!important;grid-template-rows:1fr!important;grid-auto-rows:unset!important;grid-auto-flow:column!important;gap:8px!important;height:100%!important;min-height:0!important;padding:0!important;align-items:stretch!important;align-content:stretch!important}
+.visual-clean-content .visual-v20-flow>.visual-flow-card{grid-column:auto!important;grid-row:1!important;width:auto!important;height:100%!important;min-width:0!important;min-height:0!important;max-height:none!important;overflow:hidden!important;border-radius:13px!important;border:1px solid rgba(74,142,201,.19)!important;background:linear-gradient(180deg,rgba(12,29,43,.90),rgba(8,21,32,.94))!important;padding:0!important}
+.visual-clean-content .visual-flow-card>.visual-panel-heading{display:none!important}
+.visual-clean-content .visual-flow-card.size-fixed{grid-column:auto!important;grid-row:1!important}
+.visual-clean-content .visual-flow-card>div:not(.visual-panel-heading){height:100%!important;min-height:0!important}
+.visual-clean-content .visual-flow-list,.visual-clean-content .visual-flow-sports,.visual-clean-content .visual-flow-attention,.visual-clean-content .visual-flow-appliances{display:flex!important;flex-direction:column!important;height:100%!important;min-height:0!important;padding:10px!important;gap:7px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-flow-list-row,.visual-clean-content .visual-mini-item,.visual-clean-content .visual-flow-attention-item,.visual-clean-content .visual-sports-row{flex:1 1 0!important;min-height:0!important;border-radius:10px!important;padding:9px 10px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-flow-list-row>span,.visual-clean-content .visual-mini-copy,.visual-clean-content .visual-sports-row>span:last-child{min-width:0!important}
+.visual-clean-content .visual-flow-list-row strong,.visual-clean-content .visual-mini-copy strong,.visual-clean-content .visual-sports-row strong{font-size:15px!important;line-height:1.13!important;white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important}
+.visual-clean-content .visual-flow-list-row small,.visual-clean-content .visual-mini-copy small,.visual-clean-content .visual-sports-row small{font-size:11px!important;line-height:1.18!important;margin-top:4px!important}
+.visual-clean-content .visual-flow-household{height:100%!important;padding:0!important}
+.visual-clean-content .visual-household-shell{height:100%!important;display:flex!important;flex-direction:column!important;padding:12px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-household-heading{flex:0 0 auto!important;padding:7px 2px 14px!important}
+.visual-clean-content .visual-household-heading small{display:none!important}
+.visual-clean-content .visual-household-heading strong{font-size:20px!important;line-height:1.1!important}
+.visual-clean-content .visual-household-heading em{font-size:11px!important;line-height:1.25!important;margin-top:5px!important;white-space:normal!important}
+.visual-clean-content .visual-household-people-grid{display:grid!important;grid-template-columns:1fr!important;gap:7px!important;align-content:start!important;overflow:hidden!important}
+.visual-clean-content .visual-household-person{display:flex!important;align-items:center!important;gap:8px!important;min-height:42px!important;padding:6px 8px!important;border-radius:9px!important;background:rgba(255,255,255,.025)!important}
+.visual-clean-content .visual-household-person b{font-size:12px!important}
+.visual-clean-content .visual-glance-grid{display:grid!important;grid-template-columns:1fr!important;grid-template-rows:repeat(4,minmax(0,1fr))!important;gap:7px!important;height:100%!important;padding:10px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-glance-tile{min-height:0!important;height:100%!important;padding:8px!important;border-radius:10px!important}
+.visual-clean-content .visual-glance-tile-copy strong{font-size:14px!important;line-height:1.1!important}
+.visual-clean-content .visual-glance-tile-copy small,.visual-clean-content .visual-glance-tile-copy em{font-size:10px!important}
+.visual-clean-content .visual-sports-matchup{height:auto!important;min-height:150px!important;margin:10px!important;padding:10px!important;border-radius:12px!important}
+.visual-clean-content .visual-sports-meta{font-size:10px!important}
+.visual-clean-content .visual-sports-teams{gap:6px!important}
+.visual-clean-content .visual-sports-teams strong{font-size:14px!important}
+.visual-clean-content .visual-sports-teams b{font-size:19px!important}
+.visual-clean-content .visual-adaptive-quiet{height:100%!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;padding:14px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-adaptive-quiet strong{font-size:16px!important}
+.visual-clean-content .visual-adaptive-quiet small{font-size:11px!important}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker{margin:10px 12px 12px!important;width:calc(100% - 24px)!important;height:86px!important;min-height:86px!important;max-height:86px!important;grid-template-columns:180px 1fr!important;background:linear-gradient(90deg,rgba(10,39,63,.98),rgba(5,26,44,.98))!important}
+:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"]) .visual-clean-dashboard .visual-mode-ticker .footer-marquee{height:86px!important;min-height:86px!important}
+@media(max-width:1100px){.visual-clean-shell{grid-template-rows:300px 104px 300px!important}.visual-clean-top{grid-template-columns:minmax(245px,26fr) minmax(360px,43fr) minmax(300px,31fr)!important}.visual-clean-content .visual-v20-flow{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+
+/* Preview 50: three fixed slots with compact internals sized for the 323px presentation row. */
+.visual-clean-content .visual-v20-flow{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:1fr!important;gap:10px!important;height:100%!important;padding:0!important;align-items:stretch!important;overflow:hidden!important}
+.visual-clean-content .visual-presentation-slot{min-width:0!important;height:100%!important;overflow:hidden!important;border:1px solid rgba(72,157,225,.28)!important;border-radius:15px!important;background:linear-gradient(155deg,rgba(10,28,42,.96),rgba(5,15,24,.98))!important;box-sizing:border-box!important;display:flex!important;align-items:stretch!important}
+
+.visual-clean-content .visual-presentation-slot.is-tappable{cursor:pointer!important;transition:transform .12s ease,border-color .12s ease,filter .12s ease!important;touch-action:manipulation}.visual-clean-content .visual-presentation-slot.is-tappable:active{transform:scale(.985)!important;filter:brightness(1.14)!important;border-color:rgba(102,190,255,.72)!important}
+.visual-clean-content .visual-presentation-inner{width:100%!important;height:100%!important;display:grid!important;grid-template-columns:86px minmax(0,1fr)!important;align-items:center!important;gap:16px!important;padding:18px!important;box-sizing:border-box!important}
+.visual-clean-content .visual-presentation-icon{--mdc-icon-size:60px!important;width:86px!important;height:86px!important;display:grid!important;place-items:center!important;border-radius:22px!important;padding:12px!important;box-sizing:border-box!important;background:rgba(54,155,225,.13)!important;color:#52b9ff!important}
+.visual-clean-content .visual-presentation-copy{min-width:0!important;max-height:100%!important;display:flex!important;flex-direction:column!important;justify-content:center!important;gap:7px!important;overflow:hidden!important}
+.visual-clean-content .visual-presentation-copy strong{font-size:24px!important;line-height:1.08!important;font-weight:800!important;white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important}
+.visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:38px!important;line-height:1!important;font-weight:900!important;letter-spacing:-.02em!important;color:#fff!important;white-space:normal!important;overflow-wrap:anywhere!important}
+.visual-clean-content .visual-presentation-copy .visual-presentation-value-small{font-size:29px!important;line-height:1.04!important}
+.visual-clean-content .visual-presentation-copy b{font-size:16px!important;line-height:1.2!important;font-weight:500!important;color:rgba(255,255,255,.64)!important;white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important}
+.visual-clean-content .visual-presentation-slot.type-household{border-color:rgba(102,187,106,.45)!important;background:linear-gradient(155deg,rgba(8,42,25,.82),rgba(5,20,16,.96))!important}.visual-clean-content .type-household .visual-presentation-icon{color:#71db78!important;background:rgba(102,187,106,.15)!important}
+.visual-clean-content .visual-presentation-slot.type-traffic{border-color:rgba(66,165,245,.48)!important}.visual-clean-content .type-traffic .visual-presentation-value{color:#55b8ff!important}
+.visual-clean-content .visual-presentation-slot.type-sports{border-color:rgba(156,107,255,.48)!important;background:linear-gradient(155deg,rgba(26,18,50,.84),rgba(9,12,24,.98))!important}.visual-clean-content .type-sports .visual-presentation-icon{color:#aa7bff!important;background:rgba(156,107,255,.15)!important}
+.visual-clean-content .visual-presentation-slot.type-calendar{border-color:rgba(255,193,7,.42)!important}.visual-clean-content .type-calendar .visual-presentation-icon{color:#ffd45a!important;background:rgba(255,193,7,.12)!important}
+.visual-clean-content .visual-presentation-slot.type-appliance{border-color:rgba(139,195,74,.48)!important}.visual-clean-content .type-appliance .visual-presentation-icon{color:#9bdc58!important;background:rgba(139,195,74,.14)!important}
+.visual-clean-content .visual-presentation-slot.type-glance{border-color:rgba(0,188,212,.42)!important}.visual-clean-content .type-glance .visual-presentation-icon{color:#48d6e9!important;background:rgba(0,188,212,.13)!important}
+.visual-clean-content .visual-v20-flow.is-reflowing>.visual-presentation-slot{animation:none!important}
+/* Preview 52: give the three rotating cards breathing room inside the fixed 323px presentation area. */
+.visual-clean-content .visual-v20-flow{padding:6px!important;box-sizing:border-box!important;gap:10px!important}
+.visual-clean-content .visual-presentation-slot{height:100%!important;min-height:0!important}
+@media(max-width:1100px){.visual-clean-content .visual-presentation-inner{grid-template-columns:70px minmax(0,1fr)!important;gap:12px!important;padding:14px!important}.visual-clean-content .visual-presentation-icon{--mdc-icon-size:48px!important;width:70px!important;height:70px!important;padding:10px!important;border-radius:18px!important}.visual-clean-content .visual-presentation-copy strong{font-size:21px!important}.visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:34px!important}.visual-clean-content .visual-presentation-copy .visual-presentation-value-small{font-size:26px!important}.visual-clean-content .visual-presentation-copy b{font-size:15px!important}}
+
+/* Preview 53: vertical-fit pass. Keep Preview 52 slot clearance and V1 rotation behavior unchanged. */
+.visual-clean-shell{grid-template-rows:285px 100px 290px!important;gap:8px!important;padding:8px 12px 0!important}
+.visual-clean-weather{padding:6px 16px!important}
+.visual-clean-weather-primary{padding-right:16px!important}
+.visual-clean-weather-metric{height:60px!important;padding:0 16px!important}
+.visual-clean-weather-forecast{padding-left:8px!important}
+.visual-clean-content .visual-v20-flow{padding:6px!important;gap:8px!important}
+@media(max-width:1100px){.visual-clean-shell{grid-template-rows:270px 92px 275px!important;gap:8px!important;padding-top:8px!important}.visual-clean-weather{padding:5px 14px!important}.visual-clean-weather-metric{height:56px!important;padding:0 14px!important}}
+
+/* Preview 55: weather has two stable faces and the strip navigates to Radar. */
+.visual-clean-weather{cursor:pointer!important;overflow:hidden!important;touch-action:manipulation}
+.visual-clean-weather:active{transform:scale(.996)}
+.visual-weather-face{display:contents}
+.visual-weather-outside{grid-column:1/-1;display:grid;grid-template-columns:minmax(300px,1fr) minmax(420px,1.3fr);align-items:center;width:100%;height:100%;padding:0 24px;box-sizing:border-box}
+.visual-weather-outside-title{display:flex;align-items:center;gap:18px;min-width:0}
+.visual-weather-outside-title>ha-icon{--mdc-icon-size:54px;color:#55c8ff}
+.visual-weather-outside-title span{display:flex;flex-direction:column;gap:2px}
+.visual-weather-outside-title strong{font-size:30px;line-height:1;font-weight:850}
+.visual-weather-outside-title small{font-size:14px;color:rgba(255,255,255,.62)}
+.visual-weather-outside-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));height:72%;border-left:1px solid rgba(255,255,255,.13)}
+.visual-weather-outside-metrics>span{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;align-content:center;justify-content:center;column-gap:12px;min-width:0;border-right:1px solid rgba(255,255,255,.08)}
+.visual-weather-outside-metrics ha-icon{grid-row:1/3;--mdc-icon-size:34px;color:#55c8ff;align-self:center}
+.visual-weather-outside-metrics b{font-size:34px;line-height:1;font-weight:900}
+.visual-weather-outside-metrics small{font-size:12px;color:rgba(255,255,255,.6)}
+@media(max-width:1100px){.visual-weather-outside{grid-template-columns:minmax(240px,1fr) minmax(360px,1.4fr);padding:0 18px}.visual-weather-outside-title>ha-icon{--mdc-icon-size:44px}.visual-weather-outside-title strong{font-size:25px}.visual-weather-outside-metrics b{font-size:29px}}
+
+/* Presentation mode phone layouts. These rules are deliberately isolated from
+ * Classic mode: phone portrait becomes a natural single-column story, while a
+ * short landscape phone keeps the important at-a-glance regions on screen. */
+:host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-dashboard{border-radius:18px!important}
+
+@media (max-width:600px) and (orientation:portrait){
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-shell{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"security" "music" "center" "weather" "content"!important;grid-template-rows:auto auto 170px auto 190px!important;gap:8px!important;padding:8px 8px 0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-top{display:contents!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security{grid-area:security;min-height:88px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music{grid-area:music;min-height:142px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-center{grid-area:center;min-height:170px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather{grid-area:weather;min-height:178px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content{grid-area:content;min-height:190px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-hero{grid-template-columns:62px minmax(0,1fr)!important;padding:11px 12px 5px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-ring{width:52px!important;height:52px!important;border-width:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-ring ha-icon{--mdc-icon-size:26px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy strong{font-size:23px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy small{font-size:12px!important;margin-top:3px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-tile-row{position:absolute;top:8px;right:8px;width:132px;grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:0!important;gap:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-tile{min-height:70px!important;padding:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-active{grid-template-columns:88px minmax(0,1fr)!important;grid-template-rows:auto 34px 25px!important;gap:5px 11px!important;padding:11px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-artwork{width:88px!important;height:88px!important;border-radius:14px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-copy strong{font-size:20px!important;-webkit-line-clamp:2!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather{grid-template-columns:1fr!important;gap:8px!important;padding:12px 15px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-primary{padding:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather .visual-weather-temp{font-size:50px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-metric{padding:7px 0 0!important;border:0!important;border-top:1px solid rgba(255,255,255,.13)!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-forecast{padding:6px 0 0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-v20-flow{grid-template-columns:1fr!important;grid-template-rows:1fr!important;padding:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-slot:not(:first-child){display:none!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-inner{grid-template-columns:64px minmax(0,1fr)!important;gap:12px!important;padding:14px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-icon{width:64px!important;height:64px!important;--mdc-icon-size:42px!important;border-radius:16px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy strong{font-size:20px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:31px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker{margin:8px!important;width:calc(100% - 16px)!important;height:72px!important;min-height:72px!important;max-height:72px!important;grid-template-columns:1fr!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-rail-label{display:none!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee{height:72px!important;min-height:72px!important}
+}
+
+@media (max-height:600px) and (orientation:landscape){
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-shell{display:grid!important;grid-template-columns:minmax(150px,.9fr) minmax(220px,1.25fr) minmax(220px,1.35fr)!important;grid-template-areas:"security music weather" "center center center" "content content content"!important;grid-template-rows:126px 122px 92px!important;gap:7px!important;padding:7px 7px 0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-top{display:contents!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security{grid-area:security;min-height:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music{grid-area:music;min-height:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-center{grid-area:center;min-height:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather{grid-area:weather;min-height:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content{grid-area:content;min-height:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-hero{grid-template-columns:56px minmax(0,1fr)!important;padding:10px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-ring{width:48px!important;height:48px!important;border-width:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy strong{font-size:20px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy small{font-size:11px!important;margin-top:2px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-tile-row{display:none!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-active{grid-template-columns:68px minmax(0,1fr)!important;grid-template-rows:auto 30px 22px!important;gap:4px 9px!important;padding:9px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-artwork{width:68px!important;height:68px!important;border-radius:12px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-copy strong{font-size:17px!important;-webkit-line-clamp:1!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather{grid-template-columns:minmax(0,1fr) minmax(80px,.35fr)!important;padding:9px 12px!important;gap:8px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-primary{gap:8px!important;padding:0!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-primary>.visual-weather-icon{--mdc-icon-size:38px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather .visual-weather-temp{font-size:43px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-copy strong{font-size:16px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-forecast{display:none!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-v20-flow{grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:1fr!important;padding:5px!important;gap:6px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-inner{grid-template-columns:42px minmax(0,1fr)!important;gap:7px!important;padding:8px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-icon{width:42px!important;height:42px!important;--mdc-icon-size:27px!important;border-radius:11px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy strong{font-size:14px!important;-webkit-line-clamp:1!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:21px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy b{font-size:10px!important;-webkit-line-clamp:1!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker{margin:7px!important;width:calc(100% - 14px)!important;height:58px!important;min-height:58px!important;max-height:58px!important;grid-template-columns:130px 1fr!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-rail-label{display:flex!important;padding:0 8px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-rail-label>ha-icon{--mdc-icon-size:24px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-rail-label small{display:none!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee{height:58px!important;min-height:58px!important}
+}
+
+/* Text-only polish for the approved phone presentation layout. */
+@media (max-width:600px) and (orientation:portrait){
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy strong{font-size:21px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy small{font-size:11px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-tile strong{font-size:11px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-tile small{font-size:9px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-copy strong{font-size:18px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-copy em{font-size:12px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-source-trigger{font-size:12px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-fallback{font-size:14px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather .visual-weather-temp{font-size:44px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-copy strong{font-size:16px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-copy small,:host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-metric small{font-size:9px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-metric b{font-size:20px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-forecast .visual-forecast-day small{font-size:8px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-forecast .visual-forecast-day strong{font-size:12px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-forecast .visual-forecast-day em{font-size:8px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy strong{font-size:18px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:28px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy .visual-presentation-value-small{font-size:22px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy b{font-size:12px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee-copy strong{font-size:16px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee-copy small{font-size:10px!important}
+}
+
+@media (max-height:600px) and (orientation:landscape){
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-security .visual-security-state-copy strong{font-size:18px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-music .visual-music-copy strong{font-size:16px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather .visual-weather-temp{font-size:39px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-copy strong{font-size:14px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-weather-metric b{font-size:18px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy strong{font-size:13px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy .visual-presentation-value{font-size:20px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-clean-content .visual-presentation-copy b{font-size:9px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee-copy strong{font-size:14px!important}
+  :host([data-presentation-mode="visual"][data-profile="phone"]) .visual-mode-ticker .footer-marquee-copy small{font-size:9px!important}
 }
 
 `;

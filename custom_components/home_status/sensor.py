@@ -203,6 +203,7 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
             "display_kind", "rotate_with_awareness", "group_labels", "utility_role",
             "image_url", "media_url", "media_type", "article_url", "navigation", "subtitle",
             "body", "visual_effect", "action", "visual", "zone_visual",
+            "sports_state", "league", "favorite_team", "scoreboard_entity_id",
         )
         items = []
         for item in value:

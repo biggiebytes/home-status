@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Preserves the finalized tablet Visual Mode and its three-slot rotation behavior.
+- Adds the tested responsive phone presentation layout and phone-only typography polish.
+- Retains Weather ↔ Outside Home rotation, radar navigation, Visual Center, Security cleanup, and the RECENT ticker.
+
 ## 1.0.1
 
 - Adds a user-selectable Performance mode with Standard and Low impact profiles.
