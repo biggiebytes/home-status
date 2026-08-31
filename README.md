@@ -2,7 +2,7 @@
 
 ### Full layout with Visual Center
 
-![Home Status dark layout with Visual Center](docs/screenshots/v1-dark-visual-center.png)
+![Home Status Visual Center with event artwork](docs/screenshots/visual-mode-event-sanitized.png)
 
 ### Natural-flow lanes
 
@@ -18,7 +18,7 @@ Home Status is a Home Assistant integration for wall tablets and dashboards. It 
 
 It is intended for people who want to glance at a dashboard and quickly understand what is happening around the house, what recently happened, and what may be useful to know next.
 
-![Home Status with Visual Center](docs/screenshots/v1-dark-visual-center.png)
+![Home Status with Visual Center](docs/screenshots/visual-mode-event-sanitized.png)
 
 ## What it does
 
