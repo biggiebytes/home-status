@@ -13740,14 +13740,21 @@ const CSS = `
 .visual-clean-top{display:grid;grid-template-columns:minmax(285px,22fr) minmax(420px,46fr) minmax(360px,32fr);gap:10px;min-height:0}
 .visual-clean-security,.visual-clean-center,.visual-clean-music,.visual-clean-weather,.visual-clean-content{min-width:0;border:1px solid rgba(78,155,225,.22);border-radius:16px;background:linear-gradient(145deg,rgba(14,29,42,.90),rgba(7,17,26,.92));overflow:hidden}
 .visual-clean-security.beacon-disarmed{--security-beacon:#59e982;--security-beacon-dim:#214d3e}
-.visual-clean-security.beacon-armed-home{--security-beacon:#ffb52e;--security-beacon-dim:#624619}
-.visual-clean-security.beacon-armed-away{--security-beacon:#ff6565;--security-beacon-dim:#653030}
+.visual-clean-security.beacon-armed-home{--security-beacon:#ff5252;--security-beacon-dim:#642525}
+.visual-clean-security.beacon-armed-away{--security-beacon:#ff5252;--security-beacon-dim:#642525}
 .visual-clean-security.beacon-pending{--security-beacon:#ffb52e;--security-beacon-dim:#624619}
 .visual-clean-security.beacon-triggered{--security-beacon:#ff5252;--security-beacon-dim:#642525}
 .visual-clean-security.beacon-neutral{--security-beacon:#8796a8;--security-beacon-dim:#304052}
 .visual-clean-security .visual-security-ring{border-color:var(--security-beacon,#8796a8)!important}
 .visual-clean-security .visual-security-ring ha-icon{color:var(--security-beacon,#8796a8)!important}
 .visual-clean-security .visual-security-state-copy strong{color:var(--security-beacon,#8796a8)}
+@media (prefers-reduced-motion:no-preference){
+  .visual-clean-security.beacon-pending .visual-security-ring{animation:visual-security-pulse 1.5s ease-in-out infinite}
+  .visual-clean-security.beacon-armed-home .visual-security-ring,
+  .visual-clean-security.beacon-armed-away .visual-security-ring{animation:visual-security-pulse 1.8s ease-in-out infinite}
+  .visual-clean-security.beacon-triggered .visual-security-ring{animation:visual-security-alert .8s ease-in-out infinite}
+}
+
 .visual-clean-security{display:flex;flex-direction:column;justify-content:flex-start}
 .visual-clean-security .visual-security-hero{grid-template-columns:86px 1fr!important;padding:16px 15px 8px!important}
 .visual-clean-security .visual-security-ring{width:72px!important;height:72px!important;border-width:8px!important}
