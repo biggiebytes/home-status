@@ -7738,7 +7738,7 @@ class HomeStatusCard extends HTMLElement {
     const playCommand = music.playing ? 'media_pause' : 'media_play';
     const playIcon = music.playing ? 'mdi:pause' : 'mdi:play';
     const sourceOptions = music.sources.map(source => `<button type="button" data-visual-music-source="${this._escape(source)}" class="${source === music.source ? 'is-selected' : ''}"><ha-icon icon="${source === music.source ? 'mdi:check' : 'mdi:speaker'}"></ha-icon><span>${this._escape(source)}</span></button>`).join('');
-    const sourceSelector = music.sources.length ? `<div class="visual-music-source-wrap"><button class="visual-music-source-trigger" type="button" data-visual-source-toggle><ha-icon icon="mdi:speaker-multiple"></ha-icon><span>${this._escape(music.source || 'Choose source')}</span><ha-icon icon="mdi:chevron-down"></ha-icon></button><div class="visual-music-source-menu" data-visual-source-menu hidden>${sourceOptions}</div></div>` : '';
+    const sourceSelector = music.sources.length ? `<div class="visual-music-source-wrap"><button class="visual-music-source-trigger" type="button" data-visual-source-toggle aria-expanded="false" aria-label="Choose music source"><ha-icon icon="mdi:speaker-multiple"></ha-icon><span>${this._escape(music.source || 'Choose source')}</span><ha-icon icon="mdi:chevron-down"></ha-icon></button><div class="visual-music-source-menu" data-visual-source-menu hidden>${sourceOptions}</div></div>` : '';
 
     if (idle) {
       return `<div class="visual-music-shell visual-music-idle"${entityTap}><span class="visual-music-idle-icon"><ha-icon icon="mdi:music-note"></ha-icon></span>${sourceSelector || '<span class="visual-music-idle-source">Music</span>'}<button class="visual-music-play visual-music-idle-play" type="button" data-music-command="media_play" aria-label="Play"><ha-icon icon="mdi:play"></ha-icon></button></div>`;
@@ -7905,6 +7905,8 @@ class HomeStatusCard extends HTMLElement {
     const weather = this._visualModeWeatherState(data);
     const weatherEntity = this._visualModeCurrentItems(data).find(item => String(item?.entity_id || '').startsWith('weather.'))?.entity_id || '';
     const securityPath = this._visualModeNavigationPath('security');
+    const camerasPath = this._visualModeNavigationPath('cameras');
+    const lightingPath = this._visualModeNavigationPath('lighting');
     const weatherPath = this._visualModeNavigationPath('radar') || this._visualModeNavigationPath('weather');
     const appliances = this._visualModeApplianceItems(data);
     const model = this._visualModeDashboardModel(data);
@@ -7921,7 +7923,11 @@ class HomeStatusCard extends HTMLElement {
           <div class="visual-clean-top">
             <section class="visual-clean-security ${security.secure ? 'is-clear' : 'has-alert'} beacon-${this._escape(security.beacon)}" data-visual-security${securityPath ? ` data-visual-path="${this._escape(securityPath)}"` : (securityEntity ? ` data-visual-entity="${this._escape(securityEntity)}"` : '')}>
               <div class="visual-security-hero"><div class="visual-security-ring"><span class="visual-security-beacon-core"><ha-icon data-visual-security-icon icon="${security.icon}"></ha-icon></span></div><div class="visual-security-state-copy"><strong data-visual-security-label>${this._escape(security.label)}</strong><small data-visual-security-detail>${this._escape(security.detail)}</small></div></div>
-              <div class="visual-security-tile-row" data-visual-security-stats>${model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('')}</div>
+              <div class="visual-security-shortcuts">
+                ${camerasPath ? `<button type="button" data-visual-path="${this._escape(camerasPath)}" aria-label="Open Cameras dashboard"><ha-icon icon="mdi:cctv"></ha-icon><span>Cameras</span></button>` : ''}
+                ${lightingPath ? `<button type="button" data-visual-path="${this._escape(lightingPath)}" aria-label="Open Lighting dashboard"><ha-icon icon="mdi:lightbulb-outline"></ha-icon><span>Lighting</span></button>` : ''}
+              </div>
+              <div class="visual-security-tile-row" data-visual-security-stats>${model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status|cameras?/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('')}</div>
             </section>
 
             <section class="visual-clean-center">
@@ -7976,7 +7982,7 @@ class HomeStatusCard extends HTMLElement {
     card.querySelector('[data-visual-security-icon]')?.setAttribute('icon', security.icon);
     const sl = card.querySelector('[data-visual-security-label]'); if (sl) sl.textContent = security.label;
     const sd = card.querySelector('[data-visual-security-detail]'); if (sd) sd.textContent = security.secure ? '' : `${security.count} condition${security.count === 1 ? '' : 's'} need attention`;
-    const ss = card.querySelector('[data-visual-security-stats]'); if (ss) ss.innerHTML = model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('');
+    const ss = card.querySelector('[data-visual-security-stats]'); if (ss) ss.innerHTML = model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status|cameras?/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('');
     this._syncVisualWeatherRotation(data);
     const weatherFace = card.querySelector('[data-visual-weather-face]');
     if (weatherFace?.dataset.weatherFace === 'forecast') {
@@ -8337,11 +8343,11 @@ class HomeStatusCard extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll('[data-visual-source-toggle]').forEach(button => {
       if (button.dataset.visualSourceBound) return; button.dataset.visualSourceBound = 'true';
-      button.addEventListener('click', event => { event.stopPropagation(); const menu = button.parentElement?.querySelector('[data-visual-source-menu]'); if (menu) menu.hidden = !menu.hidden; });
+      button.addEventListener('click', event => { event.stopPropagation(); const menu = button.parentElement?.querySelector('[data-visual-source-menu]'); if (menu) { menu.hidden = !menu.hidden; button.setAttribute('aria-expanded', String(!menu.hidden)); } });
     });
     this.shadowRoot.querySelectorAll('[data-visual-music-source]').forEach(button => {
       if (button.dataset.visualSourceBound) return; button.dataset.visualSourceBound = 'true';
-      button.addEventListener('click', event => { event.stopPropagation(); const entityId = this._config?.utility_header?.music_entity; const source = button.dataset.visualMusicSource; if (entityId && source) this._hass?.callService('media_player', 'select_source', { entity_id: entityId, source }); const menu = button.closest('[data-visual-source-menu]'); if (menu) menu.hidden = true; });
+      button.addEventListener('click', event => { event.stopPropagation(); const entityId = this._config?.utility_header?.music_entity; const source = button.dataset.visualMusicSource; if (entityId && source) this._hass?.callService('media_player', 'select_source', { entity_id: entityId, source }); const menu = button.closest('[data-visual-source-menu]'); if (menu) { menu.hidden = true; menu.parentElement?.querySelector('[data-visual-source-toggle]')?.setAttribute('aria-expanded', 'false'); } });
     });
     this.shadowRoot.querySelectorAll('[data-visual-music-volume]').forEach(volume => {
       if (volume.dataset.visualVolumeBound) return; volume.dataset.visualVolumeBound = 'true';
@@ -13102,7 +13108,7 @@ const CSS = `
 :host([data-presentation-mode="visual"]) .visual-mode-ticker{grid-template-columns:175px 1fr;height:76px!important;min-height:76px!important;max-height:76px!important;margin-top:9px;padding:0 7px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .ticker-footer,:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee{height:76px!important;min-height:76px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-item{padding:0 20px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-item ha-icon{width:30px!important;height:30px!important;--mdc-icon-size:30px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy strong{font-size:19px!important}:host([data-presentation-mode="visual"]) .visual-mode-ticker .footer-marquee-copy small{margin-top:4px!important;font-size:14px!important}:host([data-presentation-mode="visual"]) .visual-rail-label{padding:0 11px}:host([data-presentation-mode="visual"]) .visual-rail-label>ha-icon{--mdc-icon-size:28px}:host([data-presentation-mode="visual"]) .visual-rail-label strong{font-size:12px}:host([data-presentation-mode="visual"]) .visual-rail-label small{font-size:7.5px}
 
 .visual-weather-forecast{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}.visual-forecast-day{display:grid;place-items:center;gap:2px;padding:5px 2px;border-radius:8px;background:rgba(55,139,210,.09)}.visual-forecast-day small{font-size:7px;color:rgba(255,255,255,.48)}.visual-forecast-day ha-icon{--mdc-icon-size:18px;color:#ffd43b}.visual-forecast-day strong{font-size:9px}.visual-forecast-day em{font-size:7px;font-style:normal;color:rgba(255,255,255,.42)}.visual-forecast-waiting{display:grid;place-items:center;grid-column:1/-1;font-size:8px;color:rgba(255,255,255,.4)}
-.visual-music-source-wrap{grid-column:1/3;position:relative;z-index:8}.visual-music-source-trigger{display:grid;grid-template-columns:19px 1fr 16px;align-items:center;gap:5px;width:100%;height:29px;padding:0 7px;border:1px solid rgba(145,155,255,.16);border-radius:9px;background:rgba(110,122,255,.07);color:rgba(255,255,255,.78);font:inherit;text-align:left}.visual-music-source-trigger ha-icon{--mdc-icon-size:15px;color:#9da7ff}.visual-music-source-trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}.visual-music-source-menu{position:absolute;left:0;right:0;bottom:33px;max-height:150px;overflow-y:auto;overscroll-behavior:contain;padding:5px;border:1px solid rgba(145,155,255,.25);border-radius:10px;background:#111b2a;box-shadow:0 10px 28px rgba(0,0,0,.48)}.visual-music-source-menu[hidden]{display:none}.visual-music-source-menu button{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:6px;width:100%;min-height:31px;padding:5px 7px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.76);font:inherit;text-align:left}.visual-music-source-menu button.is-selected{background:rgba(120,134,255,.16);color:white}.visual-music-source-menu button ha-icon{--mdc-icon-size:14px;color:#9da7ff}.visual-music-source-menu button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
+.visual-music-source-wrap{grid-column:1/3;position:relative;z-index:8}.visual-music-source-trigger{display:grid;grid-template-columns:19px 1fr 16px;align-items:center;gap:5px;width:100%;height:29px;padding:0 7px;border:1px solid rgba(145,155,255,.16);border-radius:9px;background:rgba(110,122,255,.07);color:rgba(255,255,255,.78);font:inherit;text-align:left}.visual-music-source-trigger ha-icon{--mdc-icon-size:15px;color:#9da7ff}.visual-music-source-trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}.visual-music-source-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);bottom:auto;max-height:min(440px,65vh);overflow-y:auto;overscroll-behavior:contain;padding:5px;border:1px solid rgba(145,155,255,.25);border-radius:10px;background:#111b2a;box-shadow:0 10px 28px rgba(0,0,0,.48)}.visual-music-source-menu[hidden]{display:none}.visual-music-source-menu button{display:grid;grid-template-columns:18px 1fr;align-items:center;gap:6px;width:100%;min-height:44px;padding:9px 10px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.9);font:inherit;text-align:left}.visual-music-source-menu button.is-selected{background:rgba(120,134,255,.16);color:white}.visual-music-source-menu button ha-icon{--mdc-icon-size:14px;color:#9da7ff}.visual-music-source-menu button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;line-height:1.3}
 .visual-v5-grid.has-light-appliances{grid-template-columns:.82fr 1.54fr .98fr}.visual-v5-grid.has-light-appliances .visual-appliance-grid{grid-template-columns:1fr}.visual-v5-grid.has-light-appliances .visual-mini-item{min-height:74px}
 .visual-household-summary{display:flex;align-items:center;gap:8px;padding:0 13px 12px;color:rgba(255,255,255,.48)}.visual-household-summary b{font-size:8px;font-weight:650}.visual-household-summary .visual-household-dots{position:static;display:flex;gap:5px}.visual-household-summary .visual-household-dots i{width:9px;height:9px;border-radius:50%;background:#56c7ff;box-shadow:0 0 0 3px rgba(86,199,255,.08)}
 
@@ -13187,7 +13193,7 @@ const CSS = `
 .visual-v11 .visual-security-panel{position:relative;overflow:hidden;transition:border-color .2s ease,background .2s ease}
 .visual-v11 .visual-security-panel::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:linear-gradient(135deg,var(--security-beacon-bg,transparent),transparent 62%)}
 .visual-v11 .visual-security-hero{position:relative;z-index:1;grid-template-columns:92px 1fr;padding:12px 13px 8px}
-.visual-v11 .visual-security-ring{position:relative;width:76px;height:76px;border-width:8px;border-color:var(--security-beacon-dim,#214d3e);border-top-color:var(--security-beacon,#58e980);border-right-color:var(--security-beacon,#58e980);box-shadow:0 0 0 1px rgba(255,255,255,.02),0 0 var(--security-glow,0px) var(--security-beacon-glow,transparent)}
+.visual-v11 .visual-security-ring{position:relative;width:76px;height:76px;border-width:8px;border-color:var(--security-beacon-dim,#214d3e);border-color:var(--security-beacon,#58e980);box-shadow:0 0 0 1px rgba(255,255,255,.02),0 0 var(--security-glow,0px) var(--security-beacon-glow,transparent)}
 .visual-v11 .visual-security-beacon-core{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;color:var(--security-beacon,#58e980)}
 .visual-v11 .visual-security-ring ha-icon{--mdc-icon-size:36px}
 .visual-v11 .visual-security-state-copy{display:grid;align-content:center;gap:3px;min-width:0}
@@ -13202,7 +13208,7 @@ const CSS = `
 .visual-v11 .visual-security-tile .visual-tap-chevron{grid-column:4;grid-row:1}
 .visual-v11 .visual-security-panel.beacon-disarmed{--security-beacon:#59e982;--security-beacon-dim:#214d3e;--security-beacon-bg:rgba(50,210,112,.07);--security-beacon-glow:rgba(72,224,125,.18);--security-glow:10px;border-color:rgba(79,221,126,.24)}
 .visual-v11 .visual-security-panel.beacon-armed-home{--security-beacon:#ffb52e;--security-beacon-dim:#624619;--security-beacon-bg:rgba(255,166,24,.16);--security-beacon-glow:rgba(255,169,29,.45);--security-glow:22px;border-color:rgba(255,177,43,.62);box-shadow:inset 0 0 26px rgba(255,154,20,.08)}
-.visual-v11 .visual-security-panel.beacon-armed-away{--security-beacon:#5ba8ff;--security-beacon-dim:#25466a;--security-beacon-bg:rgba(65,139,230,.07);--security-beacon-glow:rgba(67,145,238,.16);--security-glow:8px}
+.visual-v11 .visual-security-panel.beacon-armed-away{--security-beacon:#ff6565;--security-beacon-dim:#653030;--security-beacon-bg:rgba(235,76,76,.09);--security-beacon-glow:rgba(235,76,76,.22);--security-glow:8px}
 .visual-v11 .visual-security-panel.beacon-pending{--security-beacon:#ffb52e;--security-beacon-dim:#624619;--security-beacon-bg:rgba(255,166,24,.13);--security-beacon-glow:rgba(255,169,29,.38);--security-glow:18px;border-color:rgba(255,177,43,.48)}
 .visual-v11 .visual-security-panel.beacon-triggered{--security-beacon:#ff5252;--security-beacon-dim:#642525;--security-beacon-bg:rgba(255,49,49,.2);--security-beacon-glow:rgba(255,55,55,.55);--security-glow:26px;border-color:rgba(255,76,76,.72)}
 @media (prefers-reduced-motion:no-preference){
@@ -13739,6 +13745,29 @@ const CSS = `
 .visual-clean-shell{position:relative;z-index:1;display:grid;grid-template-rows:320px 104px minmax(320px,1fr);gap:10px;padding:12px 12px 0}
 .visual-clean-top{display:grid;grid-template-columns:minmax(285px,22fr) minmax(420px,46fr) minmax(360px,32fr);gap:10px;min-height:0}
 .visual-clean-security,.visual-clean-center,.visual-clean-music,.visual-clean-weather,.visual-clean-content{min-width:0;border:1px solid rgba(78,155,225,.22);border-radius:16px;background:linear-gradient(145deg,rgba(14,29,42,.90),rgba(7,17,26,.92));overflow:hidden}
+.visual-clean-security.beacon-disarmed{--security-beacon:#59e982;--security-beacon-dim:#214d3e}
+.visual-clean-security.beacon-armed-home{--security-beacon:#ff5252;--security-beacon-dim:#642525}
+.visual-clean-security.beacon-armed-away{--security-beacon:#ff5252;--security-beacon-dim:#642525}
+.visual-clean-security.beacon-pending{--security-beacon:#ffb52e;--security-beacon-dim:#624619}
+.visual-clean-security.beacon-triggered{--security-beacon:#ff5252;--security-beacon-dim:#642525}
+.visual-clean-security.beacon-neutral{--security-beacon:#8796a8;--security-beacon-dim:#304052}
+.visual-clean-security .visual-security-ring{border-color:var(--security-beacon,#8796a8)!important}
+.visual-clean-security .visual-security-ring ha-icon{color:var(--security-beacon,#8796a8)!important}
+.visual-clean-security .visual-security-state-copy strong{color:var(--security-beacon,#8796a8)}
+@media (prefers-reduced-motion:no-preference){
+  .visual-clean-security.beacon-pending .visual-security-ring{animation:visual-security-pulse 1.5s ease-in-out infinite}
+  .visual-clean-security.beacon-armed-home .visual-security-ring,
+  .visual-clean-security.beacon-armed-away .visual-security-ring{animation:visual-security-pulse 1.8s ease-in-out infinite}
+  .visual-clean-security.beacon-triggered .visual-security-ring{animation:visual-security-alert .8s ease-in-out infinite}
+}
+
+.visual-clean-security .visual-security-shortcuts{display:flex;gap:9px;align-items:center;padding:4px 14px 10px}
+.visual-clean-security .visual-security-shortcuts:empty{display:none}
+.visual-clean-security .visual-security-shortcuts button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:46px;min-width:0;flex:1;padding:8px 10px;border:1px solid rgba(115,170,215,.25);border-radius:12px;background:rgba(48,96,145,.12);color:#e6efff;font:600 14px/1.2 inherit;cursor:pointer}
+.visual-clean-security .visual-security-shortcuts button ha-icon{--mdc-icon-size:23px;color:#8ebfff}
+.visual-clean-security .visual-security-shortcuts button:active{transform:scale(.97);background:rgba(85,145,200,.24)}
+.visual-clean-music .visual-music-source-wrap{z-index:30}
+.visual-clean-music .visual-music-source-menu{max-height:min(440px,65vh);width:100%;box-sizing:border-box;z-index:31}
 .visual-clean-security{display:flex;flex-direction:column;justify-content:flex-start}
 .visual-clean-security .visual-security-hero{grid-template-columns:86px 1fr!important;padding:16px 15px 8px!important}
 .visual-clean-security .visual-security-ring{width:72px!important;height:72px!important;border-width:8px!important}
