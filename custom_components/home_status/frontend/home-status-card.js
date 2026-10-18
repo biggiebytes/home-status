@@ -7982,7 +7982,7 @@ class HomeStatusCard extends HTMLElement {
     card.querySelector('[data-visual-security-icon]')?.setAttribute('icon', security.icon);
     const sl = card.querySelector('[data-visual-security-label]'); if (sl) sl.textContent = security.label;
     const sd = card.querySelector('[data-visual-security-detail]'); if (sd) sd.textContent = security.secure ? '' : `${security.count} condition${security.count === 1 ? '' : 's'} need attention`;
-    const ss = card.querySelector('[data-visual-security-stats]'); if (ss) ss.innerHTML = model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('');
+    const ss = card.querySelector('[data-visual-security-stats]'); if (ss) ss.innerHTML = model.securityTiles.filter(tile => !/doors?\s*\/?\s*windows?|alerts?|status|cameras?/i.test(String(tile?.name || ''))).map(tile => this._visualModeSecurityTileMarkup(tile)).join('');
     this._syncVisualWeatherRotation(data);
     const weatherFace = card.querySelector('[data-visual-weather-face]');
     if (weatherFace?.dataset.weatherFace === 'forecast') {
