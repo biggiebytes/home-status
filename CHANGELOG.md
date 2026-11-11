@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.4
+
+- Preserves the configured household presence summary when the household transport payload exceeds its 12 KB budget, allowing mixed home/away details to reach Visual Mode.
+- Includes the tested Visual Mode security status, Cameras and Lighting shortcuts, duplicate Cameras tile cleanup, and expanded music source selector.
+
 ## v1.0.3
 
 - Fixes mixed household presence in Visual Mode so configured home/away details are shown instead of the generic fallback.
