@@ -226,7 +226,29 @@ class HomeStatusTransportSensor(CoordinatorEntity[HomeStatusCoordinator], Sensor
 
         items = payload.get("items")
         while size(payload) > 12_000 and isinstance(items, list) and items:
-            items.pop()
+            household_index = next(
+                (
+                    index
+                    for index, item in enumerate(items)
+                    if payload.get("channel") == "household"
+                    and isinstance(item, dict)
+                    and item.get("source") == "household_presence"
+                ),
+                None,
+            )
+            # The configured household summary is appended after selected
+            # awareness records. Preserve it while trimming older context from
+            # the channel tail, or an over-budget payload loses the dashboard's
+            # authoritative household state first.
+            removable_index = next(
+                (
+                    index
+                    for index in range(len(items) - 1, -1, -1)
+                    if index != household_index
+                ),
+                len(items) - 1,
+            )
+            items.pop(removable_index)
         # A single signed media URL can theoretically exceed the attribute
         # budget by itself. Dropping that one visual is safer than making the
         # entity invalid; it does not affect any information channel.
