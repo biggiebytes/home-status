@@ -16,7 +16,7 @@
 
 Home Status is a Home Assistant integration for wall tablets and dashboards. It takes selected information from Home Assistant and puts it into one custom card so you do not need a separate card for every sensor, device, event, or source.
 
-It is intended for people who want to glance at a dashboard and quickly understand what is happening around the house, what recently happened, and what may be useful to know next.
+It is intended for people who want to glance at their dashboard and quickly understand what is happening around the house or can be used to monitor news, local events or any data that you want. Also its great for knowing what recently happened, and what may be useful in the future.
 
 ![Home Status with Visual Center](docs/screenshots/visual-mode-event-sanitized.png)
 
@@ -31,23 +31,23 @@ Home Status organizes information into four areas:
 
 The card can be used as a full wall-tablet display or in smaller dashboard layouts. It can also be reduced to a ticker-only view.
 
-| Natural-flow lanes                                                            | Ticker-only layout                                         |
+| Natural-flow lanes (multiple updated info areas)                                                    | Ticker-only layout                                         |
 | ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | ![Light natural-flow lanes](docs/screenshots/v1-light-natural-flow-lanes.png) | ![Ticker-only layout](docs/screenshots/v1-ticker-only.png) |
 
 ## Who it is for
 
-Home Status is mainly for Home Assistant users who have a lot of information available but do not want all of it taking up permanent dashboard space.
+Home Status is mainly for Home Assistant users who have a lot of information available but do not want all of it taking up permanent dashboard space. It gives users the ability rotate useful data without the need to ever touch the display.
 
 It works especially well on wall tablets, where space and readability matter, but it can be used on normal desktop and mobile dashboards as well.
 
-You choose what Home Status is allowed to use. It can work with individual entities, whole devices, household sources, weather, calendars, traffic, utilities, news feeds, cameras, and supported video streams.
+You choose what Home Status is allowed to use. It can work with individual entities, whole devices, household sources, weather, calendars, traffic, utilities, news feeds, local or traffic cameras, sports scores and supported video streams.
 
 ## Why it exists
 
 A large Home Assistant setup can easily turn into a dashboard full of permanent cards.
 
-Many of those cards are only useful occasionally. A washing machine matters while it is running. A door matters when it opens. Traffic matters when the drive is slower than normal. A calendar event matters when it is coming up. News or event artwork may be useful for a short time, but does not need permanent space.
+Many of those cards are only useful occasionally. A washing machine matters while it is running. A door matters when it opens. Traffic matters when the drive is slower than normal. A calendar event matters when it is coming up. News or event artwork may be useful for a short time, but does not need permanent space. Its a very adjustable and adaptable integration once setup.
 
 Home Status was built to let that information appear when it is useful and move out of the way when it is not.
 
