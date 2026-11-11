@@ -7538,10 +7538,17 @@ class HomeStatusCard extends HTMLElement {
     // Household summaries use stable source metadata. Mixed states such as
     // "1 of 2 Home" do not contain the word "household" in their title, so
     // title matching alone incorrectly falls back to the generic Home tile.
-    const presence = items.find(item => {
+    // Prefer the dedicated household channel: the summary does not need to
+    // appear in the rotating awareness/activity list to populate this tile.
+    const householdItems = Array.isArray(data?.household) ? data.household : [];
+    const isHouseholdPresence = item => {
       const source = String(item?.source_id || item?.source || '').toLowerCase();
-      return source === 'household_presence';
-    }) || first(['everyone home', 'everyone away', 'household presence', 'household']);
+      const id = String(item?.id || '').toLowerCase();
+      return source === 'household_presence' || id.startsWith('home_status:household_presence:');
+    };
+    const presence = householdItems.find(isHouseholdPresence)
+      || items.find(isHouseholdPresence)
+      || first(['everyone home', 'everyone away', 'household presence', 'household']);
     const envCandidates = by(['air quality', 'humidity', 'indoor temperature', 'environment']).filter(item => {
       const hay = this._visualModeHay(item);
       return !/outside|weather|forecast/.test(hay);
