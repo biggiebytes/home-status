@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3
+
+- Fixes mixed household presence in Visual Mode so configured home/away details are shown instead of the generic fallback.
+
 ## v1.0.2
 
 - Ships the tested Visual Mode phone portrait and landscape presentation behavior.

@@ -7535,7 +7535,13 @@ class HomeStatusCard extends HTMLElement {
     const cameraAction = homeStatusObject(this._config?.context_actions?.cameras);
     const cameraPath = String(cameraAction?.path || '').trim();
     const cameraHealth = (data?.active || []).find(item => item?.category === 'cameras' || item?.event_type === 'camera_offline');
-    const presence = first(['everyone home', 'everyone away', 'household presence', 'household']);
+    // Household summaries use stable source metadata. Mixed states such as
+    // "1 of 2 Home" do not contain the word "household" in their title, so
+    // title matching alone incorrectly falls back to the generic Home tile.
+    const presence = items.find(item => {
+      const source = String(item?.source_id || item?.source || '').toLowerCase();
+      return source === 'household_presence';
+    }) || first(['everyone home', 'everyone away', 'household presence', 'household']);
     const envCandidates = by(['air quality', 'humidity', 'indoor temperature', 'environment']).filter(item => {
       const hay = this._visualModeHay(item);
       return !/outside|weather|forecast/.test(hay);

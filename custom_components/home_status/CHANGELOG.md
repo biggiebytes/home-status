@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Fixes Visual Mode household presence so mixed states, such as `1 of 2 Home`, display their configured home/away details.
+
 ## 1.0.2
 
 - Preserves the finalized tablet Visual Mode and its three-slot rotation behavior.
